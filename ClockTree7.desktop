@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ClockTree7
+Comment=RTL clock architecture analysis — native Tk desktop
+Exec=bash /mnt/hgfs/VMshare/clocktree7/launch_gui.sh
+Path=/mnt/hgfs/VMshare/clocktree7
+Icon=/mnt/hgfs/VMshare/clocktree7/docs/clocktree7.svg
+Terminal=false
+Categories=Development;Engineering;
+StartupWMClass=ClockTree7

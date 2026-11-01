@@ -1,0 +1,1798 @@
+{
+  "schema_version": 1,
+  "tool_version": "0.1.0",
+  "config": {
+    "design": {
+      "top": "fixture_top",
+      "filelist": "examples/device_models/rtl.f",
+      "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2"
+    },
+    "layers": [
+      {
+        "index": 1,
+        "hierarchy": "fixture_top.l1",
+        "modules": [
+          {
+            "module": "ct_occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "occ"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "hierarchy": "fixture_top.l2",
+        "modules": [
+          {
+            "module": "ct_gate",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "gate"
+          },
+          {
+            "module": "ct_mux",
+            "clock_inputs": [
+              "a",
+              "b"
+            ],
+            "clock_output": "o",
+            "kind": "mux"
+          },
+          {
+            "module": "ct_occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "occ"
+          }
+        ]
+      },
+      {
+        "index": 3,
+        "hierarchy": "fixture_top.l3",
+        "modules": [
+          {
+            "module": "ct_gate",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "gate"
+          },
+          {
+            "module": "ct_occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "occ"
+          }
+        ]
+      },
+      {
+        "index": 4,
+        "hierarchy": "fixture_top.l4",
+        "modules": [
+          {
+            "module": "ct_occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "occ"
+          }
+        ]
+      },
+      {
+        "index": 5,
+        "hierarchy": "fixture_top.l5",
+        "modules": [
+          {
+            "module": "ct_gate",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "gate"
+          },
+          {
+            "module": "ct_mux",
+            "clock_inputs": [
+              "a",
+              "b"
+            ],
+            "clock_output": "o",
+            "kind": "mux"
+          }
+        ]
+      },
+      {
+        "index": 6,
+        "hierarchy": "fixture_top.l6",
+        "modules": [
+          {
+            "module": "ct_occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "occ"
+          }
+        ]
+      },
+      {
+        "index": 7,
+        "hierarchy": "fixture_top.l7",
+        "modules": [
+          {
+            "module": "ct_gate",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "gate"
+          },
+          {
+            "module": "ct_occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o",
+            "kind": "occ"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "event": "metadata",
+    "backend": "verdi_base_npi",
+    "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2",
+    "top": "fixture_top",
+    "design_instances": 24,
+    "npi_counts": {
+      "event": "complete",
+      "instances": 16,
+      "pin_traces": 34
+    },
+    "compiler_error_count": 0,
+    "elapsed_seconds": 2.674,
+    "verdi_exit_code": 0,
+    "recorded_example": true,
+    "recording_note": "Recorded Verdi NPI extraction. Generate a local configuration before re-extracting."
+  },
+  "nodes": [
+    {
+      "event": "instance",
+      "path": "fixture_top.l1.n0_end1",
+      "module": "ct_occ",
+      "layer": 1,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l1.n0_end1, {examples/device_models/fixture.sv : 9}",
+      "id": "fixture_top.l1.n0_end1",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l1.n0_root_a",
+      "module": "ct_occ",
+      "layer": 1,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l1.n0_root_a, {examples/device_models/fixture.sv : 6}",
+      "id": "fixture_top.l1.n0_root_a",
+      "kind_source": "configured",
+      "component": 0,
+      "root": true,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l1.n0_root_b",
+      "module": "ct_occ",
+      "layer": 1,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l1.n0_root_b, {examples/device_models/fixture.sv : 7}",
+      "id": "fixture_top.l1.n0_root_b",
+      "kind_source": "configured",
+      "component": 0,
+      "root": true,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l1.n0_root_c",
+      "module": "ct_occ",
+      "layer": 1,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l1.n0_root_c, {examples/device_models/fixture.sv : 8}",
+      "id": "fixture_top.l1.n0_root_c",
+      "kind_source": "configured",
+      "component": 1,
+      "root": true,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l2.n0_end2",
+      "module": "ct_occ",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l2.n0_end2, {examples/device_models/fixture.sv : 13}",
+      "id": "fixture_top.l2.n0_end2",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l2.n0_gate",
+      "module": "ct_gate",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, fixture_top.l2.n0_gate, {examples/device_models/fixture.sv : 12}",
+      "id": "fixture_top.l2.n0_gate",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l2.n0_mux",
+      "module": "ct_mux",
+      "layer": 2,
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "output": "o",
+      "kind": "mux",
+      "source": "npiModule, fixture_top.l2.n0_mux, {examples/device_models/fixture.sv : 14}",
+      "id": "fixture_top.l2.n0_mux",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l2.n0_same_layer",
+      "module": "ct_occ",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l2.n0_same_layer, {examples/device_models/fixture.sv : 15}",
+      "id": "fixture_top.l2.n0_same_layer",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l3.n0_end3",
+      "module": "ct_occ",
+      "layer": 3,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l3.n0_end3, {examples/device_models/fixture.sv : 19}",
+      "id": "fixture_top.l3.n0_end3",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l3.n0_gate",
+      "module": "ct_gate",
+      "layer": 3,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, fixture_top.l3.n0_gate, {examples/device_models/fixture.sv : 18}",
+      "id": "fixture_top.l3.n0_gate",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l4.n0_end4",
+      "module": "ct_occ",
+      "layer": 4,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l4.n0_end4, {examples/device_models/fixture.sv : 22}",
+      "id": "fixture_top.l4.n0_end4",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l5.n0_end5",
+      "module": "ct_gate",
+      "layer": 5,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, fixture_top.l5.n0_end5, {examples/device_models/fixture.sv : 26}",
+      "id": "fixture_top.l5.n0_end5",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l5.n0_mux",
+      "module": "ct_mux",
+      "layer": 5,
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "output": "o",
+      "kind": "mux",
+      "source": "npiModule, fixture_top.l5.n0_mux, {examples/device_models/fixture.sv : 25}",
+      "id": "fixture_top.l5.n0_mux",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l6.n0_end6",
+      "module": "ct_occ",
+      "layer": 6,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l6.n0_end6, {examples/device_models/fixture.sv : 29}",
+      "id": "fixture_top.l6.n0_end6",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l7.n0_end7",
+      "module": "ct_gate",
+      "layer": 7,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, fixture_top.l7.n0_end7, {examples/device_models/fixture.sv : 33}",
+      "id": "fixture_top.l7.n0_end7",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "fixture_top.l7.n0_enter7",
+      "module": "ct_occ",
+      "layer": 7,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, fixture_top.l7.n0_enter7, {examples/device_models/fixture.sv : 32}",
+      "id": "fixture_top.l7.n0_enter7",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    }
+  ],
+  "edges": [
+    {
+      "id": "0298212629906e086fe1",
+      "source": "fixture_top.l3.n0_gate",
+      "source_pin": "o",
+      "target": "fixture_top.l3.n0_end3",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_gate.o",
+            "net": "fixture_top.l3.s3_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_end3.i",
+            "net": "fixture_top.l3.s3_n0_gate"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_end3.i",
+            "net": "fixture_top.l3.s3_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_gate.o",
+            "net": "fixture_top.l3.s3_n0_gate"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "4a70b00d8302e3aefa82",
+      "source": "fixture_top.l3.n0_gate",
+      "source_pin": "o",
+      "target": "fixture_top.l5.n0_mux",
+      "target_pin": "b",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_gate.o",
+            "net": "fixture_top.l3.s3_n0_gate"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l3.s3_n0_gate",
+            "net": "fixture_top.l3.s3_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.s3_n0_gate",
+            "net": "fixture_top.s3_n0_gate"
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l5.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l5.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.b",
+            "net": "fixture_top.l5.incoming[1]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.b",
+            "net": "fixture_top.l5.incoming[1]"
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l5.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l5.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.s3_n0_gate",
+            "net": "fixture_top.s3_n0_gate"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l3.s3_n0_gate",
+            "net": "fixture_top.l3.s3_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_gate.o",
+            "net": "fixture_top.l3.s3_n0_gate"
+          }
+        ]
+      },
+      "layer_delta": 2
+    },
+    {
+      "id": "592562feb105895d2f41",
+      "source": "fixture_top.l2.n0_same_layer",
+      "source_pin": "o",
+      "target": "fixture_top.l5.n0_mux",
+      "target_pin": "a",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_same_layer.o",
+            "net": "fixture_top.l2.s2_n0_same_layer"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l2.s2_n0_same_layer",
+            "net": "fixture_top.l2.s2_n0_same_layer"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.s2_n0_same_layer",
+            "net": "fixture_top.s2_n0_same_layer"
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l5.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l5.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.a",
+            "net": "fixture_top.l5.incoming[0]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.a",
+            "net": "fixture_top.l5.incoming[0]"
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l5.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l5.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.s2_n0_same_layer",
+            "net": "fixture_top.s2_n0_same_layer"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l2.s2_n0_same_layer",
+            "net": "fixture_top.l2.s2_n0_same_layer"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_same_layer.o",
+            "net": "fixture_top.l2.s2_n0_same_layer"
+          }
+        ]
+      },
+      "layer_delta": 3
+    },
+    {
+      "id": "8a83e1d2ebd7d04a25bd",
+      "source": "fixture_top.l5.n0_mux",
+      "source_pin": "o",
+      "target": "fixture_top.l7.n0_enter7",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.o",
+            "net": "fixture_top.l5.s5_n0_mux"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l5.s5_n0_mux",
+            "net": "fixture_top.l5.s5_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.s5_n0_mux",
+            "net": "fixture_top.s5_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.incoming[0]",
+            "net": "fixture_top.s5_n0_mux"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l7.incoming[0]",
+            "net": "fixture_top.l7.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.n0_enter7.i",
+            "net": "fixture_top.l7.incoming[0]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.n0_enter7.i",
+            "net": "fixture_top.l7.incoming[0]"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l7.incoming[0]",
+            "net": "fixture_top.l7.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.incoming[0]",
+            "net": "fixture_top.s5_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.s5_n0_mux",
+            "net": "fixture_top.s5_n0_mux"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l5.s5_n0_mux",
+            "net": "fixture_top.l5.s5_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.o",
+            "net": "fixture_top.l5.s5_n0_mux"
+          }
+        ]
+      },
+      "layer_delta": 2
+    },
+    {
+      "id": "90b7c94f9476477e5322",
+      "source": "fixture_top.l1.n0_root_b",
+      "source_pin": "o",
+      "target": "fixture_top.l4.n0_end4",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_b.o",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l4.incoming[0]",
+            "net": "fixture_top.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l4.incoming[0]",
+            "net": "fixture_top.l4.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l4.n0_end4.i",
+            "net": "fixture_top.l4.incoming[0]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l4.n0_end4.i",
+            "net": "fixture_top.l4.incoming[0]"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l4.incoming[0]",
+            "net": "fixture_top.l4.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l4.incoming[0]",
+            "net": "fixture_top.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_b.o",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          }
+        ]
+      },
+      "layer_delta": 3
+    },
+    {
+      "id": "959f03e4365d963583ff",
+      "source": "fixture_top.l2.n0_gate",
+      "source_pin": "o",
+      "target": "fixture_top.l3.n0_gate",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.o",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l2.s2_n0_gate",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.s2_n0_gate",
+            "net": "fixture_top.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.incoming[0]",
+            "net": "fixture_top.s2_n0_gate"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l3.incoming[0]",
+            "net": "fixture_top.l3.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_gate.i",
+            "net": "fixture_top.l3.incoming[0]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.n0_gate.i",
+            "net": "fixture_top.l3.incoming[0]"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l3.incoming[0]",
+            "net": "fixture_top.l3.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l3.incoming[0]",
+            "net": "fixture_top.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.s2_n0_gate",
+            "net": "fixture_top.s2_n0_gate"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l2.s2_n0_gate",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.o",
+            "net": "fixture_top.l2.s2_n0_gate"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "9b606d554d707ba6da3c",
+      "source": "fixture_top.l2.n0_gate",
+      "source_pin": "o",
+      "target": "fixture_top.l2.n0_mux",
+      "target_pin": "a",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.o",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_mux.a",
+            "net": "fixture_top.l2.s2_n0_gate"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_mux.a",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.o",
+            "net": "fixture_top.l2.s2_n0_gate"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "9d0c88cc70db64d849f4",
+      "source": "fixture_top.l2.n0_mux",
+      "source_pin": "o",
+      "target": "fixture_top.l2.n0_same_layer",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_mux.o",
+            "net": "fixture_top.l2.s2_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_same_layer.i",
+            "net": "fixture_top.l2.s2_n0_mux"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_same_layer.i",
+            "net": "fixture_top.l2.s2_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_mux.o",
+            "net": "fixture_top.l2.s2_n0_mux"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "ad73a8c02aea2de19b6a",
+      "source": "fixture_top.l5.n0_mux",
+      "source_pin": "o",
+      "target": "fixture_top.l5.n0_end5",
+      "target_pin": "i",
+      "evidence": {
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_end5.i",
+            "net": "fixture_top.l5.s5_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.o",
+            "net": "fixture_top.l5.s5_n0_mux"
+          }
+        ],
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_mux.o",
+            "net": "fixture_top.l5.s5_n0_mux"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l5.n0_end5.i",
+            "net": "fixture_top.l5.s5_n0_mux"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "b9a18e08805b54593ffd",
+      "source": "fixture_top.l2.n0_gate",
+      "source_pin": "o",
+      "target": "fixture_top.l2.n0_end2",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.o",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_end2.i",
+            "net": "fixture_top.l2.s2_n0_gate"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_end2.i",
+            "net": "fixture_top.l2.s2_n0_gate"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.o",
+            "net": "fixture_top.l2.s2_n0_gate"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "c2c30b7fd021d424b04d",
+      "source": "fixture_top.l1.n0_root_a",
+      "source_pin": "o",
+      "target": "fixture_top.l1.n0_end1",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_a.o",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_end1.i",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_end1.i",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_a.o",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "c8c06dbd40dbda614529",
+      "source": "fixture_top.l1.n0_root_a",
+      "source_pin": "o",
+      "target": "fixture_top.l2.n0_gate",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_a.o",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_a",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_a",
+            "net": "fixture_top.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l2.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l2.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.i",
+            "net": "fixture_top.l2.incoming[0]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_gate.i",
+            "net": "fixture_top.l2.incoming[0]"
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l2.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l2.incoming[1:0]#[0]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_a",
+            "net": "fixture_top.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_a",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_a.o",
+            "net": "fixture_top.l1.s1_n0_root_a"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "dc4be2b4612f190b51d7",
+      "source": "fixture_top.l1.n0_root_c",
+      "source_pin": "o",
+      "target": "fixture_top.l6.n0_end6",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_c.o",
+            "net": "fixture_top.l1.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_c",
+            "net": "fixture_top.l1.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_c",
+            "net": "fixture_top.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l6.incoming[0]",
+            "net": "fixture_top.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l6.incoming[0]",
+            "net": "fixture_top.l6.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l6.n0_end6.i",
+            "net": "fixture_top.l6.incoming[0]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l6.n0_end6.i",
+            "net": "fixture_top.l6.incoming[0]"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l6.incoming[0]",
+            "net": "fixture_top.l6.incoming[0]"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l6.incoming[0]",
+            "net": "fixture_top.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_c",
+            "net": "fixture_top.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_c",
+            "net": "fixture_top.l1.s1_n0_root_c"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_c.o",
+            "net": "fixture_top.l1.s1_n0_root_c"
+          }
+        ]
+      },
+      "layer_delta": 5
+    },
+    {
+      "id": "de6b7e4e541332361357",
+      "source": "fixture_top.l1.n0_root_b",
+      "source_pin": "o",
+      "target": "fixture_top.l2.n0_mux",
+      "target_pin": "b",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_b.o",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l2.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l2.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_mux.b",
+            "net": "fixture_top.l2.incoming[1]"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l2.n0_mux.b",
+            "net": "fixture_top.l2.incoming[1]"
+          },
+          {
+            "type": "npiNlPseudoPort",
+            "name": "fixture_top.l2.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlPseudoInstPort",
+            "name": "fixture_top.l2.incoming[1:0]#[1]",
+            "net": ""
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlPort",
+            "name": "fixture_top.l1.s1_n0_root_b",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l1.n0_root_b.o",
+            "net": "fixture_top.l1.s1_n0_root_b"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "e9be0a764f733a204730",
+      "source": "fixture_top.l7.n0_enter7",
+      "source_pin": "o",
+      "target": "fixture_top.l7.n0_end7",
+      "target_pin": "i",
+      "evidence": {
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.n0_end7.i",
+            "net": "fixture_top.l7.s7_n0_enter7"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.n0_enter7.o",
+            "net": "fixture_top.l7.s7_n0_enter7"
+          }
+        ],
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.n0_enter7.o",
+            "net": "fixture_top.l7.s7_n0_enter7"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "fixture_top.l7.n0_end7.i",
+            "net": "fixture_top.l7.s7_n0_enter7"
+          }
+        ]
+      },
+      "layer_delta": 0
+    }
+  ],
+  "boundaries": [
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l1.n0_root_a.i",
+          "net": "fixture_top.l1.incoming[0]"
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.l1.incoming[2:0]#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.l1.incoming[2:0]#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.clk_a",
+          "net": "fixture_top.clk_a"
+        }
+      ],
+      "endpoint": "fixture_top.clk_a",
+      "instance": "fixture_top.l1.n0_root_a",
+      "pin": "i",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l1.n0_root_b.i",
+          "net": "fixture_top.l1.incoming[1]"
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.l1.incoming[2:0]#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.l1.incoming[2:0]#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.clk_b",
+          "net": "fixture_top.clk_b"
+        }
+      ],
+      "endpoint": "fixture_top.clk_b",
+      "instance": "fixture_top.l1.n0_root_b",
+      "pin": "i",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l1.n0_root_c.i",
+          "net": "fixture_top.l1.incoming[2]"
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.l1.incoming[2:0]#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.l1.incoming[2:0]#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.clk_c",
+          "net": "fixture_top.clk_c"
+        }
+      ],
+      "endpoint": "fixture_top.clk_c",
+      "instance": "fixture_top.l1.n0_root_c",
+      "pin": "i",
+      "direction": "driver"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l1.n0_end1.o",
+          "net": "fixture_top.l1.s1_n0_end1"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l1.s1_n0_end1",
+          "net": "fixture_top.l1.s1_n0_end1"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l1.s1_n0_end1",
+          "net": "fixture_top.s1_n0_end1"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[6]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[6]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[6]",
+      "instance": "fixture_top.l1.n0_end1",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "no_load",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l2.n0_mux.o",
+          "net": "fixture_top.l2.s2_n0_mux"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l2.s2_n0_mux",
+          "net": "fixture_top.l2.s2_n0_mux"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l2.s2_n0_mux",
+          "net": "fixture_top.s2_n0_mux"
+        }
+      ],
+      "endpoint": "fixture_top.l2.s2_n0_mux",
+      "instance": "fixture_top.l2.n0_mux",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l2.n0_end2.o",
+          "net": "fixture_top.l2.s2_n0_end2"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l2.s2_n0_end2",
+          "net": "fixture_top.l2.s2_n0_end2"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l2.s2_n0_end2",
+          "net": "fixture_top.s2_n0_end2"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[5]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[5]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[5]",
+      "instance": "fixture_top.l2.n0_end2",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l3.n0_end3.o",
+          "net": "fixture_top.l3.s3_n0_end3"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l3.s3_n0_end3",
+          "net": "fixture_top.l3.s3_n0_end3"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l3.s3_n0_end3",
+          "net": "fixture_top.s3_n0_end3"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[4]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[4]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[4]",
+      "instance": "fixture_top.l3.n0_end3",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l4.n0_end4.o",
+          "net": "fixture_top.l4.s4_n0_end4"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l4.s4_n0_end4",
+          "net": "fixture_top.l4.s4_n0_end4"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l4.s4_n0_end4",
+          "net": "fixture_top.s4_n0_end4"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[3]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[3]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[3]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[3]",
+      "instance": "fixture_top.l4.n0_end4",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l5.n0_end5.o",
+          "net": "fixture_top.l5.s5_n0_end5"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l5.s5_n0_end5",
+          "net": "fixture_top.l5.s5_n0_end5"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l5.s5_n0_end5",
+          "net": "fixture_top.s5_n0_end5"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[4]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[2]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[2]",
+      "instance": "fixture_top.l5.n0_end5",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l6.n0_end6.o",
+          "net": "fixture_top.l6.s6_n0_end6"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l6.s6_n0_end6",
+          "net": "fixture_top.l6.s6_n0_end6"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l6.s6_n0_end6",
+          "net": "fixture_top.s6_n0_end6"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[5]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[1]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[1]",
+      "instance": "fixture_top.l6.n0_end6",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l7.n0_end7.o",
+          "net": "fixture_top.l7.s7_n0_end7"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l7.s7_n0_end7",
+          "net": "fixture_top.l7.s7_n0_end7"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l7.s7_n0_end7",
+          "net": "fixture_top.s7_n0_end7"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.IH_s1_n0_end1,s2_n0_end2,s3_n0_end3,s4_n0_end4,s5_n0_end5,s6_n0_end6,s7_n0_end7#[6]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "fixture_top.fixture_top:Always0#SigTap0:59:59:Assignment.OH_sinks[6:0]#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "fixture_top.sinks[6:0]#[0]",
+          "net": ""
+        }
+      ],
+      "endpoint": "fixture_top.sinks[6:0]#[0]",
+      "instance": "fixture_top.l7.n0_end7",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "no_load",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l7.n0_enter7.o",
+          "net": "fixture_top.l7.s7_n0_enter7"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "fixture_top.l7.s7_n0_enter7",
+          "net": "fixture_top.l7.s7_n0_enter7"
+        },
+        {
+          "type": "npiNlInstPort",
+          "name": "fixture_top.l7.s7_n0_enter7",
+          "net": "fixture_top.s7_n0_enter7"
+        }
+      ],
+      "endpoint": "fixture_top.l7.s7_n0_enter7",
+      "instance": "fixture_top.l7.n0_enter7",
+      "pin": "o",
+      "direction": "load"
+    }
+  ],
+  "components": [
+    {
+      "id": 0,
+      "nodes": [
+        "fixture_top.l1.n0_end1",
+        "fixture_top.l1.n0_root_a",
+        "fixture_top.l1.n0_root_b",
+        "fixture_top.l2.n0_end2",
+        "fixture_top.l2.n0_gate",
+        "fixture_top.l2.n0_mux",
+        "fixture_top.l2.n0_same_layer",
+        "fixture_top.l3.n0_end3",
+        "fixture_top.l3.n0_gate",
+        "fixture_top.l4.n0_end4",
+        "fixture_top.l5.n0_end5",
+        "fixture_top.l5.n0_mux",
+        "fixture_top.l7.n0_end7",
+        "fixture_top.l7.n0_enter7"
+      ]
+    },
+    {
+      "id": 1,
+      "nodes": [
+        "fixture_top.l1.n0_root_c",
+        "fixture_top.l6.n0_end6"
+      ]
+    }
+  ],
+  "clock_sources": [
+    {
+      "id": "fixture_top.clk_a",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "fixture_top.l1.n0_root_a",
+          "pin": "i"
+        }
+      ]
+    },
+    {
+      "id": "fixture_top.clk_b",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "fixture_top.l1.n0_root_b",
+          "pin": "i"
+        }
+      ]
+    },
+    {
+      "id": "fixture_top.clk_c",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "fixture_top.l1.n0_root_c",
+          "pin": "i"
+        }
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "summary": {
+    "instances": 16,
+    "edges": 15,
+    "roots": 3,
+    "terminals": 7,
+    "components": 2,
+    "clock_sources": 3,
+    "layers": {
+      "1": 4,
+      "2": 4,
+      "3": 2,
+      "4": 1,
+      "5": 2,
+      "6": 1,
+      "7": 2
+    },
+    "terminal_layers": {
+      "1": 1,
+      "2": 1,
+      "3": 1,
+      "4": 1,
+      "5": 1,
+      "6": 1,
+      "7": 1
+    },
+    "expected_pin_traces": 34,
+    "observed_pin_traces": 34,
+    "unresolved": 0,
+    "diagnostics": 0,
+    "extraction_finished": true,
+    "connectivity_complete": true,
+    "topology_valid": true
+  }
+}

@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+node_modules/
+tmp/
+output/
+.venv/
+# Local elaboration databases, vendor checkouts, generated logs and test captures.
+# Curated screenshots and validation summaries are versioned under docs/.
+validation/*
+!validation/README.md
+*.log
+*.pid
+*.xwd
+.env
+.env.*
+!.env.example
+Thumbs.db
+desktop.ini

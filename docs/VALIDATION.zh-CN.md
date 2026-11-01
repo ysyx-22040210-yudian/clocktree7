@@ -1,0 +1,57 @@
+# 验证摘要
+
+记录日期：2026-11-02。数据来自本地实际保存的 Verdi NPI 结果和 Tk 界面验收；以下为可随源码分享的摘要。完整原始记录保留在本机 `validation/`，不随仓库上传。
+
+## 实际提取结果
+
+| 案例 | elab 全设计实例 | 目标实例 | 端口连线 | 根 | 末端 | 未解析 | 端口追踪 | 秒数 | 结果 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |
+| 七层全网样例 | 24 | 16 | 15 | 3 | 7 | 0 | 34/34 | 2.732 | PASS |
+| generate 层次样例 | 24 | 16 | 15 | 3 | 7 | 0 | 34/34 | 2.731 | PASS |
+| 三类器件七层样例 | 24 | 16 | 15 | 3 | 7 | 0 | 34/34 | 2.674 | PASS |
+| 4096 实例七层压力样例 | 4104 | 4096 | 3840 | 768 | 1792 | 0 | 8704/8704 | 53.7 | PASS |
+| PULP SoC 完整 KDB | 3527 | 62 | 48 | 18 | 39 | 0 | 129/129 | 6.366 | PASS |
+| OpenC910 SMART SoC 有序层次 | 16004 | 6984 | 6983 | 1 | 6959 | 0 | 13968/13968 | 103.79 | PASS |
+| OpenTitan clkmgr 子系统 | 371 | 15 | 10 | 5 | 8 | 0 | 30/30 | 2.883 | PASS |
+
+## 核对方法
+
+- 七层样例、三类器件样例、generate 样例和压力样例逐项比较完整节点集合、完整输出口→输入口边集合和完整末端集合。压力样例共 1792 个末端，L1–L7 每层各 256 个。
+- SoC 枚举完整 elab 中所有符合配置的实例，核对关注输入/输出追踪覆盖、驱动与负载双向证据、未解析项和结构约束。SoC 没有独立人工全网 golden；通过指配置关注网络证据完整。
+- OpenC910 有序规则为 L1 发生器、L2 全局缓冲、L3 门控；末端位于 L2 和 L3。与平铺 L1 配置的完整节点和端口边集合相等。
+- 历史 SoC 规则在加入器件类型前生成，未标注类型的部分以未分类模型显示；新的模块规则由用户选择选择器、门控或 OCC。
+
+## 原生 GUI 与三类模型
+
+- VM：CentOS 7.9 / Python 3.6.8 / Tk 8.5.13；普通桌面用户实际运行。Windows Tk 8.6.12 也完成启动与结果读取。
+- 真实控件验收包括七层规则编辑、类型选择、门控多输入校验、配置往返、真实 NPI 提取、连线点击及双向证据、聚合展开、完整实例搜索、路径高亮、JSON 和 SVG 导出。
+- 三类器件样例包含选择器 2、门控 4、OCC 10；原始采集和 SVG 的类型计数一致。仅改变类型时，已有全部端口边及证据保持不变。
+- OpenC910 6984 实例 / 6983 连线能以层次概览显示，展开和搜索定位回归通过。小视口裁剪只影响绘制，数据及全量导出保留。
+- 已验证取消真实 NPI 任务可结束本次进程组并保留原结果。
+- 当前 20 项 Python 检查通过。Tk 验收未记录回调异常。
+
+## 覆盖边界
+
+OpenTitan 仅 `clkmgr` 子系统通过。完整 `top_earlgrey` 在 VM 的 VCS O-2018.09-SP2 上遇到 `otp_ctrl` 常量结构数组 part-select / 参数求值错误（IRIPS、CEPO），未计为整芯片通过。没有修改第三方 RTL 来制造连通结果。
+
+提取使用可运行的基本 NPI 接口；模型类别是用户配置的显示元数据。结果属于静态结构分析，不覆盖物理 CTS、全部时钟工作模式、门控/OCC 行为或时序签核。
+
+## 固定源码版本
+
+- [pulpissimo](https://github.com/pulp-platform/pulpissimo)：`bfc3d9a1ef72443464509a22d948f0a6f5b65b4c`。
+- [openc910](https://github.com/XUANTIE-RV/openc910)：`b91c90914c19f114d35c8f6b73408eb241ed847c`。
+- [opentitan-silver-v5](https://github.com/lowRISC/opentitan)：`ed044fc9760bdf9fc075d0015ba1db07fa075355`。
+- [pulp_soc](https://github.com/pulp-platform/pulp_soc)：`bf65372aab4edd404160170e2a4d2c63b27ab5f2`。
+
+公开 SoC 源码、锁定依赖和 EDA 编译缓存保留在本机，未打入源码仓库。第三方项目各自的许可继续适用于其内容。
+
+## 重跑小型样例
+
+```bash
+python3 scripts/make_fixture.py validation/fixtures/device-models --device-models
+source scripts/eda_env.sh
+python3 -m clocktree extract --config validation/fixtures/device-models/config.json --out validation/runs/my-device-check
+python3 scripts/check_golden.py validation/runs/my-device-check/clocktree.json validation/fixtures/device-models/golden.json
+```
+
+`--out` 使用新的目录。完整交互步骤见 [GUI 操作手册](GUI_USER_MANUAL.zh-CN.md)。

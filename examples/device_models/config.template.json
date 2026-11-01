@@ -1,0 +1,149 @@
+{
+  "design": {
+    "top": "fixture_top",
+    "filelist": "examples/device_models/rtl.f",
+    "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2"
+  },
+  "layers": [
+    {
+      "index": 1,
+      "hierarchy": "fixture_top.l1",
+      "modules": [
+        {
+          "module": "ct_occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "occ"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "hierarchy": "fixture_top.l2",
+      "modules": [
+        {
+          "module": "ct_gate",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "gate"
+        },
+        {
+          "module": "ct_mux",
+          "clock_inputs": [
+            "a",
+            "b"
+          ],
+          "clock_output": "o",
+          "kind": "mux"
+        },
+        {
+          "module": "ct_occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "occ"
+        }
+      ]
+    },
+    {
+      "index": 3,
+      "hierarchy": "fixture_top.l3",
+      "modules": [
+        {
+          "module": "ct_gate",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "gate"
+        },
+        {
+          "module": "ct_occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "occ"
+        }
+      ]
+    },
+    {
+      "index": 4,
+      "hierarchy": "fixture_top.l4",
+      "modules": [
+        {
+          "module": "ct_occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "occ"
+        }
+      ]
+    },
+    {
+      "index": 5,
+      "hierarchy": "fixture_top.l5",
+      "modules": [
+        {
+          "module": "ct_gate",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "gate"
+        },
+        {
+          "module": "ct_mux",
+          "clock_inputs": [
+            "a",
+            "b"
+          ],
+          "clock_output": "o",
+          "kind": "mux"
+        }
+      ]
+    },
+    {
+      "index": 6,
+      "hierarchy": "fixture_top.l6",
+      "modules": [
+        {
+          "module": "ct_occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "occ"
+        }
+      ]
+    },
+    {
+      "index": 7,
+      "hierarchy": "fixture_top.l7",
+      "modules": [
+        {
+          "module": "ct_gate",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "gate"
+        },
+        {
+          "module": "ct_occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o",
+          "kind": "occ"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,212 @@
+"""User-declared clock device kinds and shared Tk/SVG symbol geometry."""
+import math
+import unicodedata
+from xml.sax.saxutils import escape, quoteattr
+
+
+DEVICE_TYPES = {
+    'mux': {'label': '选择器', 'short': 'MUX', 'color': '#66b7ff', 'fill': '#193954'},
+    'gate': {'label': '门控', 'short': 'GATE', 'color': '#42d1b2', 'fill': '#163b38'},
+    'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
+}
+TYPE_LABELS = [DEVICE_TYPES[k]['label'] for k in ('mux', 'gate', 'occ')]
+LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
+
+
+def kind_label(kind):
+    return DEVICE_TYPES[kind]['label'] if kind in DEVICE_TYPES else '未分类'
+
+
+def scope_match(path, scope):
+    return not scope or path == scope or path.startswith(scope + '.') or path.startswith(scope + '[')
+
+
+def matching_rule(node, layer, rule):
+    return (node['layer'] == layer['index'] and node['module'] == rule['module'] and
+            scope_match(node['id'] if 'id' in node else node['path'], layer['hierarchy']) and
+            node['inputs'] == rule['clock_inputs'] and node['output'] == rule['clock_output'])
+
+
+def resolve_kind(node, config):
+    """Read explicit metadata only. A module name never determines its kind."""
+    if node.get('kind') in DEVICE_TYPES:
+        return node['kind']
+    for layer in config.get('layers', []):
+        for rule in layer.get('modules', []):
+            if rule.get('kind') in DEVICE_TYPES and matching_rule(node, layer, rule):
+                return rule['kind']
+    return None
+
+
+def typed_nodes(graph):
+    result = {}
+    # Index rules so opening a large graph is linear in the number of instances.
+    rules = {}
+    for layer in graph.get('config', {}).get('layers', []):
+        for rule in layer.get('modules', []):
+            if rule.get('kind') in DEVICE_TYPES:
+                rules.setdefault((layer['index'], rule['module']), []).append((layer, rule))
+    for original in graph['nodes']:
+        node = dict(original)
+        kind = node.get('kind')
+        if kind not in DEVICE_TYPES:
+            kind = next((rule['kind'] for layer, rule in rules.get((node['layer'], node['module']), [])
+                         if matching_rule(node, layer, rule)), None)
+        if kind:
+            node['kind'], node['kind_source'] = kind, 'configured'
+        result[node['id']] = node
+    return result
+
+
+def node_height(node):
+    if node.get('aggregate'):
+        return 116
+    if node.get('kind') in DEVICE_TYPES:
+        return max(136, 80 + 24 * len(node['inputs']))
+    return max(82, 50 + len(node['inputs']) * 18)
+
+
+def port_offsets(node, width, height):
+    """The sole source of pin anchors for symbols and all routed edges."""
+    if node.get('aggregate'):
+        return [(0, 80)], (width, 80)
+    if node.get('kind') in DEVICE_TYPES:
+        count = len(node['inputs'])
+        middle = (50 + height - 18) / 2
+        ys = [middle] if count == 1 else [60 + i * (height - 88) / (count - 1) for i in range(count)]
+        return [(0, y) for y in ys], (width, middle)
+    return [(0, 54 + i * 18) for i in range(len(node['inputs']))], (width, height / 2)
+
+
+def _short(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def symbol_parts(node, width, height, selected=False):
+    """Return neutral drawing primitives consumed by native Tk and SVG alike.
+
+    Only configured clock ports have external wires. Internal pulse/clock marks
+    are pictograms, not invented SEL/EN/test pins or simulated waveforms.
+    """
+    parts = []
+    kind = node.get('kind')
+    aggregate = node.get('aggregate', False)
+    info = DEVICE_TYPES.get(kind, {'color': '#8199b9', 'fill': '#1c2d44', 'short': '未分类'})
+    color = info['color']
+    inputs, output = port_offsets(node, width, height)
+    def add(op, **kwargs):
+        parts.append(dict(op=op, **kwargs))
+    def line(points, fill=color, stroke_width=1.5, **kwargs):
+        add('polyline', points=points, fill=fill, width=stroke_width, **kwargs)
+    def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None):
+        add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width)
+    add('rect', x=0, y=0, w=width, h=height, radius=8,
+        fill='#1b3350' if selected else '#17283e', stroke='#78bdff' if selected else '#2e445f',
+        width=2 if selected else 1, dash=aggregate)
+    path = node.get('path', node['id'])
+    title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
+    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-70)
+    text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-20)
+    if aggregate:
+        text(width-11, 16, 'RTL', size=9, fill='#9eb5d4', anchor='e')
+        counts = node.get('kind_counts', {})
+        x = 12
+        for device in ('mux', 'gate', 'occ'):
+            n = counts.get(device, 0)
+            if n:
+                text(x, 58, '{} ×{}'.format(DEVICE_TYPES[device]['short'], n), size=9,
+                     fill=DEVICE_TYPES[device]['color'], max_width=75)
+                x += 77
+        if counts.get('unclassified'):
+            text(12, 98, '未分类 ×{}'.format(counts['unclassified']), size=9, fill='#7e95b3')
+        for (px, py) in inputs:
+            line([(px, py), (18, py)], fill='#8eabc8')
+        line([(width-18, output[1]), output], fill='#8eabc8')
+        text(22, 80, '输入', size=9)
+        text(width-22, 80, '输出', size=9, anchor='e')
+    elif kind in DEVICE_TYPES:
+        text(width-11, 16, info['short'], size=9, fill=color, bold=True, anchor='e')
+        cy = output[1]
+        if kind == 'mux':
+            add('polygon', points=[(78, 50), (166, 63), (166, height-31), (78, height-18)],
+                fill=info['fill'], stroke=color, width=1.8)
+            text(120, cy-6, 'MUX', size=15, fill=color, bold=True, anchor='center')
+            text(120, cy+13, '{}:1'.format(len(inputs)), size=10, fill='#a4c9e8', anchor='center')
+            input_end, output_start = 78, 166
+        elif kind == 'gate':
+            points = [(78, cy-29), (114, cy-29)]
+            points += [(114+29*math.cos(a), cy+29*math.sin(a))
+                       for a in [-math.pi/2+i*math.pi/24 for i in range(25)]]
+            points += [(78, cy+29)]
+            add('polygon', points=points, fill=info['fill'], stroke=color, width=1.8)
+            text(108, cy-6, 'GATE', size=12, fill=color, bold=True, anchor='center')
+            line([(92,cy+13),(98,cy+13),(98,cy+5),(105,cy+5),(105,cy+13),(117,cy+13)], stroke_width=1.2)
+            input_end, output_start = 78, 143
+        else:
+            left, right, top, bottom, cut = 66, 178, cy-31, cy+31, 8
+            add('polygon', points=[(left+cut,top),(right-cut,top),(right,top+cut),(right,bottom-cut),
+                                   (right-cut,bottom),(left+cut,bottom),(left,bottom-cut),(left,top+cut)],
+                fill=info['fill'], stroke=color, width=1.8)
+            text(122, cy-8, 'OCC', size=16, fill=color, bold=True, anchor='center')
+            pulse = [(84,cy+16)]
+            for x in (91,112,133):
+                pulse += [(x,cy+16),(x,cy+6),(x+9,cy+6),(x+9,cy+16)]
+            pulse.append((160,cy+16))
+            line(pulse, stroke_width=1.3)
+            input_end, output_start = left, right
+        for pin, (px, py) in zip(node['inputs'], inputs):
+            line([(px, py), (input_end, py)])
+            text(7, py-9, _short(pin,14), size=9, fill='#b5cbe5', max_width=input_end-12)
+        line([(output_start, cy), output])
+        text(width-7, cy-10, _short(node['output'],14), size=9, fill='#b5cbe5', anchor='e', max_width=width-output_start-10)
+    else:
+        text(width-10,16,'待分类',size=9,fill='#8097b6',anchor='e')
+        for pin, (px,py) in zip(node['inputs'],inputs):
+            text(10,py,pin,size=9,max_width=width/2-12)
+        text(width-10,output[1]+14,node['output'],size=9,anchor='e',max_width=width/2-12)
+    for px, py in inputs+[output]:
+        add('circle', x=px, y=py, r=3, fill='#14253a', stroke=color, width=1.3)
+    status_x = width-12
+    for state, fill in [(node.get('root'),'#4ad4ab'),(node.get('terminal'),'#eeb75e'),(node.get('has_unresolved_output'),'#f0827d')]:
+        if state:
+            add('circle',x=status_x,y=height-9,r=2.6,fill=fill,stroke='',width=0)
+            status_x -= 11
+    return parts
+
+
+def display_text(part):
+    text = part['text']
+    maximum = part.get('max_width')
+    if not maximum:
+        return text
+    def measure(value):
+        return sum(part['size'] * (1 if unicodedata.east_asian_width(c) in ('W','F') else .6) for c in value)
+    if measure(text) <= maximum:
+        return text
+    while text and measure(text+'…') > maximum:
+        text = text[:-1]
+    return text+'…'
+
+
+def symbol_svg(parts):
+    lines = []
+    for p in parts:
+        op = p['op']
+        if op == 'text':
+            anchor = {'w':'start','e':'end','center':'middle'}[p['anchor']]
+            lines.append('<text x="{}" y="{}" fill={} font-size="{}" font-weight="{}" text-anchor="{}" dominant-baseline="middle" font-family="Microsoft YaHei,WenQuanYi Micro Hei,sans-serif">{}</text>'.format(
+                p['x'],p['y'],quoteattr(p['fill']),p['size'],'bold' if p['bold'] else 'normal',anchor,escape(display_text(p))))
+        elif op == 'rect':
+            lines.append('<rect x="{}" y="{}" width="{}" height="{}" rx="{}" fill={} stroke={} stroke-width="{}"{}/>'.format(
+                p['x'],p['y'],p['w'],p['h'],p['radius'],quoteattr(p['fill']),quoteattr(p['stroke']),p['width'],
+                ' stroke-dasharray="5 3"' if p.get('dash') else ''))
+        elif op == 'circle':
+            lines.append('<circle cx="{}" cy="{}" r="{}" fill={} stroke={} stroke-width="{}"/>'.format(
+                p['x'],p['y'],p['r'],quoteattr(p['fill']),quoteattr(p['stroke'] or 'none'),p['width']))
+        elif op == 'polygon':
+            points = ' '.join('{},{}'.format(x,y) for x,y in p['points'])
+            lines.append('<polygon points="{}" fill={} stroke={} stroke-width="{}"/>'.format(points,quoteattr(p['fill']),quoteattr(p['stroke']),p['width']))
+        elif op == 'polyline':
+            points = ' '.join('{},{}'.format(x,y) for x,y in p['points'])
+            lines.append('<polyline class="device-mark" points="{}" fill="none" stroke={} stroke-width="{}"/>'.format(points,quoteattr(p['fill']),p['width']))
+    return '\n'.join(lines)

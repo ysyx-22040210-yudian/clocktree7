@@ -10,8 +10,9 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 GUI 操作手册</h1>
-<p><strong>文档版本：1.0 · 更新日期：2026-11-02 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
-<p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供七层范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。</p>
+<p><strong>文档版本：1.1 · 更新日期：2026-11-02 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
+<p><a class="figure" href="images/default-two-layers.png" target="_blank"><img alt="启动时的两级空白配置" src="images/default-two-layers.png" /></a></p>
 <p><a class="figure" href="images/gui-overview.png" target="_blank"><img alt="ClockTree7 主界面" src="images/gui-overview.png" /></a></p>
 <h2 id="_1">目录</h2>
 <ol>
@@ -20,8 +21,8 @@
 <li><a href="#quickstart">第一次使用：浏览示例与重新提取</a></li>
 <li><a href="#workspace">界面区域与全部主要按钮</a></li>
 <li><a href="#design">配置设计入口和运行环境</a></li>
-<li><a href="#layers">配置 L1–L7 范围与模块</a></li>
-<li><a href="#devices">选择器、门控、OCC 的填写与预览</a></li>
+<li><a href="#layers">配置自定义层级、范围与模块</a></li>
+<li><a href="#devices">选择器、门控、OCC、DIV 的填写与预览</a></li>
 <li><a href="#extract">运行、观察进度、取消任务</a></li>
 <li><a href="#diagram">阅读完整时钟树架构图</a></li>
 <li><a href="#large-design">大规模设计：层次概览、展开与定位</a></li>
@@ -29,7 +30,7 @@
 <li><a href="#history">历史记录与实例导航</a></li>
 <li><a href="#export">保存配置与导出 JSON / SVG</a></li>
 <li><a href="#diagnostics">理解统计、状态和诊断</a></li>
-<li><a href="#config-example">完整七层配置示例</a></li>
+<li><a href="#config-example">完整两级配置示例</a></li>
 <li><a href="#scenarios">常见操作场景</a></li>
 <li><a href="#troubleshooting">故障排查</a></li>
 <li><a href="#shortcuts">鼠标操作、快捷键与交付核对</a></li>
@@ -52,8 +53,8 @@
 <td><code>ct_mux</code> 是定义名；<code>fixture_top.l2.n0_mux</code> 是该定义的一次例化。规则填定义名，图中每个真实节点对应实例。</td>
 </tr>
 <tr>
-<td>传播层 L1–L7 / RTL 层次深度</td>
-<td>L1–L7 是用户给定的传播分组；层次范围是 <code>fixture_top.l2</code> 这样的真实路径。工具不按路径中的点数推断传播层。</td>
+<td>传播层 L1–LN / RTL 层次深度</td>
+<td>L1–LN 是用户给定的传播分组；N 为当前配置的层数，默认 2。层次范围是 <code>fixture_top.l2</code> 这样的真实路径。工具不按路径中的点数推断传播层。</td>
 </tr>
 <tr>
 <td>根结构 / 外部时钟源</td>
@@ -65,7 +66,7 @@
 </tr>
 </tbody>
 </table>
-<p>传播规则为：初始时钟进入 L1，后续连接满足“目标层号 ≥ 来源层号”。允许同层连接，允许 L2 直接到 L5，允许分支在 L1–L7 任意层结束。L7 是最高可配置层号。</p>
+<p>传播规则为：初始时钟进入 L1，后续连接满足“目标层号 ≥ 来源层号”。允许同层连接，允许 L2 直接到 L5，允许分支在任意已配置层结束。层数没有固定上限；产品名称 ClockTree7 不再表示只能配置七级。</p>
 <p>选择器会使多个来源共享同一下游节点，所以结果可能是带汇合的有向网络。工具按实际例化保存共享节点，不把同一实例复制成多个节点。所有匹配实例均进入结果，孤立或异常实例也会留下并产生相应诊断。</p>
 <p>工具执行静态连接分析；选择器保留各关注输入的可能连接。当前版本不计算选择控制条件下的时钟模式、不仿真门控/OCC 行为、不进行 STA 或毛刺签核。</p>
 <p><a id="startup"></a></p>
@@ -137,11 +138,11 @@ python -m clocktree gui
 <h2 id="3">3. 第一次使用：浏览示例与重新提取</h2>
 <h3 id="31-eda">3.1 三分钟浏览示例，无需 EDA 安装</h3>
 <ol>
-<li>启动 GUI。当前部署优先打开本地三类器件样例；全新仓库在没有本地运行数据时会打开随附记录样例。</li>
-<li>若当前没有显示样例，点击顶栏 <strong>打开结果</strong>，选择仓库中的 <code>examples/device_models/clocktree.json</code>。</li>
+<li>启动 GUI，默认是 L1、L2 两级空白配置。点击顶栏 <strong>查看示例</strong>，打开随附两级四类器件记录样例；新建配置可随时回到两级空白规则。</li>
+<li>若当前没有显示样例，点击顶栏 <strong>打开结果</strong>，选择仓库中的 <code>examples/flexible_layers/clocktree.json</code>。</li>
 <li>顶部应显示下表中的统计值。</li>
-<li>查看 L1–L7 全部列。蓝色梯形为选择器、青绿色 D 形为门控、琥珀色切角块为 OCC。</li>
-<li>点击 L2 的选择器，右侧查看输入 <code>a</code>、<code>b</code> 和输出 <code>o</code>；滚轮向上可放大。</li>
+<li>查看 L1、L2 两列。蓝色梯形为选择器、青绿色 D 形为门控、琥珀色切角块为 OCC、紫色六边形为 DIV。</li>
+<li>点击 L1 的选择器，右侧查看输入 <code>a</code>、<code>b</code> 和输出 <code>o</code>；滚轮向上可放大。</li>
 <li>按 F5 恢复全图。切换“全部时钟网络”下拉框，观察两个网络；再切回全部。</li>
 </ol>
 <table>
@@ -155,23 +156,23 @@ python -m clocktree gui
 <tbody>
 <tr>
 <td>目标实例</td>
-<td style="text-align: right;">16</td>
+<td style="text-align: right;">13</td>
 <td>配置覆盖的全部结构例化</td>
 </tr>
 <tr>
 <td>端口连线</td>
-<td style="text-align: right;">15</td>
+<td style="text-align: right;">11</td>
 <td>真实输出口 → 输入口连接</td>
 </tr>
 <tr>
 <td>根结构</td>
-<td style="text-align: right;">3</td>
+<td style="text-align: right;">2</td>
 <td>没有已选上游结构的实例</td>
 </tr>
 <tr>
 <td>分支末端</td>
-<td style="text-align: right;">7</td>
-<td>L1–L7 每层各有一个末端</td>
+<td style="text-align: right;">4</td>
+<td>L1 有一个、L2 有三个末端</td>
 </tr>
 <tr>
 <td>独立网络</td>
@@ -185,17 +186,17 @@ python -m clocktree gui
 </tr>
 </tbody>
 </table>
-<p>器件数量为选择器 2、门控 4、OCC 10。查看记录结果只是在显示之前的提取数据；它不会重新 elaboration，也不验证当前磁盘上的 RTL 是否已经变化。</p>
+<p>器件数量为选择器 2、门控 5、OCC 3、DIV 3。查看记录结果只是在显示之前的提取数据；它不会重新 elaboration，也不验证当前磁盘上的 RTL 是否已经变化。旧七级三类器件示例保留在 <code>examples/device_models/clocktree.json</code>，可通过 <strong>打开结果</strong> 浏览其 16 个实例、15 条连接，验证旧配置兼容。</p>
 <h3 id="32-gui">3.2 通过 GUI 重新提取同一示例</h3>
 <p>在实际执行 Verdi 的机器上，先于仓库根目录生成本机绝对路径配置：</p>
-<pre><code class="language-bash">python3 scripts/make_fixture.py validation/fixtures/device-models --device-models
+<pre><code class="language-bash">python3 scripts/make_flexible_fixture.py validation/fixtures/flexible --layers 2
 </code></pre>
 <p>然后全部在 GUI 中操作：</p>
 <ol>
-<li>点击 <strong>导入配置</strong>，打开生成的 <code>validation/fixtures/device-models/config.json</code>。</li>
-<li>核对“设计顶层”为 <code>fixture_top</code>，“设计入口”为 <strong>RTL 文件列表</strong>。</li>
-<li>确认路径指向本机的 <code>validation/fixtures/device-models/rtl.f</code>。</li>
-<li>点击左侧 <strong>运行环境</strong>，填写本机 Verdi 安装目录，点击 <strong>完成</strong>。</li>
+<li>点击 <strong>导入配置</strong>，打开生成的 <code>validation/fixtures/flexible/config.json</code>。</li>
+<li>核对“设计顶层”为 <code>flex_top</code>，“设计入口”为 <strong>RTL 文件列表</strong>。</li>
+<li>确认路径指向本机的 <code>validation/fixtures/flexible/rtl.f</code>。</li>
+<li>Verdi 安装目录自动检测。可点击左侧 <strong>运行环境</strong> 查看当前命令和安装目录，再点击 <strong>完成</strong>，无需填写。</li>
 <li>点击 <strong>开始提取全部时钟树</strong>，等待任务结束。</li>
 <li>确认状态为 <strong>全量连接已解析</strong>，统计与上表一致。</li>
 <li>在 <strong>运行记录</strong> 中看到新增 <code>tk_日期_时间_编号</code> 记录，说明本次已生成独立的结果目录。</li>
@@ -214,8 +215,8 @@ python -m clocktree gui
 <tbody>
 <tr>
 <td>顶部深色栏</td>
-<td>导入配置、保存配置、打开结果、导出…</td>
-<td>打开和交付文件</td>
+<td>新建配置、查看示例、导入配置、保存配置、打开结果、导出…</td>
+<td>新建两级规则、打开四类器件示例和交付文件</td>
 </tr>
 <tr>
 <td>WORKSPACE 栏</td>
@@ -224,7 +225,7 @@ python -m clocktree gui
 </tr>
 <tr>
 <td>左侧“提取配置”</td>
-<td>设计入口、运行环境、L1–L7、规则表、任务按钮</td>
+<td>设计入口、运行环境、动态层按钮、添加/删除层级、规则表、任务按钮</td>
 <td>填写与执行提取</td>
 </tr>
 <tr>
@@ -249,7 +250,7 @@ python -m clocktree gui
 </tr>
 <tr>
 <td>中间深色画布</td>
-<td>七层器件与连线、右下全图导航</td>
+<td>当前配置全部层级的器件与连线、右下全图导航</td>
 <td>阅读时钟树架构</td>
 </tr>
 <tr>
@@ -280,7 +281,7 @@ python -m clocktree gui
 <li>在“设计入口”下拉框选择 <strong>已有 elab / KDB</strong>。</li>
 <li>填写已成功生成的 <code>kdb.elab++</code> 目录，或点右侧 <strong>…</strong> 选择目录。</li>
 <li>核对数据库与当前 RTL、宏定义、参数和文件集一致。</li>
-<li>再填写七层规则并开始提取。</li>
+<li>再填写各层规则并开始提取。</li>
 </ol>
 <p>典型路径形态为 <code>/work/project/build/simv.daidir/kdb.elab++</code>。大型 SoC 建议使用已经成功编译的数据库。</p>
 <h3 id="53-rtl">5.3 入口二：RTL 文件列表</h3>
@@ -292,14 +293,14 @@ python -m clocktree gui
 </ol>
 <p>filelist 导入存在编译错误时，结果不能视为完整。优先修复文件集，或改用已验证的 KDB。</p>
 <h3 id="54">5.4 运行环境</h3>
-<p>点击左侧 <strong>运行环境</strong>，输入 Verdi 安装目录，例如当前 VM 的：</p>
-<pre><code class="language-text">/home/synopsys/verdi/Verdi_O-2018.09-SP2
-</code></pre>
-<p>填写安装根目录即可，程序查找其 <code>bin/verdi</code>。许可证环境由启动进程继承；<code>scripts/eda_env.sh</code> 提供当前部署的环境入口。安装路径与许可证都应以本机可用环境为准。</p>
+<p>工具从启动环境的 <code>PATH</code> 查找 <code>verdi</code> 命令，并解析命令路径及符号链接来找到对应的 NPI 安装目录。无需每次选择或填写 Verdi 路径。点击左侧 <strong>运行环境</strong> 可查看命令、安装根目录和 NPI 检测结果，点击 <strong>重新检测</strong> 再次检查。</p>
+<p>当前 <code>verdi</code> 命令优先于旧配置中的 <code>design.verdi_home</code>，避免导入另一台机器的旧路径后无法运行。没有可用命令时，保留对有效 <code>VERDI_HOME</code> 或旧配置安装路径的兼容回退。若检测不到命令，请在已经能执行 <code>verdi</code> 的环境中启动 GUI。许可证环境由启动进程继承；当前 VM 的 <code>launch.sh</code> 会加载 <code>scripts/eda_env.sh</code>。</p>
+<p><a class="figure" href="images/automatic-environment.png" target="_blank"><img alt="自动定位 Verdi 的运行环境窗口" src="images/automatic-environment.png" /></a></p>
 <p><a id="layers"></a></p>
-<h2 id="6-l1l7">6. 配置 L1–L7 范围与模块</h2>
+<h2 id="6">6. 配置自定义层级、范围与模块</h2>
 <h3 id="61">6.1 填写层次范围</h3>
-<p>点击 <strong>L1</strong> 到 <strong>L7</strong> 按钮切换。每层填写该层目标模块所在的 RTL 实例范围，例如：</p>
+<p>默认显示 <strong>L1</strong> 和 <strong>L2</strong>。点击 <strong>+ 添加层级</strong>，会在末尾增加一级并切换到该层，例如 L3、L4，直至所需层数；按钮自动分行，配置区可滚动。点击 <strong>删除当前层</strong> 会移除选中的层，后续层顺序重新编号；有模块规则的层会先提示确认，至少保留一级。点击顶栏 <strong>新建配置</strong> 回到两级空白规则。导入原有七级或其他层数配置时保留其全部层数。</p>
+<p>点击对应的 <strong>L1</strong>、<strong>L2</strong> 等按钮切换。每层填写该层目标模块所在的 RTL 实例范围，例如：</p>
 <pre><code class="language-text">L1  fixture_top.l1
 L2  fixture_top.l2
 L3  fixture_top.l3
@@ -307,12 +308,12 @@ L3  fixture_top.l3
 L7  fixture_top.l7
 </code></pre>
 <p>范围包含该路径及其子层次。<code>top.u_clk</code> 不会因为字符串前缀相似而匹配 <code>top.u_clk_extra</code>。实际所属传播层由配置决定。</p>
-<p>某层没有关注结构时，可以保留该层且不给它添加规则。配置文件仍需包含顺序完整的七层条目。</p>
+<p>某层没有关注结构时，可以保留该层且不给它添加规则。JSON 中 <code>layers</code> 的 <code>index</code> 必须从 1 连续递增到 N，条目数量就是层数；不要求七层。层级和模块规则的结构性修改需要重新提取，当前已显示的旧图不会自动产生新连接。</p>
 <h3 id="62">6.2 添加模块规则</h3>
 <ol>
 <li>选择目标层。</li>
 <li>点击 <strong>+ 添加</strong>。</li>
-<li>选择 <strong>选择器 / 门控 / OCC</strong>。</li>
+<li>选择 <strong>选择器 / 门控 / OCC / DIV 分频器</strong>。</li>
 <li>填写 module <strong>定义名</strong>，例如 <code>ct_gate</code>，不要填成 <code>fixture_top.l2.n0_gate</code> 这样的实例路径。</li>
 <li>填关注输入口；多个输入以逗号分隔。</li>
 <li>填唯一关注输出口。</li>
@@ -329,7 +330,7 @@ L7  fixture_top.l7
 </ul>
 <p>同一实际实例应归属唯一传播层。避免用相互重叠的范围把同一实例选入两个层；也应按一致粒度选取结构，避免同时把封装及其内部同一功能结构重复建模。</p>
 <p><a id="devices"></a></p>
-<h2 id="7-occ">7. 选择器、门控、OCC 的填写与预览</h2>
+<h2 id="7-occdiv">7. 选择器、门控、OCC、DIV 的填写与预览</h2>
 <p><a class="figure" href="images/module-rule-dialog.png" target="_blank"><img alt="模块规则弹窗和实时预览" src="images/module-rule-dialog.png" /></a></p>
 <table>
 <thead>
@@ -363,9 +364,17 @@ L7  fixture_top.l7
 <td><code>occ</code></td>
 <td>琥珀色切角控制块及脉冲图标</td>
 </tr>
+<tr>
+<td>DIV 分频器</td>
+<td>恰好一个关注输入</td>
+<td>唯一关注输出</td>
+<td><code>div</code></td>
+<td>紫色六边形，标注 DIV / ÷N</td>
+</tr>
 </tbody>
 </table>
-<p>输入口填写实际 RTL 端口名，保持大小写正确。选择器如 <code>clk0_i, clk1_i</code>，门控/OCC 如 <code>clk_i</code>。规则弹窗支持中文逗号和英文逗号。</p>
+<p>输入口填写实际 RTL 端口名，保持大小写正确。选择器如 <code>clk0_i, clk1_i</code>，门控/OCC/DIV 如 <code>clk_i</code>。规则弹窗支持中文逗号和英文逗号。DIV 的 ÷N 是器件类型标记，当前只恢复连接，不推断真实分频比、输出频率或时钟模式。</p>
+<p><a class="figure" href="images/div-rule-dialog.png" target="_blank"><img alt="DIV 分频器规则与实时预览" src="images/div-rule-dialog.png" /></a></p>
 <p>若真实模块还有 enable、select、scan、reset 等端口，只填写此次关注的时钟输入与输出。图形中的内部脉冲图标用于区分器件类别；实际连线来自 elab 中配置的端口。</p>
 <p>向量端口当前需要明确到单 bit，例如 <code>clk_i[0]</code>。输入整个多 bit 向量会得到位宽诊断。多个向量 bit 可按 <code>clk_i[0], clk_i[1]</code> 配置为选择器关注输入。</p>
 <h3 id="71">7.1 保存校验</h3>
@@ -374,12 +383,12 @@ L7  fixture_top.l7
 <li>没有选择器件类型。</li>
 <li>module、输入口或输出口为空。</li>
 <li>输入口重复，或同一端口同时作为输入和输出。</li>
-<li>把多个关注输入填写为门控或 OCC。</li>
+<li>把多个关注输入填写为门控、OCC 或 DIV。</li>
 </ul>
 <p><a class="figure" href="images/invalid-gate-inputs.png" target="_blank"><img alt="门控多输入的保存校验" src="images/invalid-gate-inputs.png" /></a></p>
 <h3 id="72">7.2 查看模型库</h3>
-<p>点击“七层传播规则”右侧的 <strong>器件模型</strong>，并排查看三种模型。</p>
-<p><a class="figure" href="images/device-library.png" target="_blank"><img alt="三类器件模型库" src="images/device-library.png" /></a></p>
+<p>点击“传播规则”右侧的 <strong>器件模型</strong>，以两行两列查看四种模型。</p>
+<p><a class="figure" href="images/device-library.png" target="_blank"><img alt="四类器件模型库" src="images/device-library.png" /></a></p>
 <h3 id="73">7.3 修改类型与历史未分类结果</h3>
 <p>旧规则未提供 <code>kind</code> 时，列表和属性显示“未分类”，画布使用中性模型。编辑该规则并明确选择类型即可补充。</p>
 <p>只改变器件类型、且 module、层次范围和端口均未改变时，工具可以复用现有连接证据，立即更新对应实例的模型。修改后的类型可随配置和全量 JSON 导出；原运行目录不会自动被覆盖。</p>
@@ -388,6 +397,8 @@ L7  fixture_top.l7
 <h2 id="8">8. 运行、观察进度、取消任务</h2>
 <h3 id="81">8.1 启动真实提取</h3>
 <p>完成规则后，先点 <strong>保存配置</strong> 留下可复用规则，再点 <strong>开始提取全部时钟树</strong>。程序会检查配置和本机 Verdi，创建新的 <code>tk_...</code> 运行目录，然后启动独立提取进程。</p>
+<p><strong>提取没有运行超时，默认持续到 Verdi 正常结束、失败或用户主动取消。</strong> 旧 JSON 中的 <code>timeout_seconds</code> 不再生效，GUI 再次保存配置时会移除此旧字段。默认也不设 NPI 追踪步数上限；内部已访问对象集合用于避免重复追踪。</p>
+<p>同一 GUI 可以连续点击运行，不限制次数，历史任务各自保留。CLI 的 <code>--out</code> 目录也可以反复使用；省略 <code>--out</code> 就使用当前目录。再次运行时，上次的规则、原始证据、结果和日志自动保存在 <code>.clocktree-history/时间_编号/</code>。本次 Verdi 使用 <code>.clocktree-runs/时间_编号/</code> 作为独立编译目录，避免旧编译日志污染新结果；目录根下始终为最近一次尝试的输出。失败尝试不会沿用旧的绿色结果。</p>
 <p>任务使用启动时的配置快照。建议在任务期间查看已有架构图和日志，等任务结束后再继续编辑规则。</p>
 <h3 id="82">8.2 查看日志与进度</h3>
 <p>任务日志会自动展开。也可点画布下方 <strong>任务日志与诊断</strong> 收起或展开。</p>
@@ -401,7 +412,7 @@ L7  fixture_top.l7
 <h2 id="9">9. 阅读完整时钟树架构图</h2>
 <h3 id="91">9.1 层、节点与连线</h3>
 <ul>
-<li>L1–L7 是传播分栏，空层保留为空。</li>
+<li>L1–LN 是传播分栏，N 为当前配置的层数，空层保留为空。</li>
 <li>每个真实器件节点对应一个实际例化，显示实例短名、module 以及关注端口。</li>
 <li>线条箭头方向为 <strong>输出口 → 输入口</strong>。</li>
 <li>一个输出可分到多个下游输入，选择器可以有多条上游输入。</li>
@@ -523,7 +534,7 @@ L7  fixture_top.l7
 <tr>
 <td>保存配置</td>
 <td>顶栏“保存配置”或导出菜单</td>
-<td>设计入口、七层范围、module、类型、关注端口</td>
+<td>设计入口、自定义层级范围、module、类型、关注端口</td>
 <td>下次提取、与同事复用规则</td>
 </tr>
 <tr>
@@ -542,7 +553,7 @@ L7  fixture_top.l7
 </table>
 <h3 id="131">13.1 配置文件</h3>
 <p>保存配置会先执行有效性校验。空白草稿尚未填写顶层、入口或任何模块规则时，无法保存为可执行配置；先补齐这些字段。</p>
-<p>配置 JSON 包含机器路径。在其他机器复用时，重新核对 KDB/filelist 和 Verdi 路径。</p>
+<p>配置 JSON 包含机器路径。在其他机器复用时，重新核对 KDB/filelist；Verdi 由该机器上的命令自动定位。</p>
 <h3 id="132-json">13.2 全量 JSON</h3>
 <p>即使正在看单个网络、局部层次或只定位了一个节点，全量 JSON 仍导出整个已加载结果。该文件可通过 <strong>打开结果</strong> 重新载入。</p>
 <p>导出后建议核对 <code>summary.instances</code>、<code>summary.edges</code>、<code>summary.connectivity_complete</code>、<code>summary.topology_valid</code>。器件类型同时保留在规则及实例元数据中；界面补充类型的记录保存在 presentation 元数据内。</p>
@@ -674,11 +685,11 @@ L7  fixture_top.l7
 <tr>
 <td><code>layer_conflict</code></td>
 <td>同一实例匹配到不同层</td>
-<td>七层范围是否重叠</td>
+<td>各层范围是否重叠</td>
 </tr>
 <tr>
 <td><code>root_outside_L1</code></td>
-<td>没有已选上游的结构位于 L2–L7</td>
+<td>没有已选上游的结构位于 L2–LN</td>
 <td>是否漏配上游、是否分层错误</td>
 </tr>
 <tr>
@@ -709,40 +720,37 @@ L7  fixture_top.l7
 <tr>
 <td><code>elaboration_error</code> / <code>fatal</code></td>
 <td>设计导入或提取中止</td>
-<td><code>verdi.log</code> 和 <code>verdiLog/compiler.log</code></td>
+<td><code>verdi.log</code> 和 <code>.clocktree-runs/本次编号/verdiLog/compiler.log</code></td>
 </tr>
 </tbody>
 </table>
 <p><a id="config-example"></a></p>
-<h2 id="15">15. 完整七层配置示例</h2>
+<h2 id="15">15. 完整两级配置示例</h2>
 <p>以下示例用于理解 JSON 字段。替换设计路径后才可用于自己的项目；同名模块和端口必须确实存在于导入的 elab 中。</p>
 <pre><code class="language-json">{
   &quot;design&quot;: {
     &quot;top&quot;: &quot;soc_top&quot;,
-    &quot;elab&quot;: &quot;/work/soc/build/simv.daidir/kdb.elab++&quot;,
-    &quot;verdi_home&quot;: &quot;/home/synopsys/verdi/Verdi_O-2018.09-SP2&quot;
+    &quot;elab&quot;: &quot;/work/soc/build/simv.daidir/kdb.elab++&quot;
   },
   &quot;layers&quot;: [
     {&quot;index&quot;: 1, &quot;hierarchy&quot;: &quot;soc_top.u_clock_source&quot;, &quot;modules&quot;: [
       {&quot;module&quot;: &quot;clock_mux&quot;, &quot;kind&quot;: &quot;mux&quot;, &quot;clock_inputs&quot;: [&quot;clk0_i&quot;, &quot;clk1_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
     ]},
     {&quot;index&quot;: 2, &quot;hierarchy&quot;: &quot;soc_top.u_clock_control&quot;, &quot;modules&quot;: [
-      {&quot;module&quot;: &quot;clock_gate&quot;, &quot;kind&quot;: &quot;gate&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
-    ]},
-    {&quot;index&quot;: 3, &quot;hierarchy&quot;: &quot;soc_top.u_test_clock&quot;, &quot;modules&quot;: [
-      {&quot;module&quot;: &quot;clock_occ&quot;, &quot;kind&quot;: &quot;occ&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
-    ]},
-    {&quot;index&quot;: 4, &quot;hierarchy&quot;: &quot;soc_top.u_domain4&quot;, &quot;modules&quot;: []},
-    {&quot;index&quot;: 5, &quot;hierarchy&quot;: &quot;soc_top.u_domain5&quot;, &quot;modules&quot;: [
-      {&quot;module&quot;: &quot;clock_gate&quot;, &quot;kind&quot;: &quot;gate&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
-    ]},
-    {&quot;index&quot;: 6, &quot;hierarchy&quot;: &quot;soc_top.u_domain6&quot;, &quot;modules&quot;: []},
-    {&quot;index&quot;: 7, &quot;hierarchy&quot;: &quot;soc_top.u_domain7&quot;, &quot;modules&quot;: []}
+      {&quot;module&quot;: &quot;clock_gate&quot;, &quot;kind&quot;: &quot;gate&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;},
+      {&quot;module&quot;: &quot;clock_occ&quot;, &quot;kind&quot;: &quot;occ&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;},
+      {&quot;module&quot;: &quot;clock_div&quot;, &quot;kind&quot;: &quot;div&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
+    ]}
   ]
 }
 </code></pre>
 <p><code>design.filelist</code> 可以代替 <code>design.elab</code>；界面选择哪一种入口，就保存对应字段。列表 <code>clock_inputs</code> 内每个元素是一个关注端口；<code>clock_output</code> 是单个字符串。</p>
-<p>示例没有提供任何实例连线。L2→L5 是否存在、哪条分支在 L3 或 L5 结束，都由实际 elab 决定。</p>
+<p>示例没有提供任何实例连线。同层串接、扇出、汇合和末端由实际 elab 决定。需要更多级时，继续添加 <code>index: 3</code>、<code>index: 4</code> 等条目，或者在 GUI 点击 <strong>添加层级</strong>。原有七级配置可直接导入。</p>
+<p>生成两级四类器件验证配置：</p>
+<pre><code class="language-bash">python3 scripts/make_flexible_fixture.py validation/fixtures/flexible --layers 2
+</code></pre>
+<p>将 <code>--layers 2</code> 改为 <code>--layers 10</code> 可生成十级示例。两种配置均已在 VM 完成实际 NPI 提取和全集 golden 核对。</p>
+<p><a class="figure" href="images/div-locate.png" target="_blank"><img alt="超过七级时的 DIV 定位及真实上下游" src="images/div-locate.png" /></a></p>
 <p><a id="scenarios"></a></p>
 <h2 id="16">16. 常见操作场景</h2>
 <h3 id="a">场景 A：检查选择器是否汇入了两个正确来源</h3>
@@ -751,7 +759,7 @@ L7  fixture_top.l7
 <p>定位门控 → 查看相关连接总数 → 点 <strong>下游全路径</strong> → 适应全图 → 核查各层分支和任意层末端。存在共享下游时，按同一真实节点核对。</p>
 <h3 id="c-l2">场景 C：检查分支为什么在 L2 结束</h3>
 <p>定位末端 → 确认它没有已选下游且没有未解析输出标记 → 查看诊断 → 从结果 JSON 的边界或原始追踪确认后续是范围边界/普通负载，还是需要补充配置的结构。合法提前结束无需添加虚构中间层。</p>
-<h3 id="d">场景 D：给旧结果补上三类外观</h3>
+<h3 id="d">场景 D：给旧结果补上四类外观</h3>
 <p>打开旧结果 → 选对应层 → 编辑规则 → 选择类型且保持原 module/端口/范围 → 保存规则 → 检查实例模型立即更新 → 导出新配置及全量 JSON。若改动了端口或层次，则重新提取。</p>
 <h3 id="e-eda">场景 E：把结果交给没有 EDA 工具的同事</h3>
 <p>导出全量 JSON、全网概览 SVG 和重点局部 SVG → 同事安装 Python/Tkinter 后启动 GUI → 通过 <strong>打开结果</strong> 载入 JSON，即可浏览、定位和看证据。对方无需运行 Verdi 即可读取已有结果；重新提取需要 EDA 环境和对应数据库。</p>
@@ -779,7 +787,7 @@ L7  fixture_top.l7
 </tr>
 <tr>
 <td>提示未找到 Verdi</td>
-<td>在“运行环境”中填写安装根目录，核对 <code>bin/verdi</code> 和运行机器。</td>
+<td>在已能运行 <code>verdi</code> 的环境中启动工具；检查 PATH，在“运行环境”查看自动检测结果。</td>
 </tr>
 <tr>
 <td>Verdi 许可不可用</td>
@@ -807,7 +815,7 @@ L7  fixture_top.l7
 </tr>
 <tr>
 <td>点保存配置失败</td>
-<td>配置需要合法顶层、入口、至少一条规则和七层条目；按提示补齐。</td>
+<td>配置需要合法顶层、入口、至少一条规则、至少一级以及从 1 连续编号的层条目；按提示补齐。</td>
 </tr>
 <tr>
 <td>图很小或很长</td>
@@ -908,8 +916,8 @@ L7  fixture_top.l7
 <h3 id="182">18.2 正式交付前核对</h3>
 <ol>
 <li>当前 WORKSPACE 确实是本次设计和记录。</li>
-<li>KDB/RTL、顶层、七层范围与规则快照一致。</li>
-<li>三类类型和关注端口填写正确；没有重复选入同一实际实例。</li>
+<li>KDB/RTL、顶层、各层范围与规则快照一致。</li>
+<li>四类类型和关注端口填写正确；没有重复选入同一实际实例。</li>
 <li>当前显示为全量范围，或清楚标明局部视图范围。</li>
 <li>检查 <code>connectivity_complete</code>、<code>topology_valid</code> 和诊断，逐项解释缺口。</li>
 <li>核对全部根、网络、扇出、汇合及每层实际末端。</li>
@@ -929,7 +937,7 @@ L7  fixture_top.l7
 ├─ tests/                        自动检查
 └─ validation/                   本机生成的提取和验证数据
 </code></pre>
-<p>GUI 默认把新任务放到 <code>validation/runs</code>；完整任务目录包括 <code>config.json</code>、<code>rules.tcl</code>、<code>raw.jsonl</code>、<code>clocktree.json</code>、<code>summary.json</code>、<code>verdi.log</code>、<code>cli.log</code>、<code>gui-job.json</code> 及 Verdi 日志目录。失败或取消任务可能只有其中一部分。</p>
+<p>GUI 默认把新任务放到 <code>validation/runs</code>；完整任务目录包括 <code>config.json</code>、<code>rules.tcl</code>、<code>raw.jsonl</code>、<code>clocktree.json</code>、<code>summary.json</code>、<code>verdi.log</code>、<code>cli.log</code>、<code>gui-job.json</code>。Verdi 编译日志保留在 <code>.clocktree-runs/本次编号/verdiLog/</code>；路径也记录在结果的 <code>metadata.working_directory</code>。重用输出目录时，旧证据位于 <code>.clocktree-history/</code>。失败或取消任务可能只有其中一部分。</p>
 <p>源码仓库包含工具、手册、截图和小型可浏览示例。本地大型 SoC 源码、编译/elab 库、第三方工具、许可证及临时运行数据不属于源码包；当前共享目录的这些文件仍在原处保留。</p>
-<p>已验证七层全网样例、generate 路径、4096 实例压力样例、PULP SoC 和 OpenC910 的配置关注网络；三类模型与真实 Tk 控件验证通过。OpenTitan 通过的是 <code>clkmgr</code> 子系统，整芯片受到当前旧版编译器兼容问题阻挡。精确计数、验证方式及边界见 <a href="VALIDATION.zh-CN.md">验证摘要</a>。</p>
+<p>已验证两级/十级四类器件全集、20 级增删控件、自动定位、同目录重跑与失败恢复，并兼容原有七级数据。此前完成七层全网样例、generate 路径、4096 实例压力样例、PULP SoC 和 OpenC910 的配置关注网络。OpenTitan 通过的是 <code>clkmgr</code> 子系统，整芯片受到当前旧版编译器兼容问题阻挡。精确计数、验证方式及边界见 <a href="VALIDATION.zh-CN.md">验证摘要</a>。</p>
 <p>查看 <a href="../README.md">项目入口与快速启动</a> 或 <a href="../examples/device_models/README.md">随附示例说明</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

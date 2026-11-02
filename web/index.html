@@ -3,17 +3,17 @@
 <body>
 <header><div class="brand"><span class="logo">◈</span><div><strong>ClockTree7</strong><small>RTL 时钟网络重建</small></div></div><span id="state" class="state">等待导入</span><div class="header-actions"><button id="loadConfig">导入配置</button><button id="saveConfig">导出配置</button><button id="loadResult">导入结果</button><button id="exportResult">导出全量 JSON</button></div></header>
 <main>
-<aside class="config"><div class="section-title"><h2>设计与七层规则</h2><span>实例连接由 elab 自动解析</span></div>
-<label>设计顶层<input id="top" placeholder="soc_top"></label><label>Verdi 安装目录<input id="verdi" value="/home/synopsys/verdi/Verdi_O-2018.09-SP2"></label>
+<aside class="config"><div class="section-title"><h2>设计与传播规则</h2><span>默认两级，可自由添加层级</span></div>
+<label>设计顶层<input id="top" placeholder="soc_top"></label><div class="hint">自动根据服务端的 verdi 命令定位安装目录；提取时间不设上限。</div>
 <label>设计入口<select id="designMode"><option value="elab">已有 elab / KDB</option><option value="filelist">RTL 文件列表（建立 elab）</option></select><input id="designPath" placeholder="/path/simv.daidir/kdb.elab++"></label>
-<div class="hint">每层填 RTL 范围、module 名和关注端口。同层串接、跳层及任意层结束均由真实连接确定。</div><div id="layers"></div>
+<div class="hint">每层填 RTL 范围、module 名和关注端口。同层串接、跳层及任意层结束均由真实连接确定。</div><div id="layers"></div><button id="addLayer">＋ 添加层级</button><button id="removeLayer">删除最后一级</button>
 <button id="run" class="primary">解析 elab · 重建全部时钟树</button><details><summary>配置 JSON</summary><textarea id="configJson" rows="12"></textarea><button id="applyJson">应用 JSON</button></details>
 </aside>
 <section class="workspace"><div class="stats" id="stats"><div><b>—</b><span>实例</span></div><div><b>—</b><span>端口连接</span></div><div><b>—</b><span>根节点</span></div><div><b>—</b><span>末端</span></div><div><b>—</b><span>连通分量</span></div><div><b>—</b><span>未解析</span></div></div>
 <div class="toolbar"><select id="runs"><option value="">运行记录</option></select><select id="component"><option value="all">全部时钟网络</option></select><select id="viewMode"><option value="instances">实例明细</option><option value="hierarchy">RTL 层次概览</option></select><input id="search" placeholder="搜索完整实例路径 / module"><button id="locate">定位</button><button id="fit">适应视图</button><button id="zoomIn">＋</button><button id="zoomOut">−</button><button id="exportSvg">导出当前 SVG</button></div>
 <div class="scope-bar" id="scopeBar" hidden><button id="allScope">返回全网</button><span id="scopeName"></span></div>
 <div class="legend"><span class="dot root"></span>根节点 <span class="dot terminal"></span>任意层末端 <span class="dot unresolved"></span>未解析 <span class="line"></span>输出 → 输入 <span id="viewCount"></span></div>
-<div id="canvas"><svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker></defs><g id="scene"></g></svg><div id="empty"><div class="empty-symbol">⌁</div><h1>从 RTL 连接恢复完整时钟网络</h1><p>导入已有结果，或填写七层模块与端口后开始提取。</p><p>多时钟源 · 全部扇出 · MUX 汇合 · 跨层跳接</p></div></div>
+<div id="canvas"><svg id="graph" xmlns="http://www.w3.org/2000/svg"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker></defs><g id="scene"></g></svg><div id="empty"><div class="empty-symbol">⌁</div><h1>从 RTL 连接恢复完整时钟网络</h1><p>默认两级，可添加层级并填写模块与端口后开始提取。</p><p>多时钟源 · 全部扇出 · MUX 汇合 · 跨层跳接</p></div></div>
 <details class="console"><summary id="logTitle">提取日志与诊断</summary><pre id="log">等待任务。原始 NPI 证据会随每次运行保留。</pre></details>
 </section>
 <aside class="inspector"><div class="section-title"><h2>连接依据</h2><span>选择实例或连线查看</span></div><div id="details"><p class="muted">每个节点对应一个实际 RTL 实例。连线关联具体输出口、输入口和 NPI 路径。</p></div></aside>

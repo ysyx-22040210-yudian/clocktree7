@@ -12,6 +12,8 @@ class GraphView:
     def __init__(self, graph):
         self.graph = graph
         self.original = typed_nodes(graph)
+        self.layer_count = max([2 if not graph.get('config', {}).get('layers') else len(graph['config']['layers'])] +
+                               [n['layer'] for n in self.original.values()])
         self.original_edges = {e['id']: e for e in graph['edges']}
         self.incoming, self.outgoing = defaultdict(list), defaultdict(list)
         for edge in graph['edges']:
@@ -19,7 +21,7 @@ class GraphView:
             self.outgoing[edge['source']].append(edge)
         self.nodes, self.edges, self.positions = {}, [], {}
         self.actual_count = 0
-        self.bounds = (0, 0, 2140, 560)
+        self.bounds = (0, 0, self.layer_count * COLUMN_STEP + 36, 560)
 
     def project(self, mode='instances', component=None, scope='', depth=5):
         actual = [n for n in self.original.values() if
@@ -77,6 +79,7 @@ class GraphView:
 
     def _layout(self):
         self.positions = {}
+        self.component_tops = {}
         components = defaultdict(list)
         local_edges = defaultdict(list)
         for n in self.nodes.values():
@@ -86,8 +89,9 @@ class GraphView:
                 local_edges[(self.nodes[e['source']]['component'], self.nodes[e['source']]['layer'])].append(e)
         offset = 92
         for component, members in sorted(components.items()):
+            self.component_tops[component] = offset
             height = 116
-            for layer in range(1, 8):
+            for layer in range(1, self.layer_count + 1):
                 local = {n['id']: n for n in members if n['layer'] == layer}
                 degree = dict.fromkeys(local, 0)
                 successors = defaultdict(list)
@@ -114,7 +118,7 @@ class GraphView:
                     y += height_at_node + 32
                 height = max(height, y - offset)
             offset += height + 56
-        self.bounds = (0, 0, 7 * COLUMN_STEP + 36, max(500, offset))
+        self.bounds = (0, 0, self.layer_count * COLUMN_STEP + 36, max(500, offset))
 
     def edge_points(self, edge):
         sx, sy, sw, sh = self.positions[edge['source']]
@@ -125,6 +129,12 @@ class GraphView:
         target_inputs, _ = port_offsets(target, tw, th)
         start = (sx + source_output[0], sy + source_output[1])
         end = (tx + target_inputs[index][0], ty + target_inputs[index][1])
+        if edge['layer_delta'] > 1:
+            # A skipped layer may contain an unrelated device at the same y.
+            # Route above this component, never through that device's body.
+            top = self.component_tops[source['component']] - 16
+            return [start, (start[0]+22, start[1]), (start[0]+22, top),
+                    (tx-22, top), (tx-22, end[1]), end]
         if edge['layer_delta'] > 0:
             lane = start[0] + max(18, (tx - start[0]) / 2)
             return [start, (lane, start[1]), (lane, end[1]), end]
@@ -161,7 +171,7 @@ class GraphView:
         lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
                  '<rect width="100%" height="100%" fill="#101b2e"/>',
                  '<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6c94c8"/></marker></defs>']
-        for layer in range(1, 8):
+        for layer in range(1, self.layer_count + 1):
             x = 18 + (layer - 1) * COLUMN_STEP
             lines.append('<rect x="{}" y="12" width="278" height="{}" rx="10" fill="#152239"/>'.format(x, height - 24))
             lines.append('<text x="{}" y="46" fill="#a7bfe1" font-size="17" font-family="sans-serif">L{}</text>'.format(x + 13, layer))

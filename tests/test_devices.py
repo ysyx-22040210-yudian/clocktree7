@@ -21,8 +21,8 @@ def node(kind,inputs=None):
             'kind':kind,'inputs':inputs or (['a','b'] if kind=='mux' else ['a']),'output':'q'}
 
 
-def test_three_types_and_gate_occ_input_contract():
-    for kind in ['gate','occ']:
+def test_four_types_and_single_input_contract():
+    for kind in ['gate','occ','div']:
         validate_config(config(kind,['a']))
         with pytest.raises(ValueError,match='exactly one'):validate_config(config(kind,['a','b']))
     validate_config(config('mux',['a','b','c','d']))
@@ -55,7 +55,7 @@ def test_kind_survives_tcl_and_raw_event_graph_without_changing_connectivity(tmp
 
 def test_symbols_have_distinct_geometry_and_real_wire_pin_anchors():
     sides={}
-    for kind in ['mux','gate','occ']:
+    for kind in ['mux','gate','occ','div']:
         n=node(kind)
         h=node_height(n)
         primitives=symbol_parts(n,242,h)
@@ -68,7 +68,7 @@ def test_symbols_have_distinct_geometry_and_real_wire_pin_anchors():
         view=GraphView(graph).project()
         xml=ET.fromstring(view.svg())
         assert xml.find('.//{http://www.w3.org/2000/svg}g').get('data-device-kind')==kind
-    assert sides['mux']==4 and sides['occ']==8 and sides['gate']>20
+    assert sides['mux']==4 and sides['occ']==8 and sides['gate']>20 and sides['div']==6
 
 
 def test_mux_many_inputs_route_to_exact_same_anchors_as_exported_symbol():

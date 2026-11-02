@@ -15,7 +15,7 @@ lines.append(str(project/"smart_run/logical/common/soc.v"))
 config_dir=root/"configs";config_dir.mkdir(exist_ok=True)
 filelist=config_dir/"openc910.f"
 filelist.write_text("\n".join(lines)+"\n",encoding="utf-8")
-config={"design":{"top":"soc","filelist":str(filelist),"verdi_home":"/home/synopsys/verdi/Verdi_O-2018.09-SP2"},
-        "layers":[{"index":i,"hierarchy":"soc","modules":[{"module":"gated_clk_cell","clock_inputs":["clk_in"],"clock_output":"clk_out"}] if i==1 else []} for i in range(1,8)]}
+config={"design":{"top":"soc","filelist":str(filelist)},
+        "layers":[{"index":i,"hierarchy":"soc","modules":[{"module":"gated_clk_cell","clock_inputs":["clk_in"],"clock_output":"clk_out"}] if i==1 else []} for i in range(1,3)]}
 (config_dir/"openc910.json").write_text(json.dumps(config,indent=2),encoding="utf-8")
 print("Prepared",filelist)

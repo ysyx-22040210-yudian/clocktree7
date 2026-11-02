@@ -12,10 +12,10 @@ configs=root / "configs"
 configs.mkdir(parents=True, exist_ok=True)
 
 def config(name, top, filelist, rules):
-    layers=[{"index":i,"hierarchy":top,"modules":rules if i==1 else []} for i in range(1,8)]
-    # Real project clocks are initially audited in L1 to avoid imposing seven
+    layers=[{"index":i,"hierarchy":top,"modules":rules if i==1 else []} for i in range(1,3)]
+    # Real project clocks are initially audited in L1 to avoid imposing
     # artificial pipeline stages on an unmodified open-source SoC.
-    data={"design":{"top":top,"filelist":str(filelist),"verdi_home":"/home/synopsys/verdi/Verdi_O-2018.09-SP2"},"layers":layers}
+    data={"design":{"top":top,"filelist":str(filelist)},"layers":layers}
     (configs/(name+".json")).write_text(json.dumps(data,indent=2)+"\n",encoding="utf-8")
 
 def rule(module, inputs, output):

@@ -1,0 +1,23 @@
+{
+  "instances": 13,
+  "edges": 11,
+  "roots": 2,
+  "terminals": 4,
+  "components": 2,
+  "clock_sources": 3,
+  "layers": {
+    "1": 2,
+    "2": 11
+  },
+  "terminal_layers": {
+    "1": 1,
+    "2": 3
+  },
+  "expected_pin_traces": 28,
+  "observed_pin_traces": 28,
+  "unresolved": 0,
+  "diagnostics": 0,
+  "extraction_finished": true,
+  "connectivity_complete": true,
+  "topology_valid": true
+}

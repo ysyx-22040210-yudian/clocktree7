@@ -10,7 +10,7 @@ def main():
     commands = parser.add_subparsers(dest="command")
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
-    run.add_argument("--out", required=True)
+    run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", default=8767, type=int)

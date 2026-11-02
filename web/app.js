@@ -3,21 +3,22 @@ const ns = 'http://www.w3.org/2000/svg';
 let graph = null, positions = new Map(), selected = null, box = {x: 0, y: 0, w: 2100, h: 700};
 let drag = null, activeJob = null, nodeIndex = new Map(), viewNodes = new Map();
 let viewScope = '', viewDepth = 5;
+let savedDesign = {};
 const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function element(tag, attrs = {}, text) { const node = document.createElementNS(ns, tag); for (const [k,v] of Object.entries(attrs)) node.setAttribute(k,v); if (text !== undefined) node.textContent = text; return node; }
 function download(name, data, type='application/json') { const url=URL.createObjectURL(new Blob([data],{type})); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
 function addRule(container, data={module:'',clock_inputs:[],clock_output:''}) {
   const row=document.createElement('div'); row.className='rule';
-  row.innerHTML='<input class="module" placeholder="module 定义名"><select class="kind"><option value="">选择器件类型</option><option value="mux">选择器</option><option value="gate">门控</option><option value="occ">OCC</option></select><div class="pair"><input class="inputs" placeholder="输入口，逗号分隔"><input class="output" placeholder="唯一输出口"></div><button class="remove">删除规则</button>';
+  row.innerHTML='<input class="module" placeholder="module 定义名"><select class="kind"><option value="">选择器件类型</option><option value="mux">选择器</option><option value="gate">门控</option><option value="occ">OCC</option><option value="div">DIV 分频器</option></select><div class="pair"><input class="inputs" placeholder="输入口，逗号分隔"><input class="output" placeholder="唯一输出口"></div><button class="remove">删除规则</button>';
   row.querySelector('.kind').value=data.kind||'';
   row.querySelector('.module').value=data.module; row.querySelector('.inputs').value=data.clock_inputs.join(', '); row.querySelector('.output').value=data.clock_output;
   row.querySelector('.remove').onclick=()=>row.remove(); container.appendChild(row);
 }
 function setConfig(config) {
-  const design=config.design || {}; $('top').value=design.top || ''; $('verdi').value=design.verdi_home || '/home/synopsys/verdi/Verdi_O-2018.09-SP2';
+  const design=config.design || {}; savedDesign={...design}; $('top').value=design.top || '';
   $('designMode').value=design.elab?'elab':'filelist'; $('designPath').value=design.elab || design.filelist || '';
   $('layers').replaceChildren();
-  for(let i=1;i<=7;i++) {
+  for(let i=1;i<=(config.layers?.length || 2);i++) {
     const data=(config.layers || []).find(l=>l.index===i) || {index:i,hierarchy:'',modules:[]};
     const row=document.createElement('details'); row.className='layer'; row.open=i===1 || data.modules.length>0;
     row.innerHTML=`<summary>L${i} <small>层次 ${i}</small></summary><div class="layer-inner"><input class="hierarchy" placeholder="RTL 层次范围"><div class="rules"></div><button class="add">＋ 添加 module</button></div>`;
@@ -29,7 +30,7 @@ function setConfig(config) {
   $('configJson').value=JSON.stringify(config,null,2);
 }
 function getConfig() {
-  const config={design:{top:$('top').value.trim(),verdi_home:$('verdi').value.trim(),[$('designMode').value]:$('designPath').value.trim()},layers:[]};
+  const config={design:{...(savedDesign.verdi_home?{verdi_home:savedDesign.verdi_home}:{}),top:$('top').value.trim(),[$('designMode').value]:$('designPath').value.trim()},layers:[]};
   [...$('layers').children].forEach((layer,i)=>config.layers.push({index:i+1,hierarchy:layer.querySelector('.hierarchy').value.trim(),modules:[...layer.querySelectorAll('.rule')].map(r=>({module:r.querySelector('.module').value.trim(),clock_inputs:r.querySelector('.inputs').value.split(',').map(s=>s.trim()).filter(Boolean),clock_output:r.querySelector('.output').value.trim(),...(r.querySelector('.kind').value?{kind:r.querySelector('.kind').value}:{})}))}));
   return config;
 }
@@ -37,7 +38,7 @@ function setBox() { $('graph').setAttribute('viewBox',`${box.x} ${box.y} ${box.w
 function fit() {
   if (!positions.size) return;
   const all=[...positions.values()];
-  const width=Math.max(2100,Math.max(...all.map(p=>p.x))+260), height=Math.max(400,Math.max(...all.map(p=>p.y))+140);
+  const width=Math.max((graph?.config?.layers?.length || 2)*300,Math.max(...all.map(p=>p.x))+260), height=Math.max(400,Math.max(...all.map(p=>p.y))+140);
   const ratio=$('canvas').clientWidth/$('canvas').clientHeight;
   box={x:0,y:0,w:Math.max(width,height*ratio),h:Math.max(height,width/ratio)}; setBox();
 }
@@ -88,6 +89,7 @@ function makeView(nodes, edges) {
 function draw() {
   if(!graph) return;
   const scene=$('scene'); scene.replaceChildren(); positions=new Map();
+  const layerCount=Math.max(graph.config?.layers?.length || 2,...graph.nodes.map(n=>n.layer));
   const filter=$('component').value;
   const actual=graph.nodes.filter(n=>(filter==='all' || String(n.component)===filter)&&inScope(n.id));
   const ids=new Set(actual.map(n=>n.id)), actualEdges=graph.edges.filter(e=>ids.has(e.source)&&ids.has(e.target));
@@ -98,7 +100,7 @@ function draw() {
   let offset=84;
   for(const [component,members] of [...groups.entries()].sort((a,b)=>a[0]-b[0])) {
     let maxHeight=108;
-    for(let layer=1;layer<=7;layer++) {
+    for(let layer=1;layer<=layerCount;layer++) {
       const local=members.filter(n=>n.layer===layer), localIds=new Set(local.map(n=>n.id)),localMap=new Map(local.map(n=>[n.id,n]));
       const degree=new Map(local.map(n=>[n.id,0])), successors=new Map(local.map(n=>[n.id,[]]));
       for(const e of edges) if(localIds.has(e.source)&&localIds.has(e.target)) { degree.set(e.target,degree.get(e.target)+1); successors.get(e.source).push(e.target); }
@@ -111,7 +113,7 @@ function draw() {
     }
     offset+=maxHeight+38;
   }
-  for(let layer=1;layer<=7;layer++) {
+  for(let layer=1;layer<=layerCount;layer++) {
     scene.appendChild(element('rect',{x:15+(layer-1)*300,y:14,width:280,height:Math.max(330,offset-12),class:'column-bg'}));
     scene.appendChild(element('text',{x:30+(layer-1)*300,y:40,class:'column-title'},`L${layer}`));
     scene.appendChild(element('text',{x:74+(layer-1)*300,y:39,class:'column-count'},`${actual.filter(n=>n.layer===layer).length} 实例 · ${nodes.filter(n=>n.layer===layer).length} 图元`));
@@ -170,6 +172,8 @@ async function run(){try{const config=getConfig();$('configJson').value=JSON.str
 async function pollJob(){if(!activeJob)return;try{const data=await api('/api/job?id='+encodeURIComponent(activeJob));$('log').textContent=data.log||data.error||'正在启动 Verdi…';if(data.state==='running'){setTimeout(pollJob,1500);return;}const id=activeJob;activeJob=null;$('run').disabled=false;await loadRuns();if(data.state==='finished'){showGraph(await api('/api/result?run='+encodeURIComponent(id)));$('runs').value=id;}else{$('state').textContent='提取失败';$('state').className='state warn';}}catch(error){$('log').textContent=error.message;$('run').disabled=false;activeJob=null;}}
 function chooseFile(callback){$('file').value='';$('file').onchange=async()=>{try{const file=$('file').files[0];if(file)callback(JSON.parse(await file.text()));}catch(error){alert(error.message);}};$('file').click();}
 $('loadConfig').onclick=()=>chooseFile(setConfig);$('loadResult').onclick=()=>chooseFile(showGraph);$('saveConfig').onclick=()=>download('clocktree7-config.json',JSON.stringify(getConfig(),null,2));
+$('addLayer').onclick=()=>{const config=getConfig();config.layers.push({index:config.layers.length+1,hierarchy:'',modules:[]});setConfig(config);};
+$('removeLayer').onclick=()=>{const config=getConfig();if(config.layers.length<=1)return;const last=config.layers.at(-1);if(last.modules.length&&!confirm('删除最后一级及其全部模块规则？'))return;config.layers.pop();setConfig(config);};
 $('exportResult').onclick=()=>{if(graph)download('clocktree7-full.json',JSON.stringify(graph,null,2));};
 $('exportSvg').onclick=()=>{if(graph){const copy=$('graph').cloneNode(true);const style=element('style',{},[...document.styleSheets[0].cssRules].map(r=>r.cssText).join('\n'));copy.prepend(style);download('clocktree7-view.svg',new XMLSerializer().serializeToString(copy),'image/svg+xml');}};
 $('applyJson').onclick=()=>{try{setConfig(JSON.parse($('configJson').value));}catch(error){alert(error.message);}};

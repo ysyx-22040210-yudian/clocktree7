@@ -8,8 +8,9 @@ DEVICE_TYPES = {
     'mux': {'label': '选择器', 'short': 'MUX', 'color': '#66b7ff', 'fill': '#193954'},
     'gate': {'label': '门控', 'short': 'GATE', 'color': '#42d1b2', 'fill': '#163b38'},
     'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
+    'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#bb9bff', 'fill': '#302847'},
 }
-TYPE_LABELS = [DEVICE_TYPES[k]['label'] for k in ('mux', 'gate', 'occ')]
+TYPE_LABELS = [info['label'] for info in DEVICE_TYPES.values()]
 LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
 
 
@@ -60,7 +61,7 @@ def typed_nodes(graph):
 
 def node_height(node):
     if node.get('aggregate'):
-        return 116
+        return 144
     if node.get('kind') in DEVICE_TYPES:
         return max(136, 80 + 24 * len(node['inputs']))
     return max(82, 50 + len(node['inputs']) * 18)
@@ -69,7 +70,7 @@ def node_height(node):
 def port_offsets(node, width, height):
     """The sole source of pin anchors for symbols and all routed edges."""
     if node.get('aggregate'):
-        return [(0, 80)], (width, 80)
+        return [(0, 110)], (width, 110)
     if node.get('kind') in DEVICE_TYPES:
         count = len(node['inputs'])
         middle = (50 + height - 18) / 2
@@ -110,20 +111,21 @@ def symbol_parts(node, width, height, selected=False):
     if aggregate:
         text(width-11, 16, 'RTL', size=9, fill='#9eb5d4', anchor='e')
         counts = node.get('kind_counts', {})
-        x = 12
-        for device in ('mux', 'gate', 'occ'):
+        slot = 0
+        for device in DEVICE_TYPES:
             n = counts.get(device, 0)
             if n:
-                text(x, 58, '{} ×{}'.format(DEVICE_TYPES[device]['short'], n), size=9,
-                     fill=DEVICE_TYPES[device]['color'], max_width=75)
-                x += 77
+                text(12 + (slot % 2) * 114, 56 + (slot // 2) * 20,
+                     '{} ×{}'.format(DEVICE_TYPES[device]['short'], n), size=9,
+                     fill=DEVICE_TYPES[device]['color'], max_width=105)
+                slot += 1
         if counts.get('unclassified'):
-            text(12, 98, '未分类 ×{}'.format(counts['unclassified']), size=9, fill='#7e95b3')
+            text(12, 130, '未分类 ×{}'.format(counts['unclassified']), size=9, fill='#7e95b3')
         for (px, py) in inputs:
             line([(px, py), (18, py)], fill='#8eabc8')
         line([(width-18, output[1]), output], fill='#8eabc8')
-        text(22, 80, '输入', size=9)
-        text(width-22, 80, '输出', size=9, anchor='e')
+        text(22, 110, '输入', size=9)
+        text(width-22, 110, '输出', size=9, anchor='e')
     elif kind in DEVICE_TYPES:
         text(width-11, 16, info['short'], size=9, fill=color, bold=True, anchor='e')
         cy = output[1]
@@ -142,6 +144,14 @@ def symbol_parts(node, width, height, selected=False):
             text(108, cy-6, 'GATE', size=12, fill=color, bold=True, anchor='center')
             line([(92,cy+13),(98,cy+13),(98,cy+5),(105,cy+5),(105,cy+13),(117,cy+13)], stroke_width=1.2)
             input_end, output_start = 78, 143
+        elif kind == 'div':
+            left, right = 56, 180
+            add('polygon', points=[(left+12,cy-31),(right-12,cy-31),(right,cy),
+                                   (right-12,cy+31),(left+12,cy+31),(left,cy)],
+                fill=info['fill'], stroke=color, width=1.8)
+            text(118, cy-10, 'DIV', size=15, fill=color, bold=True, anchor='center')
+            text(118, cy+12, '÷N', size=17, fill='#d6c3ff', anchor='center')
+            input_end, output_start = left, right
         else:
             left, right, top, bottom, cut = 66, 178, cy-31, cy+31, 8
             add('polygon', points=[(left+cut,top),(right-cut,top),(right,top+cut),(right,bottom-cut),

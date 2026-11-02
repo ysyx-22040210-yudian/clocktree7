@@ -91,8 +91,7 @@ def generate(destination, copies=1, generate_scopes=False, device_models=False):
         if device_models:
             for rule in layers[-1]['modules']:
                 rule['kind'] = {'ct_mux':'mux','ct_gate':'gate','ct_occ':'occ'}[rule['module']]
-    config = {"design": {"top": "fixture_top", "filelist": str(out / "rtl.f"),
-                         "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2"}, "layers": layers}
+    config = {"design": {"top": "fixture_top", "filelist": str(out / "rtl.f")}, "layers": layers}
     (out / "config.json").write_text(json.dumps(config, indent=2)+"\n", encoding="utf-8")
     def path(key):
         return "fixture_top.l{}.g_{}[0].u".format(*key) if generate_scopes else "fixture_top.l{}.{}".format(*key)

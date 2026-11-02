@@ -1,0 +1,967 @@
+{
+  "schema_version": 1,
+  "tool_version": "0.1.0",
+  "config": {
+    "design": {
+      "top": "flex_top",
+      "filelist": "examples/flexible_layers/rtl.f"
+    },
+    "layers": [
+      {
+        "index": 1,
+        "hierarchy": "flex_top.l1",
+        "modules": [
+          {
+            "module": "flex_mux",
+            "kind": "mux",
+            "clock_inputs": [
+              "a",
+              "b"
+            ],
+            "clock_output": "o"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "hierarchy": "flex_top.l2",
+        "modules": [
+          {
+            "module": "flex_div",
+            "kind": "div",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o"
+          },
+          {
+            "module": "flex_gate",
+            "kind": "gate",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o"
+          },
+          {
+            "module": "flex_occ",
+            "kind": "occ",
+            "clock_inputs": [
+              "i"
+            ],
+            "clock_output": "o"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "event": "metadata",
+    "backend": "verdi_base_npi",
+    "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2",
+    "top": "flex_top",
+    "design_instances": 14,
+    "npi_counts": {
+      "event": "complete",
+      "instances": 13,
+      "pin_traces": 28
+    },
+    "compiler_error_count": 0,
+    "elapsed_seconds": 1.914,
+    "verdi_exit_code": 0,
+    "recorded_example": true,
+    "note": "Recorded VM NPI result. Machine execution paths removed; connectivity and NPI evidence retained."
+  },
+  "nodes": [
+    {
+      "event": "instance",
+      "path": "flex_top.l1.u_mux0",
+      "module": "flex_mux",
+      "layer": 1,
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "output": "o",
+      "kind": "mux",
+      "source": "npiModule, flex_top.l1.u_mux0, {examples/flexible_layers/fixture.sv : 8}",
+      "id": "flex_top.l1.u_mux0",
+      "kind_source": "configured",
+      "component": 0,
+      "root": true,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l1.u_mux1",
+      "module": "flex_mux",
+      "layer": 1,
+      "inputs": [
+        "a",
+        "b"
+      ],
+      "output": "o",
+      "kind": "mux",
+      "source": "npiModule, flex_top.l1.u_mux1, {examples/flexible_layers/fixture.sv : 9}",
+      "id": "flex_top.l1.u_mux1",
+      "kind_source": "configured",
+      "component": 1,
+      "root": true,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_div0",
+      "module": "flex_div",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "div",
+      "source": "npiModule, flex_top.l2.u_div0, {examples/flexible_layers/fixture.sv : 16}",
+      "id": "flex_top.l2.u_div0",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_div1",
+      "module": "flex_div",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "div",
+      "source": "npiModule, flex_top.l2.u_div1, {examples/flexible_layers/fixture.sv : 19}",
+      "id": "flex_top.l2.u_div1",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_div2",
+      "module": "flex_div",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "div",
+      "source": "npiModule, flex_top.l2.u_div2, {examples/flexible_layers/fixture.sv : 21}",
+      "id": "flex_top.l2.u_div2",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_early",
+      "module": "flex_gate",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, flex_top.l2.u_early, {examples/flexible_layers/fixture.sv : 14}",
+      "id": "flex_top.l2.u_early",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_gate0",
+      "module": "flex_gate",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, flex_top.l2.u_gate0, {examples/flexible_layers/fixture.sv : 12}",
+      "id": "flex_top.l2.u_gate0",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_gate1",
+      "module": "flex_gate",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, flex_top.l2.u_gate1, {examples/flexible_layers/fixture.sv : 13}",
+      "id": "flex_top.l2.u_gate1",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_gate2",
+      "module": "flex_gate",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, flex_top.l2.u_gate2, {examples/flexible_layers/fixture.sv : 17}",
+      "id": "flex_top.l2.u_gate2",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_gate3",
+      "module": "flex_gate",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "gate",
+      "source": "npiModule, flex_top.l2.u_gate3, {examples/flexible_layers/fixture.sv : 20}",
+      "id": "flex_top.l2.u_gate3",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_occ0",
+      "module": "flex_occ",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, flex_top.l2.u_occ0, {examples/flexible_layers/fixture.sv : 15}",
+      "id": "flex_top.l2.u_occ0",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_occ1",
+      "module": "flex_occ",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, flex_top.l2.u_occ1, {examples/flexible_layers/fixture.sv : 18}",
+      "id": "flex_top.l2.u_occ1",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "flex_top.l2.u_occ2",
+      "module": "flex_occ",
+      "layer": 2,
+      "inputs": [
+        "i"
+      ],
+      "output": "o",
+      "kind": "occ",
+      "source": "npiModule, flex_top.l2.u_occ2, {examples/flexible_layers/fixture.sv : 22}",
+      "id": "flex_top.l2.u_occ2",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    }
+  ],
+  "edges": [
+    {
+      "id": "1505c480528f84166f51",
+      "source": "flex_top.l2.u_occ0",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_div0",
+      "target_pin": "i",
+      "evidence": {
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div0.i",
+            "net": "flex_top.s_occ0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ0.o",
+            "net": "flex_top.s_occ0"
+          }
+        ],
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ0.o",
+            "net": "flex_top.s_occ0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div0.i",
+            "net": "flex_top.s_occ0"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "2bf4f0958b6e889bd662",
+      "source": "flex_top.l2.u_gate2",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_occ1",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate2.o",
+            "net": "flex_top.s_gate2"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ1.i",
+            "net": "flex_top.s_gate2"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ1.i",
+            "net": "flex_top.s_gate2"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate2.o",
+            "net": "flex_top.s_gate2"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "3f917fa83a046b7d3428",
+      "source": "flex_top.l1.u_mux0",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_gate0",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l1.u_mux0.o",
+            "net": "flex_top.s_mux0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate0.i",
+            "net": "flex_top.s_mux0"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate0.i",
+            "net": "flex_top.s_mux0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l1.u_mux0.o",
+            "net": "flex_top.s_mux0"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "46a5ee00f263b4b0a864",
+      "source": "flex_top.l2.u_div1",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_gate3",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div1.o",
+            "net": "flex_top.s_div1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate3.i",
+            "net": "flex_top.s_div1"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate3.i",
+            "net": "flex_top.s_div1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div1.o",
+            "net": "flex_top.s_div1"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "7be52df8fcf04828589e",
+      "source": "flex_top.l2.u_div1",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_div2",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div1.o",
+            "net": "flex_top.s_div1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div2.i",
+            "net": "flex_top.s_div1"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div2.i",
+            "net": "flex_top.s_div1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div1.o",
+            "net": "flex_top.s_div1"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "8b18723ecbb094505f99",
+      "source": "flex_top.l1.u_mux0",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_early",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l1.u_mux0.o",
+            "net": "flex_top.s_mux0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_early.i",
+            "net": "flex_top.s_mux0"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_early.i",
+            "net": "flex_top.s_mux0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l1.u_mux0.o",
+            "net": "flex_top.s_mux0"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "a2918a856f1ff150eb48",
+      "source": "flex_top.l2.u_gate0",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_gate1",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate0.o",
+            "net": "flex_top.s_gate0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate1.i",
+            "net": "flex_top.s_gate0"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate1.i",
+            "net": "flex_top.s_gate0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate0.o",
+            "net": "flex_top.s_gate0"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "d9108d7b483d8258073f",
+      "source": "flex_top.l2.u_occ1",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_div1",
+      "target_pin": "i",
+      "evidence": {
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div1.i",
+            "net": "flex_top.s_occ1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ1.o",
+            "net": "flex_top.s_occ1"
+          }
+        ],
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ1.o",
+            "net": "flex_top.s_occ1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div1.i",
+            "net": "flex_top.s_occ1"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "e94730e8a7b1a95e17f1",
+      "source": "flex_top.l2.u_div2",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_occ2",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div2.o",
+            "net": "flex_top.s_div2"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ2.i",
+            "net": "flex_top.s_div2"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ2.i",
+            "net": "flex_top.s_div2"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div2.o",
+            "net": "flex_top.s_div2"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "ecac8cb36adb367e998f",
+      "source": "flex_top.l2.u_div0",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_gate2",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div0.o",
+            "net": "flex_top.s_div0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate2.i",
+            "net": "flex_top.s_div0"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate2.i",
+            "net": "flex_top.s_div0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_div0.o",
+            "net": "flex_top.s_div0"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "f16a310290edc0ea7ef2",
+      "source": "flex_top.l2.u_gate1",
+      "source_pin": "o",
+      "target": "flex_top.l2.u_occ0",
+      "target_pin": "i",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate1.o",
+            "net": "flex_top.s_gate1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ0.i",
+            "net": "flex_top.s_gate1"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_occ0.i",
+            "net": "flex_top.s_gate1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "flex_top.l2.u_gate1.o",
+            "net": "flex_top.s_gate1"
+          }
+        ]
+      },
+      "layer_delta": 0
+    }
+  ],
+  "boundaries": [
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l1.u_mux0.a",
+          "net": "flex_top.clk_a"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "flex_top.clk_a",
+          "net": "flex_top.clk_a"
+        }
+      ],
+      "endpoint": "flex_top.clk_a",
+      "instance": "flex_top.l1.u_mux0",
+      "pin": "a",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l1.u_mux0.b",
+          "net": "flex_top.clk_b"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "flex_top.clk_b",
+          "net": "flex_top.clk_b"
+        }
+      ],
+      "endpoint": "flex_top.clk_b",
+      "instance": "flex_top.l1.u_mux0",
+      "pin": "b",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l1.u_mux1.a",
+          "net": "flex_top.clk_c"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "flex_top.clk_c",
+          "net": "flex_top.clk_c"
+        }
+      ],
+      "endpoint": "flex_top.clk_c",
+      "instance": "flex_top.l1.u_mux1",
+      "pin": "a",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l1.u_mux1.b",
+          "net": "flex_top.clk_c"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "flex_top.clk_c",
+          "net": "flex_top.clk_c"
+        }
+      ],
+      "endpoint": "flex_top.clk_c",
+      "instance": "flex_top.l1.u_mux1",
+      "pin": "b",
+      "direction": "driver"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l1.u_mux1.o",
+          "net": "flex_top.s_mux1"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.IH_s_early,s_gate3,s_mux1,s_occ2#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.OH_sinks[3:0]#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "flex_top.sinks[3:0]#[1]",
+          "net": ""
+        }
+      ],
+      "endpoint": "flex_top.sinks[3:0]#[1]",
+      "instance": "flex_top.l1.u_mux1",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l2.u_early.o",
+          "net": "flex_top.s_early"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.IH_s_early,s_gate3,s_mux1,s_occ2#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.OH_sinks[3:0]#[3]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "flex_top.sinks[3:0]#[3]",
+          "net": ""
+        }
+      ],
+      "endpoint": "flex_top.sinks[3:0]#[3]",
+      "instance": "flex_top.l2.u_early",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l2.u_gate3.o",
+          "net": "flex_top.s_gate3"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.IH_s_early,s_gate3,s_mux1,s_occ2#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.OH_sinks[3:0]#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "flex_top.sinks[3:0]#[2]",
+          "net": ""
+        }
+      ],
+      "endpoint": "flex_top.sinks[3:0]#[2]",
+      "instance": "flex_top.l2.u_gate3",
+      "pin": "o",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "flex_top.l2.u_occ2.o",
+          "net": "flex_top.s_occ2"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.IH_s_early,s_gate3,s_mux1,s_occ2#[3]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "flex_top.flex_top(@1):Always0#SigTap0:24:24:Assignment.OH_sinks[3:0]#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "flex_top.sinks[3:0]#[0]",
+          "net": ""
+        }
+      ],
+      "endpoint": "flex_top.sinks[3:0]#[0]",
+      "instance": "flex_top.l2.u_occ2",
+      "pin": "o",
+      "direction": "load"
+    }
+  ],
+  "components": [
+    {
+      "id": 0,
+      "nodes": [
+        "flex_top.l1.u_mux0",
+        "flex_top.l2.u_div0",
+        "flex_top.l2.u_div1",
+        "flex_top.l2.u_div2",
+        "flex_top.l2.u_early",
+        "flex_top.l2.u_gate0",
+        "flex_top.l2.u_gate1",
+        "flex_top.l2.u_gate2",
+        "flex_top.l2.u_gate3",
+        "flex_top.l2.u_occ0",
+        "flex_top.l2.u_occ1",
+        "flex_top.l2.u_occ2"
+      ]
+    },
+    {
+      "id": 1,
+      "nodes": [
+        "flex_top.l1.u_mux1"
+      ]
+    }
+  ],
+  "clock_sources": [
+    {
+      "id": "flex_top.clk_a",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "flex_top.l1.u_mux0",
+          "pin": "a"
+        }
+      ]
+    },
+    {
+      "id": "flex_top.clk_b",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "flex_top.l1.u_mux0",
+          "pin": "b"
+        }
+      ]
+    },
+    {
+      "id": "flex_top.clk_c",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "flex_top.l1.u_mux1",
+          "pin": "a"
+        },
+        {
+          "instance": "flex_top.l1.u_mux1",
+          "pin": "b"
+        }
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "summary": {
+    "instances": 13,
+    "edges": 11,
+    "roots": 2,
+    "terminals": 4,
+    "components": 2,
+    "clock_sources": 3,
+    "layers": {
+      "1": 2,
+      "2": 11
+    },
+    "terminal_layers": {
+      "1": 1,
+      "2": 3
+    },
+    "expected_pin_traces": 28,
+    "observed_pin_traces": 28,
+    "unresolved": 0,
+    "diagnostics": 0,
+    "extraction_finished": true,
+    "connectivity_complete": true,
+    "topology_valid": true
+  }
+}

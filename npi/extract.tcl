@@ -100,7 +100,7 @@ proc ct_walk {seed direction owner pin} {
     while {$cursor < [llength $queue]} {
         lassign [lindex $queue $cursor] hdl path is_seed
         incr cursor
-        if {$cursor > $ct_max_steps} {
+        if {$ct_max_steps > 0 && $cursor > $ct_max_steps} {
             lappend results [ct_result trace_limit $path]
             break
         }

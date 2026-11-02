@@ -191,11 +191,11 @@ class ClockDiagram(tk.Frame):
         cw, ch = c.winfo_width(), c.winfo_height()
         if not self.model:
             c.create_text(cw/2, ch/2-24, text='RTL CLOCK ARCHITECTURE', fill='#8ea9ce', font=(self.family, 18, 'bold'))
-            c.create_text(cw/2, ch/2+14, text='导入提取结果，或配置七层规则后开始提取', fill='#617d9f', font=(self.family, 11))
+            c.create_text(cw/2, ch/2+14, text='默认两级 · 可添加层级 · 配置规则后开始提取', fill='#617d9f', font=(self.family, 11))
             return
         scale = self.scale
         bounds = ((-self.ox)/scale, (48-self.oy)/scale, (cw-self.ox)/scale, (ch-self.oy)/scale)
-        for layer in range(1, 8):
+        for layer in range(1, self.model.layer_count + 1):
             x, _ = self.point(18+(layer-1)*COLUMN_STEP, 0)
             c.create_rectangle(x, 44, x+278*scale, ch, fill='#142138' if layer % 2 else '#122035', outline='')
         # A clipped, deduplicated wire segment can stand for several actual
@@ -243,10 +243,10 @@ class ClockDiagram(tk.Frame):
         # Fixed layer headers remain readable while panning and zooming.
         c.create_rectangle(0, 0, cw, 44, fill='#17263e', outline='')
         layer_counts = Counter(n['layer'] for n in self.model.nodes.values())
-        for layer in range(1, 8):
+        for layer in range(1, self.model.layer_count + 1):
             xx, _ = self.point(30+(layer-1)*COLUMN_STEP, 0)
             if -100 < xx < cw:
-                c.create_text(xx, 21, text='L{}'.format(layer), anchor='w', fill=COLORS[layer-1], font=(self.family, 10, 'bold'))
+                c.create_text(xx, 21, text='L{}'.format(layer), anchor='w', fill=COLORS[(layer-1) % len(COLORS)], font=(self.family, 10, 'bold'))
                 if scale > .34:
                     c.create_text(xx+29, 21, text='{} 图元'.format(layer_counts[layer]), anchor='w', fill='#7f99bb', font=(self.family, 8))
         if not self.model.nodes:

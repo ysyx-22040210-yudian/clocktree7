@@ -13,8 +13,11 @@ def validate_config(config):
     if not isinstance(config, dict):
         raise ValueError("Configuration must be an object")
     layers = config.get("layers", [])
-    if len(layers) != 7 or [x.get("index") for x in layers] != list(range(1, 8)):
-        raise ValueError("Provide seven ordered layers with index 1 through 7")
+    if (not isinstance(layers, list) or not layers or
+            any(not isinstance(x, dict) for x in layers) or
+            any(type(x.get('index')) is not int for x in layers) or
+            [x.get("index") for x in layers] != list(range(1, len(layers) + 1))):
+        raise ValueError("Provide one or more ordered layers with consecutive index values starting at 1")
     for layer in layers:
         if not isinstance(layer.get("hierarchy"), str):
             raise ValueError("Each layer needs an RTL hierarchy string")
@@ -29,9 +32,9 @@ def validate_config(config):
                 raise ValueError("Provide distinct clock inputs and one distinct clock_output")
             kind = rule.get('kind')
             if kind is not None and (not isinstance(kind, str) or kind not in DEVICE_TYPES):
-                raise ValueError("kind must be mux, gate or occ")
-            if kind in ('gate', 'occ') and len(inputs) != 1:
-                raise ValueError("Gate and OCC rules require exactly one clock input")
+                raise ValueError("kind must be mux, gate, occ or div")
+            if kind in ('gate', 'occ', 'div') and len(inputs) != 1:
+                raise ValueError("Gate, OCC and DIV rules require exactly one clock input")
     if not any(layer.get("modules") for layer in layers):
         raise ValueError("Provide at least one module rule")
     design = config.get("design", {})
@@ -59,5 +62,5 @@ def write_tcl_config(config, path, output):
         if key in ("elab", "filelist", "top"):
             lines.append("set ct_" + key + " " + tcl_string(value))
     lines.append("set ct_output " + tcl_string(output))
-    lines.append("set ct_max_steps " + str(int(config.get("max_trace_steps", 100000))))
+    lines.append("set ct_max_steps " + str(int(config.get("max_trace_steps", 0))))
     Path(path).write_text("\n".join(lines) + "\n", encoding="utf-8")

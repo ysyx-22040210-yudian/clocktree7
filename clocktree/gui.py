@@ -17,6 +17,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
 from .config import load_config, validate_config
+from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, TYPE_LABELS, LABEL_TO_KIND, kind_label, node_height, matching_rule
 from .viewmodel import GraphView
@@ -51,7 +52,7 @@ class RuleDialog(tk.Toplevel):
         self.kind_var=tk.StringVar(value=kind_label(rule.get('kind')) if rule.get('kind') in DEVICE_TYPES else '请选择器件类型')
         self.kind_combo=ttk.Combobox(frame,textvariable=self.kind_var,values=TYPE_LABELS,state='readonly')
         self.kind_combo.pack(fill='x')
-        self.type_hint=tk.StringVar(value='选择器可多输入；门控、OCC 均为单输入，三类都只有一个关注输出。')
+        self.type_hint=tk.StringVar(value='选择器可多输入；门控、OCC、DIV 均为单输入，四类都只有一个关注输出。')
         ttk.Label(frame,textvariable=self.type_hint,style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=(6,5))
         self.fields = {}
         for key, label, value in [('module','Module 定义名',rule.get('module','')),
@@ -88,7 +89,7 @@ class RuleDialog(tk.Toplevel):
     def save(self):
         kind=LABEL_TO_KIND.get(self.kind_var.get())
         if kind is None:
-            self.error.set('请选择“选择器 / 门控 / OCC”中的一种器件类型。')
+            self.error.set('请选择“选择器 / 门控 / OCC / DIV 分频器”中的一种器件类型。')
             return
         rule = {'module':self.fields['module'].get().strip(),
                 'clock_inputs':[x.strip() for x in self.fields['clock_inputs'].get().replace('，',',').split(',') if x.strip()],
@@ -99,7 +100,7 @@ class RuleDialog(tk.Toplevel):
         if len(set(rule['clock_inputs']))!=len(rule['clock_inputs']) or rule['clock_output'] in rule['clock_inputs']:
             self.error.set('输入口不能重复，输入口和输出口不能相同。')
             return
-        if kind in ('gate','occ') and len(rule['clock_inputs'])!=1:
+        if kind in ('gate','occ','div') and len(rule['clock_inputs'])!=1:
             self.error.set('{}只允许一个关注输入口；多个时钟输入请选择“选择器”。'.format(kind_label(kind)))
             return
         self.callback(rule)
@@ -152,7 +153,7 @@ class ClockTreeApp(tk.Tk):
         self._filling = False
         self._log_mtime = None
         self._base_config = {}
-        self.layers = [{'index':i,'hierarchy':'','modules':[]} for i in range(1,8)]
+        self.layers = [{'index':i,'hierarchy':'','modules':[]} for i in range(1,3)]
         self.active_layer = 1
         self.selected_object = None
         self.related_edges = {}
@@ -160,7 +161,7 @@ class ClockTreeApp(tk.Tk):
         self.last_job = None
         self.error_messages = []
         self.focused_view = False
-        self.status = tk.StringVar(value='就绪 · 导入结果，或配置七层规则开始提取')
+        self.status = tk.StringVar(value='就绪 · 默认两级，可添加层级或导入已有配置')
         self.state = tk.StringVar(value='等待设计')
         self.project = tk.StringVar(value='未打开设计')
         self.view_label = tk.StringVar(value='全部时钟网络')
@@ -177,13 +178,10 @@ class ClockTreeApp(tk.Tk):
         self.after(120, self._set_sashes)
         self.set_config({'design':{},'layers':self.layers})
         self.refresh_runs()
-        typed_sample=ROOT/'validation/runs/device-models-01/clocktree.json'
-        candidates=[typed_sample, ROOT/'validation/runs/shared-small-01/clocktree.json', ROOT/'examples/device_models/clocktree.json']
-        initial = Path(result) if result else next((p for p in candidates if p.is_file()),candidates[-1])
         if config:
             self.after(180,lambda:self.open_config(config))
-        elif initial.is_file():
-            self.after(180,lambda:self.load_result(initial))
+        elif result:
+            self.after(180,lambda:self.load_result(Path(result)))
 
     def _style(self):
         self.option_add('*Font',(self.family,10))
@@ -234,7 +232,7 @@ class ClockTreeApp(tk.Tk):
         tk.Label(brand,text='ClockTree7',font=(self.family,21,'bold'),fg='white',bg='#111e34').pack(anchor='w')
         tk.Label(brand,text='RTL  时钟树架构分析',font=(self.family,8),fg='#8ca6ca',bg='#111e34').pack(anchor='w')
         tk.Label(header,text='DESIGN  /  CONNECTIVITY  /  INSIGHT',font=(self.family,8),fg='#6682a9',bg='#111e34').pack(side='left',padx=30)
-        for text,command in [('导出…',self.export_menu),('打开结果',self.open_result),('保存配置',self.save_config),('导入配置',self.open_config)]:
+        for text,command in [('导出…',self.export_menu),('打开结果',self.open_result),('保存配置',self.save_config),('导入配置',self.open_config),('查看示例',self.open_example),('新建配置',self.new_config)]:
             button=tk.Button(header,text=text,command=command,bg='#233a5a',fg='#e3edfc',activebackground='#31517c',activeforeground='white',relief='flat',borderwidth=0,padx=15,pady=8,cursor='hand2',font=(self.family,9))
             button.pack(side='right',padx=(0,9))
             if text=='打开结果':self.open_result_button=button
@@ -290,7 +288,6 @@ class ClockTreeApp(tk.Tk):
         self.top_var=tk.StringVar()
         self.mode_var=tk.StringVar(value='已有 elab / KDB')
         self.path_var=tk.StringVar()
-        self.verdi_var=tk.StringVar()
         self.hierarchy_var=tk.StringVar()
         top_label=ttk.Frame(settings,style='White.TFrame')
         top_label.pack(fill='x')
@@ -306,15 +303,18 @@ class ClockTreeApp(tk.Tk):
         ttk.Separator(settings).pack(fill='x',pady=15)
         rule_heading=ttk.Frame(settings,style='White.TFrame')
         rule_heading.pack(fill='x')
-        ttk.Label(rule_heading,text='七层传播规则',style='White.TLabel',font=(self.family,11,'bold')).pack(side='left')
+        self.layer_count_var=tk.StringVar(value='传播规则 · 2 级')
+        ttk.Label(rule_heading,textvariable=self.layer_count_var,style='White.TLabel',font=(self.family,11,'bold')).pack(side='left')
         ttk.Button(rule_heading,text='器件模型',width=7,command=self.open_device_library).pack(side='right')
-        layerrow=ttk.Frame(settings,style='White.TFrame')
-        layerrow.pack(fill='x',pady=(10,12))
+        self.layerrow=ttk.Frame(settings,style='White.TFrame')
+        self.layerrow.pack(fill='x',pady=(10,6))
         self.layer_buttons=[]
-        for index in range(1,8):
-            button=ttk.Button(layerrow,text='L{}'.format(index),width=3,style='Layer.TButton',command=lambda i=index:self.select_layer(i))
-            button.pack(side='left',fill='x',expand=True,padx=(0,3 if index<7 else 0))
-            self.layer_buttons.append(button)
+        layer_actions=ttk.Frame(settings,style='White.TFrame')
+        layer_actions.pack(fill='x',pady=(0,10))
+        self.add_layer_button=ttk.Button(layer_actions,text='+ 添加层级',command=self.add_layer)
+        self.add_layer_button.pack(side='left')
+        self.remove_layer_button=ttk.Button(layer_actions,text='删除当前层',command=self.remove_layer)
+        self.remove_layer_button.pack(side='left',padx=(5,0))
         self.layer_title=ttk.Label(settings,text='L1 · RTL 层次范围',style='Small.TLabel')
         self.layer_title.pack(anchor='w')
         ttk.Entry(settings,textvariable=self.hierarchy_var).pack(fill='x',pady=(5,10))
@@ -344,7 +344,7 @@ class ClockTreeApp(tk.Tk):
         self.bind('<MouseWheel>',self._config_wheel,add='+')
         self.bind('<Button-4>',self._config_wheel,add='+')
         self.bind('<Button-5>',self._config_wheel,add='+')
-        for variable in [self.top_var,self.mode_var,self.path_var,self.verdi_var,self.hierarchy_var]:
+        for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var]:
             variable.trace('w',self.mark_dirty)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
         self.runs_tree.heading('#0',text='运行记录')
@@ -433,7 +433,7 @@ class ClockTreeApp(tk.Tk):
         legend.create_rectangle(100,10,110,20,outline='#698dbd',dash=(2,1))
         legend.create_text(116,15,text='聚合',anchor='w',fill='#7e93b0',font=(self.family,8))
         legend.pack(side='right',padx=12)
-        devices=tk.Canvas(scopebar,width=242,height=31,bg='#edf2fa',highlightthickness=0)
+        devices=tk.Canvas(scopebar,width=312,height=31,bg='#edf2fa',highlightthickness=0)
         devices.create_polygon(4,7,22,11,22,21,4,25,fill='#e0efff',outline=DEVICE_TYPES['mux']['color'])
         devices.create_text(29,16,text='选择器',anchor='w',fill='#6680a4',font=(self.family,8))
         devices.create_arc(81,8,103,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline='#2eac8d')
@@ -441,6 +441,8 @@ class ClockTreeApp(tk.Tk):
         devices.create_text(110,16,text='门控',anchor='w',fill='#6680a4',font=(self.family,8))
         devices.create_polygon(164,8,180,8,184,12,184,21,180,25,164,25,160,21,160,12,fill='#fff0d7',outline='#d09b45')
         devices.create_text(192,16,text='OCC',anchor='w',fill='#6680a4',font=(self.family,8))
+        devices.create_polygon(234,8,250,8,257,16,250,25,234,25,227,16,fill='#eee5ff',outline='#9a77df')
+        devices.create_text(264,16,text='DIV',anchor='w',fill='#6680a4',font=(self.family,8))
         devices.pack(side='right')
         self.diagram=ClockDiagram(self.center,self.family,self.inspect_node,self.inspect_edges,self.view_changed,self.set_status)
         self.diagram.pack(fill='both',expand=True)
@@ -551,6 +553,45 @@ class ClockTreeApp(tk.Tk):
         self.state.set(text)
         self.state_badge.configure(bg=bg,fg=fg)
 
+    def rebuild_layer_buttons(self):
+        for button in self.layer_buttons:button.destroy()
+        self.layer_buttons=[]
+        for index in range(1,len(self.layers)+1):
+            button=ttk.Button(self.layerrow,text='L{}'.format(index),width=4,style='Layer.TButton',command=lambda i=index:self.select_layer(i))
+            button.grid(row=(index-1)//5,column=(index-1)%5,sticky='ew',padx=(0,3),pady=(0,4))
+            self.layer_buttons.append(button)
+        for column in range(5):self.layerrow.columnconfigure(column,weight=1)
+        self.layer_count_var.set('传播规则 · {} 级'.format(len(self.layers)))
+
+    def add_layer(self):
+        self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
+        self.layers.append({'index':len(self.layers)+1,'hierarchy':'','modules':[]})
+        self.rebuild_layer_buttons()
+        self.select_layer(len(self.layers),save=False)
+        self.mark_dirty()
+        self.set_status('已添加 L{}，层级数量不设固定上限。'.format(len(self.layers)))
+
+    def remove_layer(self):
+        if len(self.layers)==1:
+            self.set_status('至少保留一级传播规则。')
+            return
+        layer=self.layers[self.active_layer-1]
+        if layer.get('modules') and not messagebox.askyesno('删除层级','删除 L{} 及其全部模块规则？后续层级将顺序重新编号。'.format(self.active_layer),parent=self):return
+        del self.layers[self.active_layer-1]
+        for i,layer in enumerate(self.layers,1):layer['index']=i
+        self.rebuild_layer_buttons()
+        self.select_layer(min(self.active_layer,len(self.layers)),save=False)
+        self.mark_dirty()
+
+    def new_config(self):
+        if self.busy:return
+        self.set_config({'design':{},'layers':[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]})
+        self.mark_dirty()
+        self.set_status('已新建两级配置。填写设计与规则，或点击“添加层级”。')
+
+    def open_example(self):
+        self.load_result(ROOT/'examples/flexible_layers/clocktree.json')
+
     def select_layer(self,index,save=True):
         if save:
             self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
@@ -597,6 +638,7 @@ class ClockTreeApp(tk.Tk):
         if not self.graph or {k:v for k,v in old.items() if k!='kind'}!={k:v for k,v in new.items() if k!='kind'}:
             return False
         if old.get('kind')==new.get('kind'):return True
+        if self.active_layer>len(self.graph.get('config',{}).get('layers',[])):return False
         layer=self.graph['config']['layers'][self.active_layer-1]
         if layer['hierarchy']!=self.hierarchy_var.get().strip():return False
         matching=[n for n in self.graph['nodes'] if matching_rule(n,layer,new)]
@@ -627,12 +669,12 @@ class ClockTreeApp(tk.Tk):
         self._base_config=copy.deepcopy(config)
         design=config.get('design',{})
         self.top_var.set(design.get('top',''))
-        self.verdi_var.set(design.get('verdi_home',os.environ.get('VERDI_HOME','/home/synopsys/verdi/Verdi_O-2018.09-SP2')))
         self.mode_var.set('已有 elab / KDB' if design.get('elab') else 'RTL 文件列表')
         self.path_var.set(design.get('elab',design.get('filelist','')))
         self.layers=copy.deepcopy(config.get('layers',[]))
-        if len(self.layers)!=7:
-            self.layers=[{'index':i,'hierarchy':'','modules':[]} for i in range(1,8)]
+        if not self.layers:
+            self.layers=[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]
+        self.rebuild_layer_buttons()
         self.select_layer(1,save=False)
         self._filling=False
 
@@ -642,9 +684,10 @@ class ClockTreeApp(tk.Tk):
         design=data.setdefault('design',{})
         design.pop('elab',None)
         design.pop('filelist',None)
-        design.update(top=self.top_var.get().strip(),verdi_home=self.verdi_var.get().strip())
+        design.update(top=self.top_var.get().strip())
         design['elab' if self.mode_var.get()=='已有 elab / KDB' else 'filelist']=self.path_var.get().strip()
         data['layers']=copy.deepcopy(self.layers)
+        data.pop('timeout_seconds',None)
         return validate_config(data)
 
     def browse_design(self):
@@ -661,13 +704,20 @@ class ClockTreeApp(tk.Tk):
         dialog.configure(bg='white')
         frame=ttk.Frame(dialog,padding=22,style='White.TFrame')
         frame.pack(fill='both',expand=True)
-        ttk.Label(frame,text='Verdi 安装目录',style='Title.TLabel').pack(anchor='w')
-        ttk.Label(frame,text='已有配置会保留安装路径；提取在当前运行 GUI 的机器执行。',style='Muted.TLabel').pack(anchor='w',pady=(8,14))
-        entry=ttk.Entry(frame,textvariable=self.verdi_var,width=62)
-        entry.pack(fill='x')
+        ttk.Label(frame,text='Verdi 自动定位',style='Title.TLabel').pack(anchor='w')
+        ttk.Label(frame,text='从当前环境的 verdi 命令定位安装目录，无需逐次填写。\n提取在运行此 GUI 的机器执行，运行时间不设上限。',style='Muted.TLabel').pack(anchor='w',pady=(8,14))
+        detected=tk.StringVar()
+        def detect():
+            try:
+                executable,home=resolve_verdi(self._base_config.get('design',{}))
+                detected.set('命令：{}\n安装目录：{}\nNPI：可用'.format(executable,home))
+            except ValueError as error:detected.set(str(error))
+        ttk.Label(frame,textvariable=detected,style='White.TLabel',wraplength=570).pack(anchor='w')
+        ttk.Button(frame,text='重新检测',command=detect).pack(anchor='w',pady=(12,0))
+        detect()
         ttk.Button(frame,text='完成',style='Accent.TButton',command=dialog.destroy).pack(anchor='e',pady=(18,0))
         dialog.grab_set()
-        entry.focus_set()
+        return dialog
 
     def open_device_library(self):
         dialog=tk.Toplevel(self)
@@ -680,9 +730,9 @@ class ClockTreeApp(tk.Tk):
         ttk.Label(frame,text='类型由用户选择；架构图与 SVG 使用相同模型和端口位置。',style='Muted.TLabel').pack(anchor='w',pady=(6,20))
         row=ttk.Frame(frame,style='White.TFrame')
         row.pack(fill='x')
-        for kind in ('mux','gate','occ'):
+        for index,kind in enumerate(DEVICE_TYPES):
             card=ttk.Frame(row,style='White.TFrame',padding=(0,0,12,0))
-            card.pack(side='left',fill='both',expand=True)
+            card.grid(row=index//2,column=index%2,sticky='nsew',pady=(0,12))
             ttk.Label(card,text=kind_label(kind),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
             ttk.Label(card,text='多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出',style='Muted.TLabel').pack(anchor='w',pady=(0,9))
             canvas=tk.Canvas(card,width=270,height=164,bg='#101b2e',highlightthickness=0)
@@ -690,7 +740,7 @@ class ClockTreeApp(tk.Tk):
             node={'id':'u_clock_'+kind,'module':'clock_'+kind,'kind':kind,
                   'inputs':['clk0_i','clk1_i'] if kind=='mux' else ['clk_i'],'output':'clk_o'}
             draw_device(canvas,node,14,14,242,node_height(node),1.,self.family)
-        ttk.Label(frame,text='模型展示关注的时钟输入和输出；实际连接由导入的 RTL elab 决定。',style='Muted.TLabel').pack(anchor='w',pady=(18,0))
+        ttk.Label(frame,text='模型展示关注端口；DIV 的 ÷N 为类型标记，未推断实际分频比。',style='Muted.TLabel').pack(anchor='w',pady=(18,0))
         ttk.Button(frame,text='关闭',command=dialog.destroy).pack(anchor='e',pady=(18,0))
         dialog.update_idletasks()
         dialog.geometry('+{}+{}'.format(self.winfo_rootx()+max(20,(self.winfo_width()-dialog.winfo_width())//2),
@@ -699,7 +749,7 @@ class ClockTreeApp(tk.Tk):
 
     def open_config(self,path=None):
         if self.busy:return
-        path=path or filedialog.askopenfilename(parent=self,title='导入七层配置',initialdir=str(ROOT/'validation/configs'),filetypes=[('JSON','*.json')])
+        path=path or filedialog.askopenfilename(parent=self,title='导入传播规则配置',initialdir=str(ROOT/'validation/configs'),filetypes=[('JSON','*.json')])
         if not path:return
         try:
             config=load_config(path)
@@ -712,7 +762,7 @@ class ClockTreeApp(tk.Tk):
     def save_config(self,path=None):
         try:
             config=self.get_config()
-            path=path or filedialog.asksaveasfilename(parent=self,title='保存七层配置',defaultextension='.json',initialfile='clocktree7-config.json',filetypes=[('JSON','*.json')])
+            path=path or filedialog.asksaveasfilename(parent=self,title='保存传播规则配置',defaultextension='.json',initialfile='clocktree7-config.json',filetypes=[('JSON','*.json')])
             if path:
                 write_json(path,config)
                 self.set_status('配置已保存：{}'.format(path))
@@ -787,8 +837,7 @@ class ClockTreeApp(tk.Tk):
         if self.busy:return
         try:
             config=self.get_config()
-            verdi=Path(config['design'].get('verdi_home',''))/'bin/verdi'
-            if not verdi.is_file():raise ValueError('未找到 Verdi：{}。请在虚拟机中运行 GUI，并填写有效安装目录。'.format(verdi))
+            resolve_verdi(config['design'])
             identifier=datetime.datetime.now().strftime('tk_%Y%m%d_%H%M%S_')+uuid.uuid4().hex[:6]
             directory=self.runs/identifier
             directory.mkdir()
@@ -1086,7 +1135,7 @@ class ClockTreeApp(tk.Tk):
 
     def export_menu(self):
         menu=tk.Menu(self,tearoff=False)
-        menu.add_command(label='保存七层配置 JSON',command=self.save_config)
+        menu.add_command(label='保存传播规则配置 JSON',command=self.save_config)
         menu.add_command(label='导出全部结构与连线 JSON',command=self.export_result)
         menu.add_command(label='导出当前范围架构图 SVG',command=self.export_svg)
         menu.tk_popup(self.winfo_pointerx(),self.winfo_pointery())

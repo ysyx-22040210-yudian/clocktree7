@@ -1,8 +1,7 @@
 {
   "design": {
     "top": "fixture_top",
-    "filelist": "examples/device_models/rtl.f",
-    "verdi_home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2"
+    "filelist": "examples/device_models/rtl.f"
   },
   "layers": [
     {

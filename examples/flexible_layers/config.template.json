@@ -1,0 +1,53 @@
+{
+  "design": {
+    "top": "flex_top",
+    "filelist": "examples/flexible_layers/rtl.f"
+  },
+  "layers": [
+    {
+      "index": 1,
+      "hierarchy": "flex_top.l1",
+      "modules": [
+        {
+          "module": "flex_mux",
+          "kind": "mux",
+          "clock_inputs": [
+            "a",
+            "b"
+          ],
+          "clock_output": "o"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "hierarchy": "flex_top.l2",
+      "modules": [
+        {
+          "module": "flex_div",
+          "kind": "div",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o"
+        },
+        {
+          "module": "flex_gate",
+          "kind": "gate",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o"
+        },
+        {
+          "module": "flex_occ",
+          "kind": "occ",
+          "clock_inputs": [
+            "i"
+          ],
+          "clock_output": "o"
+        }
+      ]
+    }
+  ]
+}

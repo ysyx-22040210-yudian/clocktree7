@@ -53,3 +53,13 @@ def test_viewport_clipping_preserves_wire_direction_and_rejects_outside():
     assert clip_segment((5,50),(5,-10),(0,0,20,20))==((5,20),(5,0))
     assert clip_segment((-10,5),(50,5),(0,0,20,20))==((0,5),(20,5))
     assert clip_segment((30,0),(30,40),(0,0,20,20)) is None
+
+
+def test_skipped_layer_wire_does_not_cross_unrelated_device_body():
+    nodes=[dict(id='u'+str(i),path='u'+str(i),layer=i,component=0,module='div',kind='div',inputs=['i'],output='o')
+           for i in (1,2,3)]
+    edge=dict(id='skip',source='u1',source_pin='o',target='u3',target_pin='i',layer_delta=2)
+    view=GraphView({'nodes':nodes,'edges':[edge]}).project()
+    x,y,w,h=view.positions['u2']
+    points=view.edge_points(edge)
+    assert all(clip_segment(a,b,(x,y,x+w,y+h)) is None for a,b in zip(points,points[1:]))

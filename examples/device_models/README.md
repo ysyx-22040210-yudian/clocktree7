@@ -11,6 +11,8 @@ cd /path/to/clocktree7
 python3 scripts/make_fixture.py validation/fixtures/device-models --device-models
 ```
 
-在 GUI 点击“导入配置”，选择新生成的 `validation/fixtures/device-models/config.json`，核对 Verdi 安装路径，然后点击“开始提取全部时钟树”。
+在 GUI 点击“导入配置”，选择新生成的 `validation/fixtures/device-models/config.json`，工具自动从 `verdi` 命令定位安装，再点击“开始提取全部时钟树”。
+
+这是保留用于旧七级配置兼容的三类器件样例。新的两级四类器件样例位于 [flexible_layers](../flexible_layers/README.md)，包含 DIV 分频器。
 
 详细步骤见 [GUI 操作手册](../../docs/GUI_USER_MANUAL.zh-CN.md)。

@@ -20,6 +20,7 @@ def main():
     gui.add_argument("--runs", default=str(Path(__file__).resolve().parents[1] / "validation/runs"))
     gui.add_argument("--result")
     gui.add_argument("--config")
+    gui.add_argument("--no-session",action="store_true",help="Start an isolated GUI without automatic session restore/save")
     args = parser.parse_args()
     if args.command == "extract":
         graph = extract(args.config, args.out)
@@ -31,7 +32,7 @@ def main():
         return 0
     if args.command == "gui":
         from .gui import run_gui
-        run_gui(args.runs, args.result, args.config)
+        run_gui(args.runs, args.result, args.config,remember=not args.no_session)
         return 0
     parser.print_help()
     return 1

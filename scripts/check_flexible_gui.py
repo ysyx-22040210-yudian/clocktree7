@@ -60,7 +60,7 @@ def main():
     checks = {'automatic_verdi': {'command': executable, 'home': home, 'explicit_path_in_config': False,
                                   'VERDI_HOME_supplied': False}}
     errors = []
-    app = ClockTreeApp(runs=out / 'gui-runs')
+    app = ClockTreeApp(runs=out / 'gui-runs',remember=False)
     checks['tk'] = app.tk.call('info', 'patchlevel')
     app.geometry('1840x1000+20+20')
     app.report_callback_exception = lambda *exc: errors.append(''.join(traceback.format_exception(*exc)))

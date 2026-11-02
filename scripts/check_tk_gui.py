@@ -57,7 +57,7 @@ root=Path(__file__).resolve().parents[1]
 out=Path(args.output)
 out.mkdir(parents=True,exist_ok=True)
 callbacks=[]
-app=ClockTreeApp(result=root/'validation/runs/device-models-01/clocktree.json')
+app=ClockTreeApp(result=root/'validation/runs/device-models-01/clocktree.json',remember=False)
 app.geometry('1840x1000+20+20')
 app.report_callback_exception=lambda *exc:callbacks.append(''.join(traceback.format_exception(*exc)))
 app.show_error=lambda title,error:callbacks.append(title+': '+str(error))

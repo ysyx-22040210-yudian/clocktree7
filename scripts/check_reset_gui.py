@@ -58,7 +58,7 @@ def main():
     configs,goldens={},{}
     for count in (2,10):configs[count],goldens[count]=generate(out/'fixtures'/str(count),count)
     errors=[]
-    app=ClockTreeApp(runs=out/'gui-runs')
+    app=ClockTreeApp(runs=out/'gui-runs',remember=False)
     app.geometry('1840x1000+20+20')
     app.report_callback_exception=lambda *exc:errors.append(''.join(traceback.format_exception(*exc)))
     app.show_error=lambda title,error:errors.append(title+': '+str(error))

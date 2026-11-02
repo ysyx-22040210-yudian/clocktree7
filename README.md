@@ -13,6 +13,7 @@
 - 原生 Python Tkinter / ttk 工作台，层级配置、历史记录、实例导航、属性与连接依据。
 - 默认 L1、L2，支持添加层级、删除当前层并自动重新编号；兼容原有七级配置。
 - 独立的 **时钟树 / 复位树** 分析模式，切换时保留各自配置草稿与结果，历史记录按模式显示。
+- 启动自动恢复上次模式、配置、选中层级和结果图；支持未导出草稿和本地结果快照，关闭时完成最后一次保存。
 - 四类用户选定的器件：**选择器 / 门控 / OCC / DIV 分频器**，带专用模型和实时预览。
 - 复位树仅提供 **MUX / RSY_SYNC**，支持专用同步器模型及复位端口配置，不要求填写同步时钟口。
 - 自动从 `verdi` 命令定位安装目录，无需每次填写；提取运行时间不设上限。
@@ -41,7 +42,11 @@ Linux 图形桌面终端：
 bash launch.sh
 ```
 
-GUI 启动为两级空白配置；点击“新建配置”也会回到两级。点击“查看示例”打开随附的 `examples/flexible_layers/clocktree.json`，或点“打开结果”选择其他结果。两级四类器件记录样例有 13 个结构、11 条连线、2 个根、4 个末端、2 个网络，未解析为 0。旧七级样例仍保留在 `examples/device_models/`，导入结果会恢复其原有层数。
+GUI 启动时自动恢复上次使用的模式、配置、选中层级和结果图，两类分析的草稿与结果分别保留。首次升级没有自动记录时，会尝试从当前运行目录读取最近的历史结果；没有历史才显示两级空白配置。“新建配置”可回到当前模式的两级空白规则。
+
+点击“查看示例”打开随附的 `examples/flexible_layers/clocktree.json`，或点“打开结果”选择其他结果。两级四类器件记录样例有 13 个结构、11 条连线、2 个根、4 个末端、2 个网络，未解析为 0。旧七级样例仍保留在 `examples/device_models/`，导入结果会恢复其原有层数。
+
+自动记录写在当前用户的本机状态目录，按 `--runs` 目录隔离。结果另存快照，原结果移走后仍可恢复；缓存无法读取时保留配置并显示提示。恢复只读取已保存数据，RTL 更新后仍需重新提取。手动保存配置和导出 JSON/SVG 用于工程归档与共享。需要隔离检查时，可用 `python -m clocktree gui --no-session` 关闭本次启动的自动恢复及记录。
 
 ## 真实提取
 
@@ -104,7 +109,7 @@ python3 scripts/check_golden.py \
 
 在顶部 **WORKSPACE** 下拉框选择 **复位树**。默认两级，层数可自由增删；MUX 可多个关注复位输入，RSY_SYNC 为一个关注复位输入，两类都只有一个关注输出。连接仍由 elab 自动解析，保留多个复位源、全部扇出、汇合、同层串接、跳层和任意层末端。
 
-切换模式会在当前会话中分别保留配置草稿和图形；关闭程序前仍需保存配置、导出结果。复位模式点 **查看示例** 可直接浏览 [两级复位树记录](examples/reset_tree/README.md)。
+切换模式和重新打开 GUI 都会恢复各自的配置草稿和图形。复位模式点 **查看示例** 可直接浏览 [两级复位树记录](examples/reset_tree/README.md)。
 
 ![复位树 MUX 和 RSY_SYNC 模型](docs/images/reset-device-library.png)
 
@@ -126,7 +131,8 @@ python3 -m clocktree extract --config validation/fixtures/reset-tree/config.json
 
 已完成七层/generate/三类器件样例全集 golden 比对、4096 实例压力样例，以及 PULP SoC、OpenC910 配置关注网络的完整 KDB 提取。OpenTitan 通过的是 `clkmgr` 子系统，整芯片旧编译器兼容问题单独记录。
 
-- Python 检查：49 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- Python 检查：60 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- 自动恢复：VM 中以独立进程关闭重开，验证两种模式草稿、器件外观修改、源文件移动、结果缺失处理、旧历史迁移和 6,984 实例大图；恢复过程不启动 EDA。
 - 新增 VM 两级/十级四类器件全网 golden 核对、20 级增删控件、同目录连续重跑与失败后恢复验证。
 - 复位分支：两级/十级实际 NPI 完整集合比对、RSY_SYNC 单输入校验、时钟口排除、独立工作区和同目录跨模式重跑通过。
 - VM 原生 Tk GUI：规则编辑、真实 NPI 提取、类型选择、模型预览、6,984 实例大图操作、证据和导出验收通过。
@@ -143,6 +149,7 @@ python -m pytest -q
 source scripts/eda_env.sh
 python3 scripts/check_flexible_gui.py --extract
 python3 scripts/check_reset_gui.py --extract
+python3 scripts/check_session_gui.py
 ```
 
 GUI 验收脚本需测试用 Pillow 和系统 X11 工具；浏览器验收脚本需 Playwright。这些不是产品 GUI 运行依赖。

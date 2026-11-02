@@ -36,7 +36,7 @@ def main():
     args=p.parse_args()
     out=Path(args.out);out.mkdir(parents=True,exist_ok=True)
     errors=[]
-    app=ClockTreeApp(result=root/'examples/device_models/clocktree.json')
+    app=ClockTreeApp(result=root/'examples/device_models/clocktree.json',remember=False)
     app.geometry('1840x1000+20+20')
     app.report_callback_exception=lambda *e:errors.append(''.join(traceback.format_exception(*e)))
     try:

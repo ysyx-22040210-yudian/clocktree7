@@ -8,7 +8,7 @@ def load_config(path):
         return validate_config(json.load(stream))
 
 
-def validate_config(config):
+def validate_config(config, allow_incomplete=False):
     if not isinstance(config, dict):
         raise ValueError("Configuration must be an object")
     mode = tree_type(config)
@@ -40,12 +40,14 @@ def validate_config(config):
                 raise ValueError('kind must be ' + ', '.join(info['kinds']) + ' for ' + mode + ' analysis')
             if kind in ('gate', 'occ', 'div', 'rsy_sync') and len(inputs) != 1:
                 raise ValueError('Gate, OCC, DIV and RSY_SYNC rules require exactly one input')
-    if not any(layer.get("modules") for layer in layers):
+    if not allow_incomplete and not any(layer.get("modules") for layer in layers):
         raise ValueError("Provide at least one module rule")
     design = config.get("design", {})
-    if not design.get("elab") and not design.get("filelist"):
+    if not isinstance(design, dict):
+        raise ValueError('design must be an object')
+    if not allow_incomplete and not design.get("elab") and not design.get("filelist"):
         raise ValueError("design.elab or design.filelist is required")
-    if not design.get("top"):
+    if not allow_incomplete and not design.get("top"):
         raise ValueError("design.top is required")
     return config
 

@@ -22,6 +22,7 @@ from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule
 from .viewmodel import GraphView
 from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
+from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,7 +130,7 @@ class RuleDialog(tk.Toplevel):
 
 
 class ClockTreeApp(tk.Tk):
-    def __init__(self, runs=None, result=None, config=None):
+    def __init__(self, runs=None, result=None, config=None, remember=True, session_dir=None):
         super().__init__(className='ClockTree7')
         self.title('ClockTree7  |  RTL 时钟树 / 复位树架构分析')
         icon=ROOT/'docs/clocktree7.gif'
@@ -148,6 +149,15 @@ class ClockTreeApp(tk.Tk):
         self.runs = Path(runs or ROOT/'validation/runs').resolve()
         self.runs.mkdir(parents=True, exist_ok=True)
         self.events = queue.Queue()
+        self._session_store=SessionStore(self.runs,session_dir) if remember else None
+        self._session_writer=SessionWriter(self._session_store,lambda error:self.events.put(('session_save_error',error))) if remember else None
+        self._session_ready=False
+        self._session_restoring=False
+        self._session_after=None
+        self._session_prepared={}
+        self._close_save_started=False
+        self._destroying=False
+        self._graph_token=None
         self.graph = None
         self.graph_file = None
         self.busy = False
@@ -189,7 +199,12 @@ class ClockTreeApp(tk.Tk):
         self.after(120, self._set_sashes)
         self.set_config({'design':{},'layers':self.layers})
         self.refresh_runs()
-        if config:
+        if remember:
+            self._set_busy('restore')
+            self._badge('正在恢复上次工作区','busy')
+            self.set_status('正在恢复历史配置与架构图…')
+            self.after(180,lambda:self._load_previous_session(config,result))
+        elif config:
             self.after(180,lambda:self.open_config(config))
         elif result:
             self.after(180,lambda:self.load_result(Path(result)))
@@ -559,7 +574,9 @@ class ClockTreeApp(tk.Tk):
         self.status.set(str(text))
 
     def mark_dirty(self,*args):
-        if not self._filling and not self.busy:self._config_dirty=True
+        if not self._filling:
+            self._config_dirty=True
+            self._schedule_session_save()
         if not self._filling and self.graph and not self.busy:
             self._badge('规则已修改 · 待重新提取','warn')
 
@@ -570,12 +587,115 @@ class ClockTreeApp(tk.Tk):
         self.state_badge.configure(bg=bg,fg=fg)
 
     def _remember_workspace(self):
+        if self._session_restoring:return
+        config=self.get_config(validate=False)
         self._workspaces[self._active_tree_type]={
-            'config':self.get_config(validate=False),'graph':self.graph,'path':self.graph_file,
-            'dirty':self._config_dirty}
+            'config':config,'graph':self.graph,'path':self.graph_file,
+            'dirty':self._config_dirty or bool(self.graph and not same_config(config,self.graph['config'])),
+            'active_layer':self.active_layer,'graph_token':self._graph_token}
+
+    def _load_previous_session(self,config_path=None,result_path=None):
+        def worker():
+            try:
+                state=self._session_store.load()
+            except Exception as error:
+                state=self._session_store.history()
+                state['warnings'].append('自动记录不可读：'+str(error))
+            try:
+                if config_path:
+                    config=load_config(config_path)
+                    mode=tree_type(config)
+                    workspace=state['workspaces'].get(mode,{'graph':None,'path':None,'graph_token':None})
+                    state['workspaces'][mode]=dict(workspace,config=config,dirty=bool(workspace['graph']),active_layer=1)
+                    state.update(active=mode,origin='explicit')
+                elif result_path:
+                    graph=read_graph(result_path)
+                    mode=tree_type(graph['config'])
+                    state['workspaces'][mode]={'config':copy.deepcopy(graph['config']),'graph':graph,
+                        'path':Path(result_path).resolve(),'dirty':False,'active_layer':1,'graph_token':uuid.uuid4().hex}
+                    state.update(active=mode,origin='explicit')
+            except Exception as error:
+                state['warnings'].append('启动指定文件未能加载：'+str(error))
+            self.events.put(('session_loaded',state))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def _apply_previous_session(self,state):
+        self._session_restoring=True
+        self._workspaces=state['workspaces']
+        mode=state['active']
+        workspace=self._workspaces.get(mode,{'config':empty_config(mode),'graph':None,'path':None,
+                                            'dirty':False,'active_layer':1,'graph_token':None})
+        try:
+            if workspace.get('graph') is not None:
+                self.show_graph(workspace['graph'],workspace.get('path'),workspace.get('graph_token'))
+            self.set_config(workspace['config'])
+            index=workspace.get('active_layer',1)
+            self.select_layer(index if type(index) is int and 1<=index<=len(self.layers) else 1,save=False)
+            self._graph_token=workspace.get('graph_token')
+        finally:
+            self._session_restoring=False
+            self._session_ready=True
+            self._set_busy(None)
+        if workspace.get('dirty'):self.mark_dirty()
+        origin=state.get('origin')
+        if origin=='empty':
+            self.set_status('未找到历史记录 · 默认两级，可添加层级或导入配置。')
+        else:
+            label='已加载启动指定文件' if origin=='explicit' else ('已从最近历史运行恢复' if origin=='history' else '已自动恢复上次工作区')
+            self.set_status('{}：{} · {}级{}。'.format(label,TREE_PROFILES[mode]['label'],len(self.layers),
+                            ' · 配置及结果' if self.graph else ' · 配置草稿'))
+        if state['warnings']:
+            self.set_status('；'.join(state['warnings']))
+            if not self.graph:self._badge('配置已恢复 · 查看状态提示','warn')
+        self._schedule_session_save()
+
+    def _schedule_session_save(self):
+        if not self._session_writer or not self._session_ready or self._session_restoring or self._destroying:return
+        if self._session_after is not None:self.after_cancel(self._session_after)
+        self._session_after=self.after(650,self._save_session_now)
+
+    def _save_session_now(self):
+        if self._session_after is not None:
+            self.after_cancel(self._session_after)
+            self._session_after=None
+        if not self._session_writer or not self._session_ready or self._session_restoring:return
+        self._remember_workspace()
+        workspaces,prepared={},{}
+        for mode,original in self._workspaces.items():
+            workspace=dict(original,config=copy.deepcopy(original['config']))
+            graph=workspace.get('graph')
+            if graph is not None:
+                token=workspace.get('graph_token') or uuid.uuid4().hex
+                original['graph_token']=workspace['graph_token']=token
+                if mode==self._active_tree_type:self._graph_token=token
+                frozen=self._session_prepared.get(token)
+                if frozen is None:frozen=snapshot_graph(graph)
+                prepared[token]=workspace['graph']=frozen
+            workspaces[mode]=workspace
+        self._session_prepared=prepared
+        self._session_writer.submit({'active':self._active_tree_type,'workspaces':workspaces})
+
+    def _finish_close(self):
+        if not self._close_save_started:
+            self._save_session_now()
+            self._close_save_started=True
+        writer=self._session_writer
+        if writer and not writer.idle:
+            self._set_busy('session_save')
+            self.set_status('正在保存上次配置与结果，请稍候…')
+            return
+        if writer and writer.error:
+            self._set_busy(None)
+            self._closing=False
+            self._close_save_started=False
+            if not messagebox.askyesno('自动保存失败','无法写入自动恢复记录：{}\n\n当前配置和结果仍在窗口中，可先手动保存。是否仍要退出？'.format(writer.error),parent=self,default='no'):
+                return
+            self._close_save_started=True
+        self.destroy()
 
     def _clear_result(self):
         self.graph,self.graph_file=None,None
+        self._graph_token=None
         self.selected_object,self.related_edges=None,{}
         self.match_query,self.match_index='',-1
         self.search_var.set('')
@@ -647,12 +767,16 @@ class ClockTreeApp(tk.Tk):
         if target==self._active_tree_type:return
         saved=self._workspaces.get(target)
         if saved and saved['graph'] is not None:
-            self.show_graph(saved['graph'],saved['path'])
+            self.show_graph(saved['graph'],saved['path'],saved.get('graph_token'))
             self.set_config(saved['config'])
             if saved['dirty']:self.mark_dirty()
         else:
             self.set_config(saved['config'] if saved else empty_config(target))
+        if saved:
+            index=saved.get('active_layer',1)
+            self.select_layer(index if type(index) is int and 1<=index<=len(self.layers) else 1,save=False)
         self.set_status('已切换到{}；两类分析的配置和图形分别保留。'.format(TREE_PROFILES[target]['label']))
+        self._schedule_session_save()
 
     def rebuild_layer_buttons(self):
         for button in self.layer_buttons:button.destroy()
@@ -704,6 +828,7 @@ class ClockTreeApp(tk.Tk):
         for i,button in enumerate(self.layer_buttons,1):
             button.configure(style='LayerActive.TButton' if i==index else 'Layer.TButton')
         self.refresh_rules()
+        self._schedule_session_save()
 
     def refresh_rules(self):
         self.rules_tree.delete(*self.rules_tree.get_children())
@@ -752,11 +877,13 @@ class ClockTreeApp(tk.Tk):
         self.graph.setdefault('presentation',{}).setdefault('kind_overrides',[]).append({
             'layer':self.active_layer,'module':new['module'],'kind':new['kind'],'instances':len(matching),
             'changed_at':datetime.datetime.now().isoformat(),'source':'user_type_selection'})
+        self._graph_token=uuid.uuid4().hex
         selected=self.diagram.selected
         self.diagram.model=GraphView(self.graph)
         self.diagram.rebuild()
         if selected in self.diagram.model.nodes:self.diagram.select(self.diagram.model.nodes[selected])
         self.set_status('已将 {} 的 {} 个实例更新为{}模型。'.format(new['module'],len(matching),kind_label(new['kind'],self._active_tree_type)))
+        self._schedule_session_save()
         return True
 
     def remove_rule(self):
@@ -777,7 +904,8 @@ class ClockTreeApp(tk.Tk):
         self._base_config=copy.deepcopy(config)
         design=config.get('design',{})
         self.top_var.set(design.get('top',''))
-        self.mode_var.set('已有 elab / KDB' if design.get('elab') else 'RTL 文件列表')
+        use_elab=bool(design.get('elab')) or ('elab' in design and not design.get('filelist'))
+        self.mode_var.set('已有 elab / KDB' if use_elab else 'RTL 文件列表')
         self.path_var.set(design.get('elab',design.get('filelist','')))
         self.layers=copy.deepcopy(config.get('layers',[]))
         if not self.layers:
@@ -788,6 +916,7 @@ class ClockTreeApp(tk.Tk):
         self._filling=False
         self._config_dirty=False
         self.refresh_runs()
+        self._schedule_session_save()
 
     def get_config(self,validate=True):
         self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
@@ -919,10 +1048,11 @@ class ClockTreeApp(tk.Tk):
             except Exception as error:self.events.put(('error','结果打开失败',str(error)))
         threading.Thread(target=worker,daemon=True).start()
 
-    def show_graph(self,graph,path=None):
+    def show_graph(self,graph,path=None,graph_token=None):
         self.set_config(graph['config'])
         self.graph=graph
         self.graph_file=Path(path) if path else None
+        self._graph_token=graph_token or uuid.uuid4().hex
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
         summary=graph['summary']
@@ -951,6 +1081,7 @@ class ClockTreeApp(tk.Tk):
         self.refresh_nodes()
         self.refresh_runs()
         self.set_status('架构图就绪 · {:,} 实例 / {:,} 连接 · 滚轮缩放，拖动画布平移'.format(summary['instances'],summary['edges']))
+        self._schedule_session_save()
 
     def start_extraction(self):
         if self.busy:return
@@ -1022,7 +1153,11 @@ class ClockTreeApp(tk.Tk):
             while True:
                 item=self.events.get_nowait()
                 kind=item[0]
-                if kind=='loaded':
+                if kind=='session_loaded':
+                    self._apply_previous_session(item[1])
+                elif kind=='session_save_error':
+                    if not self._closing:self.set_status('自动恢复记录未能保存：'+item[1])
+                elif kind=='loaded':
                     _,graph,path,job=item
                     self._set_busy(None)
                     if job:
@@ -1061,9 +1196,9 @@ class ClockTreeApp(tk.Tk):
                         self.progress.stop()
                         self.progress.configure(mode='determinate',value=100*done/max(1,total))
                         self._badge('正在追踪端口 · {:,} / {:,}'.format(done,total),'busy')
-        if self._closing and not self.busy:
-            self.destroy()
-            return
+        if self._closing and (not self.busy or self.job_kind=='session_save'):
+            self._finish_close()
+            if self._destroying:return
         self.after(120,self._poll)
 
     def refresh_runs(self):
@@ -1286,14 +1421,26 @@ class ClockTreeApp(tk.Tk):
         messagebox.showerror(title,str(error),parent=self)
 
     def close(self):
+        self._closing=True
         if self.job_kind=='extract':
-            self._closing=True
             self.cancel_job()
         elif self.busy:
-            self._closing=True
-        else:self.destroy()
+            pass
+        else:self._finish_close()
+
+    def destroy(self):
+        if self._destroying:return
+        self._destroying=True
+        if self._session_writer:
+            if not self._close_save_started:self._save_session_now()
+            self._session_writer.close()
+        for timer in self.tk.splitlist(self.tk.call('after','info')):
+            # Native ttk timers contain Tcl command lists on Tk 8.5, which
+            # Python 3.6's after_cancel cannot delete as Python callbacks.
+            self.tk.call('after','cancel',timer)
+        super().destroy()
 
 
-def run_gui(runs=None,result=None,config=None):
-    app=ClockTreeApp(runs=runs,result=result,config=config)
+def run_gui(runs=None,result=None,config=None,remember=True):
+    app=ClockTreeApp(runs=runs,result=result,config=config,remember=remember)
     app.mainloop()

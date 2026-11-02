@@ -9,9 +9,10 @@
     footer{border-top:1px solid #e1e8f2;padding-top:18px;margin-top:40px;color:#7d8fa7;font-size:12px}
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
-    </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 GUI 操作手册</h1>
-<p><strong>文档版本：1.1 · 更新日期：2026-11-02 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+    </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
+<p><strong>文档版本：1.2 · 更新日期：2026-11-02 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
+<p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p><a class="figure" href="images/default-two-layers.png" target="_blank"><img alt="启动时的两级空白配置" src="images/default-two-layers.png" /></a></p>
 <p><a class="figure" href="images/gui-overview.png" target="_blank"><img alt="ClockTree7 主界面" src="images/gui-overview.png" /></a></p>
 <h2 id="_1">目录</h2>
@@ -35,6 +36,7 @@
 <li><a href="#troubleshooting">故障排查</a></li>
 <li><a href="#shortcuts">鼠标操作、快捷键与交付核对</a></li>
 <li><a href="#files">目录结构与验证范围</a></li>
+<li><a href="#reset-tree">复位树分支：MUX、RSY_SYNC 与独立工作区</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -220,8 +222,8 @@ python -m clocktree gui
 </tr>
 <tr>
 <td>WORKSPACE 栏</td>
-<td>顶层、当前记录、状态标识</td>
-<td>判断当前显示哪次结果</td>
+<td>时钟树/复位树切换、顶层、当前记录、状态标识</td>
+<td>选择分析功能，判断当前显示哪次结果</td>
 </tr>
 <tr>
 <td>左侧“提取配置”</td>
@@ -917,7 +919,7 @@ L7  fixture_top.l7
 <ol>
 <li>当前 WORKSPACE 确实是本次设计和记录。</li>
 <li>KDB/RTL、顶层、各层范围与规则快照一致。</li>
-<li>四类类型和关注端口填写正确；没有重复选入同一实际实例。</li>
+<li>当前模式的类型和关注端口填写正确；没有重复选入同一实际实例。</li>
 <li>当前显示为全量范围，或清楚标明局部视图范围。</li>
 <li>检查 <code>connectivity_complete</code>、<code>topology_valid</code> 和诊断，逐项解释缺口。</li>
 <li>核对全部根、网络、扇出、汇合及每层实际末端。</li>
@@ -937,7 +939,127 @@ L7  fixture_top.l7
 ├─ tests/                        自动检查
 └─ validation/                   本机生成的提取和验证数据
 </code></pre>
-<p>GUI 默认把新任务放到 <code>validation/runs</code>；完整任务目录包括 <code>config.json</code>、<code>rules.tcl</code>、<code>raw.jsonl</code>、<code>clocktree.json</code>、<code>summary.json</code>、<code>verdi.log</code>、<code>cli.log</code>、<code>gui-job.json</code>。Verdi 编译日志保留在 <code>.clocktree-runs/本次编号/verdiLog/</code>；路径也记录在结果的 <code>metadata.working_directory</code>。重用输出目录时，旧证据位于 <code>.clocktree-history/</code>。失败或取消任务可能只有其中一部分。</p>
+<p>GUI 默认把新任务放到 <code>validation/runs</code>；完整任务目录包括 <code>config.json</code>、<code>rules.tcl</code>、<code>raw.jsonl</code>、结果 JSON、<code>summary.json</code>、<code>verdi.log</code>、<code>cli.log</code>、<code>gui-job.json</code>。时钟结果为 <code>clocktree.json</code>，复位结果为 <code>resettree.json</code>。Verdi 编译日志保留在 <code>.clocktree-runs/本次编号/verdiLog/</code>；路径也记录在结果的 <code>metadata.working_directory</code>。重用输出目录时，旧证据位于 <code>.clocktree-history/</code>。失败或取消任务可能只有其中一部分。</p>
 <p>源码仓库包含工具、手册、截图和小型可浏览示例。本地大型 SoC 源码、编译/elab 库、第三方工具、许可证及临时运行数据不属于源码包；当前共享目录的这些文件仍在原处保留。</p>
 <p>已验证两级/十级四类器件全集、20 级增删控件、自动定位、同目录重跑与失败恢复，并兼容原有七级数据。此前完成七层全网样例、generate 路径、4096 实例压力样例、PULP SoC 和 OpenC910 的配置关注网络。OpenTitan 通过的是 <code>clkmgr</code> 子系统，整芯片受到当前旧版编译器兼容问题阻挡。精确计数、验证方式及边界见 <a href="VALIDATION.zh-CN.md">验证摘要</a>。</p>
-<p>查看 <a href="../README.md">项目入口与快速启动</a> 或 <a href="../examples/device_models/README.md">随附示例说明</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>查看 <a href="../README.md">项目入口与快速启动</a> 或 <a href="../examples/device_models/README.md">随附示例说明</a>。</p>
+<p><a id="reset-tree"></a></p>
+<h2 id="20-muxrsy_sync">20. 复位树分支：MUX、RSY_SYNC 与独立工作区</h2>
+<h3 id="201">20.1 进入复位树模式</h3>
+<ol>
+<li>启动 GUI，在顶部 <strong>WORKSPACE</strong> 右侧下拉框选择 <strong>复位树</strong>。</li>
+<li>首次进入显示 L1、L2 两级空白配置，标题为 <strong>复位树架构图</strong>，按钮为 <strong>开始提取全部复位树</strong>。</li>
+<li>填写设计顶层和 KDB/RTL filelist。Verdi 自动定位，执行提取的仍是运行 GUI 的本机。</li>
+<li>使用 <strong>+ 添加层级</strong> 增加 L3、L4 等，使用 <strong>删除当前层</strong> 删除并重新编号。层数没有固定上限。</li>
+<li>为各层填写 RTL 实例范围与模块规则，然后开始提取。</li>
+</ol>
+<p><a class="figure" href="images/reset-default-two.png" target="_blank"><img alt="复位树入口及默认两级配置" src="images/reset-default-two.png" /></a></p>
+<p>两种分析在当前会话中分别保存草稿和图形。切回时钟树后会恢复其配置和结果，再返回复位树也会恢复复位工作区。运行或加载结果期间禁止切换分析类型。<strong>这些会话草稿不是自动落盘保存；关闭程序前请保存配置、导出结果。</strong></p>
+<p>导入含 <code>tree_type: "reset"</code> 的配置，或打开复位结果时，会自动切到复位模式。旧配置没有 <code>tree_type</code> 时仍按时钟树处理。直接导入配置或结果会替换该模式的当前表单，尚未保存的修改应先保存。</p>
+<h3 id="202">20.2 类型与关注端口</h3>
+<table>
+<thead>
+<tr>
+<th>类型</th>
+<th>关注输入</th>
+<th>关注输出</th>
+<th>JSON <code>kind</code></th>
+<th>器件外观</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MUX</td>
+<td>一个或多个复位输入</td>
+<td>唯一一个复位输出</td>
+<td><code>mux</code></td>
+<td>蓝色梯形，标注 N:1</td>
+</tr>
+<tr>
+<td>RSY_SYNC</td>
+<td>恰好一个复位输入</td>
+<td>唯一一个复位输出</td>
+<td><code>rsy_sync</code></td>
+<td>粉色同步器方块，含同步级示意</td>
+</tr>
+</tbody>
+</table>
+<p>点击当前层 <strong>+ 添加</strong>，类型下拉框只有 <strong>MUX</strong> 与 <strong>RSY_SYNC</strong>。模块名仍填实际 RTL 的 module 定义名，如 <code>reset_mux</code>、<code>my_rst_sync</code>，不要求其定义名必须字面等于 MUX 或 RSY_SYNC。</p>
+<p>RSY_SYNC 只填写关注的复位输入和输出；同步时钟口、测试使能等不应混入关注复位输入。工具按用户配置追踪实际连线，不按端口名字猜测信号功能。输出、输入名保持实际 RTL 大小写，且不能重复。总线应显式选择单个位，例如 <code>rst_n[0]</code>。</p>
+<p><a class="figure" href="images/reset-device-library.png" target="_blank"><img alt="复位树两种器件模型" src="images/reset-device-library.png" /></a></p>
+<p><a class="figure" href="images/reset-sync-rule.png" target="_blank"><img alt="RSY_SYNC 规则与实时预览" src="images/reset-sync-rule.png" /></a></p>
+<p>模型中 S1/S2 是同步器示意，不代表已经推断用户模块的真实寄存器级数、复位极性或延迟，也不额外创建外部时钟引脚。实际外部连线只对应配置中的复位端口。</p>
+<h3 id="203">20.3 两级完整配置示例</h3>
+<pre><code class="language-json">{
+  &quot;tree_type&quot;: &quot;reset&quot;,
+  &quot;design&quot;: {
+    &quot;top&quot;: &quot;soc_top&quot;,
+    &quot;elab&quot;: &quot;/work/soc/build/simv.daidir/kdb.elab++&quot;
+  },
+  &quot;layers&quot;: [
+    {&quot;index&quot;: 1, &quot;hierarchy&quot;: &quot;soc_top.u_reset_ctrl&quot;, &quot;modules&quot;: [
+      {&quot;module&quot;: &quot;reset_mux&quot;, &quot;kind&quot;: &quot;mux&quot;, &quot;reset_inputs&quot;: [&quot;rst0_ni&quot;, &quot;rst1_ni&quot;], &quot;reset_output&quot;: &quot;rst_no&quot;}
+    ]},
+    {&quot;index&quot;: 2, &quot;hierarchy&quot;: &quot;soc_top.u_reset_domains&quot;, &quot;modules&quot;: [
+      {&quot;module&quot;: &quot;reset_sync&quot;, &quot;kind&quot;: &quot;rsy_sync&quot;, &quot;reset_inputs&quot;: [&quot;rst_ni&quot;], &quot;reset_output&quot;: &quot;rst_no&quot;}
+    ]}
+  ]
+}
+</code></pre>
+<p>复位模式使用 <code>reset_inputs</code>、<code>reset_output</code>；不要填成 <code>clock_inputs</code>、<code>clock_output</code>。工具会拒绝混用字段，以及把门控、OCC、DIV 填入复位规则。<code>design.filelist</code> 可以代替 <code>design.elab</code>。增加级数时，继续添加连续的 <code>index: 3</code>、<code>index: 4</code> 等条目。</p>
+<h3 id="204">20.4 浏览样例与真实重跑</h3>
+<p>只浏览：进入 <strong>复位树</strong> 后点击 <strong>查看示例</strong>，打开随附的 <code>examples/reset_tree/resettree.json</code>。这次操作读取已记录的 NPI 结果，不会重新运行 elaboration。</p>
+<p>实际重跑：在有 Verdi 的机器生成绝对路径配置：</p>
+<pre><code class="language-bash">python3 scripts/make_reset_fixture.py validation/fixtures/reset-tree --layers 2
+</code></pre>
+<p>在 GUI 导入生成的 <code>validation/fixtures/reset-tree/config.json</code>，核对顶层为 <code>reset_top</code>，然后点击 <strong>开始提取全部复位树</strong>。也可使用 CLI：</p>
+<pre><code class="language-bash">source scripts/eda_env.sh
+python3 -m clocktree extract --config validation/fixtures/reset-tree/config.json --out validation/runs/reset-check
+python3 scripts/check_golden.py validation/runs/reset-check/resettree.json validation/fixtures/reset-tree/golden.json
+</code></pre>
+<table>
+<thead>
+<tr>
+<th>样例指标</th>
+<th style="text-align: right;">结果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标实例 / 连线</td>
+<td style="text-align: right;">12 / 12</td>
+</tr>
+<tr>
+<td>MUX / RSY_SYNC</td>
+<td style="text-align: right;">4 / 8</td>
+</tr>
+<tr>
+<td>根 / 末端 / 独立网络</td>
+<td style="text-align: right;">2 / 4 / 2</td>
+</tr>
+<tr>
+<td>复位源</td>
+<td style="text-align: right;">3</td>
+</tr>
+<tr>
+<td>端口追踪</td>
+<td style="text-align: right;">28 / 28</td>
+</tr>
+<tr>
+<td>未解析 / 诊断</td>
+<td style="text-align: right;">0 / 0</td>
+</tr>
+</tbody>
+</table>
+<p>把生成命令中的 <code>--layers 2</code> 改成 <code>--layers 10</code> 可得到十级版本。两种版本均已在 VM 中完成实际 NPI 提取和实例、端口边、末端全集比对。十级样例包含空的 L6、L7、跨层跳接以及 L1/L2/L8/L10 末端。</p>
+<p><a class="figure" href="images/reset-architecture-10.png" target="_blank"><img alt="十级复位全网架构，包含独立网络与提前结束的分支" src="images/reset-architecture-10.png" /></a></p>
+<h3 id="205">20.5 结果、证据与历史记录</h3>
+<ul>
+<li>结果文件为 <strong><code>resettree.json</code></strong>，顶层及配置均记录 <code>tree_type: "reset"</code>，复位源列表为 <code>reset_sources</code>；统计中有 <code>summary.reset_sources</code>。</li>
+<li>GUI 新复位任务以 <code>rst_...</code> 命名。<strong>运行记录</strong> 只列出当前分析类型的任务，打开后恢复该次配置和图形。</li>
+<li>JSON 导出保留全部目标结构、关注端口与边；SVG 导出保留当前范围内全部图元，含 MUX、RSY_SYNC 专用模型及动态层级。</li>
+<li>点击实例、连线、上游/下游路径和连线证据的操作与时钟树相同。按具体复位输入/输出核对真实 NPI 路径。</li>
+<li>同目录可重复运行，也可轮流执行时钟和复位分析。旧结果、原始证据与日志先归档，本次输出不混用上次类型的结果文件。提取没有运行超时，仍可主动取消。</li>
+</ul>
+<p><a class="figure" href="images/reset-sync-evidence.png" target="_blank"><img alt="复位同步器定位与输出到输入的双向 NPI 证据" src="images/reset-sync-evidence.png" /></a></p>
+<p>分析覆盖配置中的全部目标实例和端口；未配置的结构按已知边界或未知逻辑记录。绿色状态表示当前配置范围内连接与结构检查通过。此功能恢复静态复位结构，不分析工作模式下的时序、复位释放行为或 RDC 签核。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

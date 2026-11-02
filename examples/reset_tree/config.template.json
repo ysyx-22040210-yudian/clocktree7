@@ -1,0 +1,55 @@
+{
+  "tree_type": "reset",
+  "design": {
+    "top": "reset_top",
+    "filelist": "examples/reset_tree/rtl.f"
+  },
+  "layers": [
+    {
+      "index": 1,
+      "hierarchy": "reset_top.l1",
+      "modules": [
+        {
+          "module": "reset_mux",
+          "kind": "mux",
+          "reset_inputs": [
+            "rst0_ni",
+            "rst1_ni"
+          ],
+          "reset_output": "rst_no"
+        },
+        {
+          "module": "reset_sync",
+          "kind": "rsy_sync",
+          "reset_inputs": [
+            "rst_ni"
+          ],
+          "reset_output": "rst_no"
+        }
+      ]
+    },
+    {
+      "index": 2,
+      "hierarchy": "reset_top.l2",
+      "modules": [
+        {
+          "module": "reset_mux",
+          "kind": "mux",
+          "reset_inputs": [
+            "rst0_ni",
+            "rst1_ni"
+          ],
+          "reset_output": "rst_no"
+        },
+        {
+          "module": "reset_sync",
+          "kind": "rsy_sync",
+          "reset_inputs": [
+            "rst_ni"
+          ],
+          "reset_output": "rst_no"
+        }
+      ]
+    }
+  ]
+}

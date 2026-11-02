@@ -1,6 +1,6 @@
 # ClockTree7
 
-**原生 Tk 桌面时钟树架构分析工具：默认两级，可自定义层级，从 RTL elaboration 自动恢复全部关注结构和连接。**
+**原生 Tk 桌面时钟树 / 复位树架构分析工具：默认两级，可自定义层级，从 RTL elaboration 自动恢复全部关注结构和连接。**
 
 用户填写 RTL 层次范围、module 定义名、器件类型及关注输入/输出端口。工具枚举所有匹配实例，依据实际 elab 网络连接全部扇出、选择器汇合、同层串接及跨层跳接。分支可以在任意已配置层结束；产品名称 ClockTree7 不再表示层级上限。
 
@@ -12,7 +12,9 @@
 
 - 原生 Python Tkinter / ttk 工作台，层级配置、历史记录、实例导航、属性与连接依据。
 - 默认 L1、L2，支持添加层级、删除当前层并自动重新编号；兼容原有七级配置。
+- 独立的 **时钟树 / 复位树** 分析模式，切换时保留各自配置草稿与结果，历史记录按模式显示。
 - 四类用户选定的器件：**选择器 / 门控 / OCC / DIV 分频器**，带专用模型和实时预览。
+- 复位树仅提供 **MUX / RSY_SYNC**，支持专用同步器模型及复位端口配置，不要求填写同步时钟口。
 - 自动从 `verdi` 命令定位安装目录，无需每次填写；提取运行时间不设上限。
 - 同一当前目录可反复运行，旧证据自动归档，每次使用独立 Verdi 工作目录。
 - 完整静态结构图，保留多源、全部扇出、汇合、孤立结构及异常。
@@ -74,7 +76,7 @@ python3 scripts/check_golden.py \
 
 `--out` 可重复使用；省略时写入当前目录。上次证据保存在 `.clocktree-history/`，本次编译工作区位于 `.clocktree-runs/`。不限制重跑次数，不设置运行超时；旧 `timeout_seconds` 字段也不再生效。Windows GUI 可以浏览和编辑；使用虚拟机内 Verdi 提取时，请在虚拟机运行 GUI。
 
-## 规则与模型
+## 时钟树规则与模型
 
 | 用户类型 | `kind` | 关注输入 | 关注输出 | 图形 |
 | --- | --- | --- | --- | --- |
@@ -83,9 +85,9 @@ python3 scripts/check_golden.py \
 | OCC | `occ` | 恰好一个 | 唯一一个 | 琥珀色切角控制块及脉冲图标 |
 | DIV 分频器 | `div` | 恰好一个 | 唯一一个 | 紫色六边形分频块，标注 DIV / ÷N |
 
-类型由用户选择。旧配置没有类型时显示“未分类”。Tk 与 SVG 使用相同模型几何及端口锚点。
+类型由用户选择。旧时钟配置没有类型时显示“未分类”。Tk 与 SVG 使用相同模型几何及端口锚点。
 
-每条规则示例：
+时钟树规则示例：
 
 ```json
 {
@@ -98,6 +100,22 @@ python3 scripts/check_golden.py \
 
 配置包含从 L1 开始连续编号的任意正数层级，默认两级。空层可没有规则；范围填实际 RTL 路径，层号独立于 RTL 路径深度。DIV 的 ÷N 是器件类型标记，不推断实际分频比。完整示例、字段说明和全部操作见 [GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md)。
 
+## 复位树分支
+
+在顶部 **WORKSPACE** 下拉框选择 **复位树**。默认两级，层数可自由增删；MUX 可多个关注复位输入，RSY_SYNC 为一个关注复位输入，两类都只有一个关注输出。连接仍由 elab 自动解析，保留多个复位源、全部扇出、汇合、同层串接、跳层和任意层末端。
+
+切换模式会在当前会话中分别保留配置草稿和图形；关闭程序前仍需保存配置、导出结果。复位模式点 **查看示例** 可直接浏览 [两级复位树记录](examples/reset_tree/README.md)。
+
+![复位树 MUX 和 RSY_SYNC 模型](docs/images/reset-device-library.png)
+
+复位配置顶层使用 `"tree_type": "reset"`，端口字段为 `reset_inputs` / `reset_output`，类型为 `mux` / `rsy_sync`；没有 `tree_type` 的旧配置继续按时钟树处理。复位输出为 `resettree.json`，保留复位源 `reset_sources` 及双向 NPI 证据。完整步骤与配置示例见 [复位树操作章节](docs/GUI_USER_MANUAL.zh-CN.md#reset-tree)。
+
+```bash
+python3 scripts/make_reset_fixture.py validation/fixtures/reset-tree --layers 2
+source scripts/eda_env.sh
+python3 -m clocktree extract --config validation/fixtures/reset-tree/config.json --out validation/runs/reset-check
+```
+
 ## 结果边界
 
 结果覆盖配置中的全部目标实例及关注端口。末端表示“当前关注结构网络没有下游目标结构”；范围边界、寄存器/RAM 等负载另行记录。未知逻辑保留为明确断点。GUI 绿色完成状态要求连接完整且结构约束通过。
@@ -108,8 +126,9 @@ python3 scripts/check_golden.py \
 
 已完成七层/generate/三类器件样例全集 golden 比对、4096 实例压力样例，以及 PULP SoC、OpenC910 配置关注网络的完整 KDB 提取。OpenTitan 通过的是 `clkmgr` 子系统，整芯片旧编译器兼容问题单独记录。
 
-- Python 检查：38 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- Python 检查：49 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
 - 新增 VM 两级/十级四类器件全网 golden 核对、20 级增删控件、同目录连续重跑与失败后恢复验证。
+- 复位分支：两级/十级实际 NPI 完整集合比对、RSY_SYNC 单输入校验、时钟口排除、独立工作区和同目录跨模式重跑通过。
 - VM 原生 Tk GUI：规则编辑、真实 NPI 提取、类型选择、模型预览、6,984 实例大图操作、证据和导出验收通过。
 - 已验证取消 NPI 进程组并保留原结果。
 - 测试环境、规模、固定版本及限制：[验证摘要](docs/VALIDATION.zh-CN.md)。
@@ -123,6 +142,7 @@ python -m pytest -q
 ```bash
 source scripts/eda_env.sh
 python3 scripts/check_flexible_gui.py --extract
+python3 scripts/check_reset_gui.py --extract
 ```
 
 GUI 验收脚本需测试用 Pillow 和系统 X11 工具；浏览器验收脚本需 Playwright。这些不是产品 GUI 运行依赖。
@@ -133,7 +153,7 @@ GUI 验收脚本需测试用 Pillow 和系统 X11 工具；浏览器验收脚本
 | --- | --- |
 | `clocktree/` | Tk 工作台、器件模型、视图、图分析及提取入口 |
 | `npi/extract.tcl` | 基本 NPI 采集 |
-| `examples/flexible_layers/` / `examples/device_models/` | 两级四类器件示例、旧七级示例及 RTL/golden |
+| `examples/flexible_layers/` / `examples/device_models/` / `examples/reset_tree/` | 时钟与复位记录示例及 RTL/golden |
 | `docs/` | 操作手册、截图、验证摘要 |
 | `scripts/` / `tests/` | 样例生成、验证和自动检查 |
 | `launch.sh` / `launch_gui.sh` / `launch_gui.cmd` | 默认 Tk GUI 启动 |

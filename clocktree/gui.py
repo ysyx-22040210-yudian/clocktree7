@@ -19,8 +19,9 @@ from tkinter import ttk, filedialog, messagebox, font as tkfont
 from .config import load_config, validate_config
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
-from .devices import DEVICE_TYPES, TYPE_LABELS, LABEL_TO_KIND, kind_label, node_height, matching_rule
+from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule
 from .viewmodel import GraphView
+from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +41,9 @@ class RuleDialog(tk.Toplevel):
     def __init__(self, app, layer, rule, callback):
         super().__init__(app)
         self.app, self.callback = app, callback
+        self.tree_type = app._active_tree_type
+        self.info = TREE_PROFILES[self.tree_type]
+        self.input_key, self.output_key = self.info['inputs'], self.info['output']
         self.title('L{} · 模块与关注端口'.format(layer))
         self.configure(bg='white')
         self.resizable(False, False)
@@ -49,15 +53,16 @@ class RuleDialog(tk.Toplevel):
         ttk.Label(frame, text='模块规则', style='Title.TLabel').pack(anchor='w')
         ttk.Label(frame, text='选择器件类型，填写 module 和关注端口。连接由 elab 确定。', style='Muted.TLabel').pack(anchor='w', pady=(6,14))
         ttk.Label(frame,text='器件类型',style='Small.TLabel').pack(anchor='w',pady=(0,4))
-        self.kind_var=tk.StringVar(value=kind_label(rule.get('kind')) if rule.get('kind') in DEVICE_TYPES else '请选择器件类型')
-        self.kind_combo=ttk.Combobox(frame,textvariable=self.kind_var,values=TYPE_LABELS,state='readonly')
+        self.kind_var=tk.StringVar(value=kind_label(rule.get('kind'),self.tree_type) if rule.get('kind') in self.info['kinds'] else '请选择器件类型')
+        self.kind_combo=ttk.Combobox(frame,textvariable=self.kind_var,values=type_labels({'tree_type':self.tree_type}),state='readonly')
         self.kind_combo.pack(fill='x')
-        self.type_hint=tk.StringVar(value='选择器可多输入；门控、OCC、DIV 均为单输入，四类都只有一个关注输出。')
+        self.type_hint=tk.StringVar(value=('MUX 可多路复位输入；RSY_SYNC 为一个复位输入和一个复位输出。同步时钟口不参与复位连线。'
+                                         if self.tree_type=='reset' else '选择器可多输入；门控、OCC、DIV 均为单输入，四类都只有一个关注输出。'))
         ttk.Label(frame,textvariable=self.type_hint,style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=(6,5))
         self.fields = {}
         for key, label, value in [('module','Module 定义名',rule.get('module','')),
-                                  ('clock_inputs','关注的输入口（多个以逗号分隔）',', '.join(rule.get('clock_inputs',[]))),
-                                  ('clock_output','唯一关注的输出口',rule.get('clock_output',''))]:
+                                  (self.input_key,'关注的{}输入口（多个以逗号分隔）'.format(self.info['signal']),', '.join(rule.get(self.input_key,[]))),
+                                  (self.output_key,'唯一关注的{}输出口'.format(self.info['signal']),rule.get(self.output_key,''))]:
             ttk.Label(frame, text=label, style='Small.TLabel').pack(anchor='w', pady=(7,4))
             variable = tk.StringVar(value=value)
             entry = ttk.Entry(frame, textvariable=variable, width=46)
@@ -88,20 +93,21 @@ class RuleDialog(tk.Toplevel):
 
     def save(self):
         kind=LABEL_TO_KIND.get(self.kind_var.get())
-        if kind is None:
-            self.error.set('请选择“选择器 / 门控 / OCC / DIV 分频器”中的一种器件类型。')
+        if kind not in self.info['kinds']:
+            self.error.set('请选择“{}”中的一种器件类型。'.format(' / '.join(type_labels({'tree_type':self.tree_type}))))
             return
         rule = {'module':self.fields['module'].get().strip(),
-                'clock_inputs':[x.strip() for x in self.fields['clock_inputs'].get().replace('，',',').split(',') if x.strip()],
-                'clock_output':self.fields['clock_output'].get().strip(),'kind':kind}
-        if not rule['module'] or not rule['clock_inputs'] or not rule['clock_output']:
+                self.input_key:[x.strip() for x in self.fields[self.input_key].get().replace('，',',').split(',') if x.strip()],
+                self.output_key:self.fields[self.output_key].get().strip(),'kind':kind}
+        inputs,output=rule_ports(rule,self.tree_type)
+        if not rule['module'] or not inputs or not output:
             self.error.set('请填写 module 名、至少一个输入口和唯一输出口。')
             return
-        if len(set(rule['clock_inputs']))!=len(rule['clock_inputs']) or rule['clock_output'] in rule['clock_inputs']:
+        if len(set(inputs))!=len(inputs) or output in inputs:
             self.error.set('输入口不能重复，输入口和输出口不能相同。')
             return
-        if kind in ('gate','occ','div') and len(rule['clock_inputs'])!=1:
-            self.error.set('{}只允许一个关注输入口；多个时钟输入请选择“选择器”。'.format(kind_label(kind)))
+        if kind in ('gate','occ','div','rsy_sync') and len(inputs)!=1:
+            self.error.set('{}只允许一个关注输入口；多个{}输入请选择 MUX。'.format(kind_label(kind,self.tree_type),self.info['signal']))
             return
         self.callback(rule)
         self.destroy()
@@ -110,13 +116,13 @@ class RuleDialog(tk.Toplevel):
         c=self.preview
         c.delete('all')
         kind=LABEL_TO_KIND.get(self.kind_var.get())
-        if kind is None:
+        if kind not in self.info['kinds']:
             c.create_text(220,78,text='选择器件类型后预览外观',fill='#8da7ca',font=(self.app.family,11))
             return
-        pins=[v.strip() for v in self.fields['clock_inputs'].get().replace('，',',').split(',') if v.strip()]
+        pins=[v.strip() for v in self.fields[self.input_key].get().replace('，',',').split(',') if v.strip()]
         pins=pins or (['输入 1','输入 2'] if kind=='mux' else ['输入'])
         node={'id':'u_instance','module':self.fields['module'].get().strip() or 'module_name',
-              'kind':kind,'inputs':pins,'output':self.fields['clock_output'].get().strip() or '输出'}
+              'kind':kind,'inputs':pins,'output':self.fields[self.output_key].get().strip() or '输出'}
         h=node_height(node)
         scale=min(1.,142/h)
         draw_device(c,node,(440-242*scale)/2,8,242,h,scale,self.app.family,font_cache=self.preview_fonts)
@@ -125,7 +131,7 @@ class RuleDialog(tk.Toplevel):
 class ClockTreeApp(tk.Tk):
     def __init__(self, runs=None, result=None, config=None):
         super().__init__(className='ClockTree7')
-        self.title('ClockTree7  |  RTL 时钟树架构分析')
+        self.title('ClockTree7  |  RTL 时钟树 / 复位树架构分析')
         icon=ROOT/'docs/clocktree7.gif'
         if icon.is_file():
             self._icon_image=tk.PhotoImage(master=self,file=str(icon))
@@ -153,6 +159,9 @@ class ClockTreeApp(tk.Tk):
         self._filling = False
         self._log_mtime = None
         self._base_config = {}
+        self._active_tree_type = 'clock'
+        self._workspaces = {}
+        self._config_dirty = False
         self.layers = [{'index':i,'hierarchy':'','modules':[]} for i in range(1,3)]
         self.active_layer = 1
         self.selected_object = None
@@ -166,6 +175,8 @@ class ClockTreeApp(tk.Tk):
         self.project = tk.StringVar(value='未打开设计')
         self.view_label = tk.StringVar(value='全部时钟网络')
         self.scope_label = tk.StringVar(value='全部层次 / 全量关注结构')
+        self.analysis_var = tk.StringVar(value='时钟树')
+        self.diagram_name = tk.StringVar(value='时钟树架构图')
         self._build()
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.bind('<Control-o>', lambda e:self.open_config())
@@ -230,7 +241,7 @@ class ClockTreeApp(tk.Tk):
         brand=tk.Frame(header,bg='#111e34')
         brand.pack(side='left')
         tk.Label(brand,text='ClockTree7',font=(self.family,21,'bold'),fg='white',bg='#111e34').pack(anchor='w')
-        tk.Label(brand,text='RTL  时钟树架构分析',font=(self.family,8),fg='#8ca6ca',bg='#111e34').pack(anchor='w')
+        tk.Label(brand,text='RTL  时钟 / 复位树架构分析',font=(self.family,8),fg='#8ca6ca',bg='#111e34').pack(anchor='w')
         tk.Label(header,text='DESIGN  /  CONNECTIVITY  /  INSIGHT',font=(self.family,8),fg='#6682a9',bg='#111e34').pack(side='left',padx=30)
         for text,command in [('导出…',self.export_menu),('打开结果',self.open_result),('保存配置',self.save_config),('导入配置',self.open_config),('查看示例',self.open_example),('新建配置',self.new_config)]:
             button=tk.Button(header,text=text,command=command,bg='#233a5a',fg='#e3edfc',activebackground='#31517c',activeforeground='white',relief='flat',borderwidth=0,padx=15,pady=8,cursor='hand2',font=(self.family,9))
@@ -239,6 +250,9 @@ class ClockTreeApp(tk.Tk):
         project_bar=ttk.Frame(self,padding=(19,9),style='White.TFrame')
         project_bar.pack(fill='x')
         ttk.Label(project_bar,text='WORKSPACE  /',style='Muted.TLabel').pack(side='left')
+        self.analysis_combo=ttk.Combobox(project_bar,textvariable=self.analysis_var,values=[p['label'] for p in TREE_PROFILES.values()],width=9,state='readonly')
+        self.analysis_combo.pack(side='left',padx=(10,0))
+        self.analysis_combo.bind('<<ComboboxSelected>>',self.switch_tree_type)
         ttk.Label(project_bar,textvariable=self.project,style='White.TLabel',font=(self.family,10,'bold')).pack(side='left',padx=10)
         self.state_badge=tk.Label(project_bar,textvariable=self.state,bg='#edf2fa',fg='#70819a',font=(self.family,9),padx=10,pady=4)
         self.state_badge.pack(side='right')
@@ -377,7 +391,7 @@ class ClockTreeApp(tk.Tk):
         title=ttk.Frame(self.center,padding=(18,16,18,9),style='White.TFrame')
         self.diagram_title=title
         title.pack(fill='x')
-        ttk.Label(title,text='时钟树架构图',style='Title.TLabel').pack(side='left')
+        ttk.Label(title,textvariable=self.diagram_name,style='Title.TLabel').pack(side='left')
         ttk.Label(title,textvariable=self.view_label,style='Muted.TLabel').pack(side='right')
         stats=ttk.Frame(self.center,padding=(10,4,10,12),style='White.TFrame')
         self.stats_frame=stats
@@ -434,6 +448,7 @@ class ClockTreeApp(tk.Tk):
         legend.create_text(116,15,text='聚合',anchor='w',fill='#7e93b0',font=(self.family,8))
         legend.pack(side='right',padx=12)
         devices=tk.Canvas(scopebar,width=312,height=31,bg='#edf2fa',highlightthickness=0)
+        self.devices_legend=devices
         devices.create_polygon(4,7,22,11,22,21,4,25,fill='#e0efff',outline=DEVICE_TYPES['mux']['color'])
         devices.create_text(29,16,text='选择器',anchor='w',fill='#6680a4',font=(self.family,8))
         devices.create_arc(81,8,103,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline='#2eac8d')
@@ -544,6 +559,7 @@ class ClockTreeApp(tk.Tk):
         self.status.set(str(text))
 
     def mark_dirty(self,*args):
+        if not self._filling and not self.busy:self._config_dirty=True
         if not self._filling and self.graph and not self.busy:
             self._badge('规则已修改 · 待重新提取','warn')
 
@@ -552,6 +568,91 @@ class ClockTreeApp(tk.Tk):
         bg,fg=colors[kind]
         self.state.set(text)
         self.state_badge.configure(bg=bg,fg=fg)
+
+    def _remember_workspace(self):
+        self._workspaces[self._active_tree_type]={
+            'config':self.get_config(validate=False),'graph':self.graph,'path':self.graph_file,
+            'dirty':self._config_dirty}
+
+    def _clear_result(self):
+        self.graph,self.graph_file=None,None
+        self.selected_object,self.related_edges=None,{}
+        self.match_query,self.match_index='',-1
+        self.search_var.set('')
+        self.nav_query.set('')
+        self.view_mode.set('实例明细')
+        self.zoom_label.configure(text='100%')
+        self.component_ids=[None]
+        info=TREE_PROFILES[self._active_tree_type]
+        self.component_combo.configure(values=['全部'+info['network']])
+        self.component_combo.current(0)
+        self.view_label.set('全部'+info['network'])
+        self.scope_label.set('全部层次 / 全量关注结构')
+        self.project.set('未打开'+info['signal']+'设计')
+        for value in self.stats.values():value.set('—')
+        self.connections.delete(*self.connections.get_children())
+        self.nav_tree.delete(*self.nav_tree.get_children())
+        self.nav_caption.configure(text='尚未载入设计')
+        self.expand_button.configure(state='disabled')
+        self.connection_title.configure(text='相关端口连接')
+        self.match_label.configure(text='路径 / module')
+        self._properties(info['label']+'架构', [('开始','填写层次和模块规则，或打开已有结果。'),
+                                            ('连接依据','实例与连接由 RTL elab 自动解析。')])
+        for widget in (self.diag_text,self.evidence_text,self.log_text):self._replace_text(widget,'')
+        self.show_log(False)
+        self.diagram.clear(self._active_tree_type)
+        self._badge('等待设计')
+
+    def _apply_profile(self):
+        info=TREE_PROFILES[self._active_tree_type]
+        self.analysis_var.set(info['label'])
+        self.diagram_name.set(info['label']+'架构图')
+        self.run_button.configure(text='开始提取全部'+info['label'])
+        self.rules_tree.heading('inputs',text='输入')
+        self.rules_tree.heading('output',text='输出')
+        self.rules_tree.column('kind',width=82 if self._active_tree_type=='reset' else 54)
+        self.rules_tree.column('#0',width=80 if self._active_tree_type=='reset' else 96)
+        self.rules_tree.column('inputs',width=55 if self._active_tree_type=='reset' else 63)
+        if not self.graph:
+            self.component_combo.configure(values=['全部'+info['network']])
+            self.component_combo.current(0)
+            self.view_label.set('全部'+info['network'])
+        self.diagram.tree_type=self._active_tree_type
+        self.diagram.schedule()
+        c=self.devices_legend
+        c.delete('all')
+        step=130 if self._active_tree_type=='reset' else 78
+        for i,kind in enumerate(info['kinds']):
+            x=i*step+4
+            color=DEVICE_TYPES[kind]['color']
+            if kind=='mux':
+                c.create_polygon(x,7,x+18,11,x+18,21,x,25,fill='#e0efff',outline=color)
+            elif kind=='gate':
+                c.create_arc(x,8,x+22,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline='#2eac8d')
+                c.create_rectangle(x,8,x+11,24,fill='#d7f3ea',outline='#2eac8d')
+            elif kind=='rsy_sync':
+                c.create_rectangle(x,8,x+24,25,fill='#ffe6ef',outline='#c86c93')
+                c.create_line(x+7,12,x+7,21,x+17,21,x+17,12,fill='#c86c93')
+            else:
+                c.create_polygon(x+4,8,x+20,8,x+24,12,x+24,21,x+20,25,x+4,25,x,21,x,12,fill='#eee5ff' if kind=='div' else '#fff0d7',outline=color)
+            label={'mux':'MUX' if self._active_tree_type=='reset' else '选择器','gate':'门控'}.get(kind,DEVICE_TYPES[kind]['short'])
+            c.create_text(x+29,16,text=label,anchor='w',fill='#6680a4',font=(self.family,8))
+        c.configure(width=step*len(info['kinds']))
+
+    def switch_tree_type(self,event=None):
+        target=event if isinstance(event,str) and event in TREE_PROFILES else LABEL_TO_TREE[self.analysis_var.get()]
+        if self.busy:
+            self.analysis_var.set(TREE_PROFILES[self._active_tree_type]['label'])
+            return
+        if target==self._active_tree_type:return
+        saved=self._workspaces.get(target)
+        if saved and saved['graph'] is not None:
+            self.show_graph(saved['graph'],saved['path'])
+            self.set_config(saved['config'])
+            if saved['dirty']:self.mark_dirty()
+        else:
+            self.set_config(saved['config'] if saved else empty_config(target))
+        self.set_status('已切换到{}；两类分析的配置和图形分别保留。'.format(TREE_PROFILES[target]['label']))
 
     def rebuild_layer_buttons(self):
         for button in self.layer_buttons:button.destroy()
@@ -585,12 +686,12 @@ class ClockTreeApp(tk.Tk):
 
     def new_config(self):
         if self.busy:return
-        self.set_config({'design':{},'layers':[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]})
+        self.set_config(empty_config(self._active_tree_type))
         self.mark_dirty()
         self.set_status('已新建两级配置。填写设计与规则，或点击“添加层级”。')
 
     def open_example(self):
-        self.load_result(ROOT/'examples/flexible_layers/clocktree.json')
+        self.load_result(ROOT/('examples/reset_tree/resettree.json' if self._active_tree_type=='reset' else 'examples/flexible_layers/clocktree.json'))
 
     def select_layer(self,index,save=True):
         if save:
@@ -609,7 +710,8 @@ class ClockTreeApp(tk.Tk):
         rules=self.layers[self.active_layer-1].get('modules',[])
         self.rules_tree.configure(height=min(6,max(3,len(rules))))
         for i,rule in enumerate(rules):
-            self.rules_tree.insert('', 'end',iid=str(i),text=rule['module'],values=(kind_label(rule.get('kind')),', '.join(rule['clock_inputs']),rule['clock_output']))
+            inputs,output=rule_ports(rule,self._active_tree_type)
+            self.rules_tree.insert('', 'end',iid=str(i),text=rule['module'],values=(kind_label(rule.get('kind'),self._active_tree_type),', '.join(inputs),output))
 
     def add_rule(self,rule=None):
         if rule is not None:
@@ -644,7 +746,7 @@ class ClockTreeApp(tk.Tk):
         matching=[n for n in self.graph['nodes'] if matching_rule(n,layer,new)]
         if not matching:return False
         for rule in layer['modules']:
-            if all(rule.get(k)==old.get(k) for k in ('module','clock_inputs','clock_output')):rule['kind']=new['kind']
+            if all(rule.get(k)==old.get(k) for k in ('module',profile(self._base_config)['inputs'],profile(self._base_config)['output'])):rule['kind']=new['kind']
         for node in matching:
             node['kind'],node['kind_source']=new['kind'],'configured'
         self.graph.setdefault('presentation',{}).setdefault('kind_overrides',[]).append({
@@ -654,7 +756,7 @@ class ClockTreeApp(tk.Tk):
         self.diagram.model=GraphView(self.graph)
         self.diagram.rebuild()
         if selected in self.diagram.model.nodes:self.diagram.select(self.diagram.model.nodes[selected])
-        self.set_status('已将 {} 的 {} 个实例更新为{}模型。'.format(new['module'],len(matching),kind_label(new['kind'])))
+        self.set_status('已将 {} 的 {} 个实例更新为{}模型。'.format(new['module'],len(matching),kind_label(new['kind'],self._active_tree_type)))
         return True
 
     def remove_rule(self):
@@ -665,6 +767,12 @@ class ClockTreeApp(tk.Tk):
             self.mark_dirty()
 
     def set_config(self,config):
+        mode=tree_type(config)
+        if mode not in TREE_PROFILES:raise ValueError('tree_type must be clock or reset')
+        if mode!=self._active_tree_type:
+            self._remember_workspace()
+            self._active_tree_type=mode
+            self._clear_result()
         self._filling=True
         self._base_config=copy.deepcopy(config)
         design=config.get('design',{})
@@ -676,9 +784,12 @@ class ClockTreeApp(tk.Tk):
             self.layers=[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]
         self.rebuild_layer_buttons()
         self.select_layer(1,save=False)
+        self._apply_profile()
         self._filling=False
+        self._config_dirty=False
+        self.refresh_runs()
 
-    def get_config(self):
+    def get_config(self,validate=True):
         self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
         data=copy.deepcopy(self._base_config)
         design=data.setdefault('design',{})
@@ -687,8 +798,9 @@ class ClockTreeApp(tk.Tk):
         design.update(top=self.top_var.get().strip())
         design['elab' if self.mode_var.get()=='已有 elab / KDB' else 'filelist']=self.path_var.get().strip()
         data['layers']=copy.deepcopy(self.layers)
+        data['tree_type']=self._active_tree_type
         data.pop('timeout_seconds',None)
-        return validate_config(data)
+        return validate_config(data) if validate else data
 
     def browse_design(self):
         if self.mode_var.get()=='已有 elab / KDB':
@@ -726,21 +838,24 @@ class ClockTreeApp(tk.Tk):
         dialog.transient(self)
         frame=ttk.Frame(dialog,padding=24,style='White.TFrame')
         frame.pack(fill='both',expand=True)
-        ttk.Label(frame,text='时钟树器件模型',style='Title.TLabel').pack(anchor='w')
+        info=profile(self._base_config)
+        ttk.Label(frame,text=info['label']+'器件模型',style='Title.TLabel').pack(anchor='w')
         ttk.Label(frame,text='类型由用户选择；架构图与 SVG 使用相同模型和端口位置。',style='Muted.TLabel').pack(anchor='w',pady=(6,20))
         row=ttk.Frame(frame,style='White.TFrame')
         row.pack(fill='x')
-        for index,kind in enumerate(DEVICE_TYPES):
+        for index,kind in enumerate(info['kinds']):
             card=ttk.Frame(row,style='White.TFrame',padding=(0,0,12,0))
             card.grid(row=index//2,column=index%2,sticky='nsew',pady=(0,12))
-            ttk.Label(card,text=kind_label(kind),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
+            ttk.Label(card,text=kind_label(kind,self._active_tree_type),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
             ttk.Label(card,text='多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出',style='Muted.TLabel').pack(anchor='w',pady=(0,9))
             canvas=tk.Canvas(card,width=270,height=164,bg='#101b2e',highlightthickness=0)
             canvas.pack()
-            node={'id':'u_clock_'+kind,'module':'clock_'+kind,'kind':kind,
-                  'inputs':['clk0_i','clk1_i'] if kind=='mux' else ['clk_i'],'output':'clk_o'}
+            is_reset=self._active_tree_type=='reset'
+            node={'id':'u_'+self._active_tree_type+'_'+kind,'module':self._active_tree_type+'_'+kind,'kind':kind,
+                  'inputs':(['rst0_ni','rst1_ni'] if kind=='mux' else ['rst_ni']) if is_reset else (['clk0_i','clk1_i'] if kind=='mux' else ['clk_i']),
+                  'output':'rst_no' if is_reset else 'clk_o'}
             draw_device(canvas,node,14,14,242,node_height(node),1.,self.family)
-        ttk.Label(frame,text='模型展示关注端口；DIV 的 ÷N 为类型标记，未推断实际分频比。',style='Muted.TLabel').pack(anchor='w',pady=(18,0))
+        ttk.Label(frame,text=('RSY_SYNC 仅展示复位输入/输出；图内同步标记不增加外部时钟连线。' if self._active_tree_type=='reset' else '模型展示关注端口；DIV 的 ÷N 为类型标记，未推断实际分频比。'),style='Muted.TLabel').pack(anchor='w',pady=(18,0))
         ttk.Button(frame,text='关闭',command=dialog.destroy).pack(anchor='e',pady=(18,0))
         dialog.update_idletasks()
         dialog.geometry('+{}+{}'.format(self.winfo_rootx()+max(20,(self.winfo_width()-dialog.winfo_width())//2),
@@ -762,7 +877,7 @@ class ClockTreeApp(tk.Tk):
     def save_config(self,path=None):
         try:
             config=self.get_config()
-            path=path or filedialog.asksaveasfilename(parent=self,title='保存传播规则配置',defaultextension='.json',initialfile='clocktree7-config.json',filetypes=[('JSON','*.json')])
+            path=path or filedialog.asksaveasfilename(parent=self,title='保存传播规则配置',defaultextension='.json',initialfile=self._active_tree_type+'-config.json',filetypes=[('JSON','*.json')])
             if path:
                 write_json(path,config)
                 self.set_status('配置已保存：{}'.format(path))
@@ -770,7 +885,7 @@ class ClockTreeApp(tk.Tk):
 
     def open_result(self):
         if self.busy:return
-        path=filedialog.askopenfilename(parent=self,title='打开时钟树提取结果',initialdir=str(self.runs),filetypes=[('ClockTree7 JSON','*.json')])
+        path=filedialog.askopenfilename(parent=self,title='打开时钟树 / 复位树提取结果',initialdir=str(self.runs),filetypes=[('ClockTree7 JSON','*.json')])
         if path:self.load_result(path)
 
     def _set_busy(self,kind):
@@ -778,6 +893,7 @@ class ClockTreeApp(tk.Tk):
         self.job_kind=kind
         self.run_button.configure(state='disabled' if self.busy else 'normal')
         self.cancel_button.configure(state='normal' if kind=='extract' else 'disabled')
+        self.analysis_combo.configure(state='disabled' if self.busy else 'readonly')
         if self.busy:
             self.progress.configure(mode='indeterminate')
             self.progress.start(12)
@@ -795,15 +911,18 @@ class ClockTreeApp(tk.Tk):
             try:
                 graph=read_json(path)
                 if not all(k in graph for k in ['nodes','edges','summary','config']):
-                    raise ValueError('请选择 clocktree.json 提取结果。')
+                    raise ValueError('请选择 clocktree.json 或 resettree.json 提取结果。')
+                mode=tree_type(graph['config'])
+                if not isinstance(mode,str) or mode not in TREE_PROFILES or graph.get('tree_type',mode)!=mode:
+                    raise ValueError('结果中的 tree_type 必须与配置一致，并为 clock 或 reset。')
                 self.events.put(('loaded',graph,path,None))
             except Exception as error:self.events.put(('error','结果打开失败',str(error)))
         threading.Thread(target=worker,daemon=True).start()
 
     def show_graph(self,graph,path=None):
+        self.set_config(graph['config'])
         self.graph=graph
         self.graph_file=Path(path) if path else None
-        self.set_config(graph['config'])
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
         summary=graph['summary']
@@ -811,7 +930,7 @@ class ClockTreeApp(tk.Tk):
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
         else:self._badge('存在未解析断点 / 诊断','warn')
         self.component_ids=[None]+[c['id'] for c in graph['components']]
-        values=['全部时钟网络']+['网络 {} · {} 实例'.format(c['id']+1,len(c['nodes'])) for c in graph['components']]
+        values=['全部'+profile(graph['config'])['network']]+['网络 {} · {} 实例'.format(c['id']+1,len(c['nodes'])) for c in graph['components']]
         self.component_combo.configure(values=values)
         self.component_combo.current(0)
         self.diagram.load(graph)
@@ -824,7 +943,7 @@ class ClockTreeApp(tk.Tk):
         self.inspector_tabs.select(0)
         self._properties('全网提取概况', [('设计顶层',graph['config']['design'].get('top','')),
             ('覆盖规模','{:,} 个结构 · {:,} 条端口连线'.format(summary['instances'],summary['edges'])),
-            ('器件类型',' / '.join('{} {}'.format(kind_label(k),v) for k,v in Counter(n.get('kind') for n in self.diagram.model.original.values()).items())),
+            ('器件类型',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in Counter(n.get('kind') for n in self.diagram.model.original.values()).items())),
             ('分支末端','  /  '.join('L{}: {}'.format(k,v) for k,v in sorted(summary.get('terminal_layers',{}).items()))),
             ('完整性','全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
@@ -838,11 +957,12 @@ class ClockTreeApp(tk.Tk):
         try:
             config=self.get_config()
             resolve_verdi(config['design'])
-            identifier=datetime.datetime.now().strftime('tk_%Y%m%d_%H%M%S_')+uuid.uuid4().hex[:6]
+            identifier=datetime.datetime.now().strftime(('rst_' if self._active_tree_type=='reset' else 'tk_')+'%Y%m%d_%H%M%S_')+uuid.uuid4().hex[:6]
             directory=self.runs/identifier
             directory.mkdir()
             path=directory/'config.json'
             write_json(path,config)
+            result_path=directory/result_filename(config)
         except Exception as error:
             self.show_error('无法开始提取',error)
             return
@@ -867,8 +987,8 @@ class ClockTreeApp(tk.Tk):
                     code=self.process.wait()
                 self.process=None
                 if self.cancel_event.is_set():self.events.put(('cancelled',directory))
-                elif code in (0,2) and (directory/'clocktree.json').is_file():
-                    self.events.put(('loaded',read_json(directory/'clocktree.json'),directory/'clocktree.json',directory))
+                elif code in (0,2) and result_path.is_file():
+                    self.events.put(('loaded',read_json(result_path),result_path,directory))
                 else:
                     detail=(directory/'cli.log').read_text(encoding='utf-8',errors='replace')[-6000:]
                     self.events.put(('error','提取失败',detail or '请查看运行目录中的 verdi.log。'))
@@ -951,6 +1071,8 @@ class ClockTreeApp(tk.Tk):
         directories=sorted([p for p in self.runs.iterdir() if p.is_dir()],key=lambda p:p.stat().st_mtime,reverse=True)
         for directory in directories:
             try:
+                run_config=read_json(directory/'config.json') if (directory/'config.json').is_file() else {}
+                if tree_type(run_config)!=self._active_tree_type:continue
                 if (directory/'summary.json').is_file():
                     s=read_json(directory/'summary.json')
                     status='完整' if s['connectivity_complete'] and s.get('topology_valid',True) else '诊断'
@@ -967,7 +1089,8 @@ class ClockTreeApp(tk.Tk):
         selection=self.runs_tree.selection()
         if not selection:return
         directory=self.runs/selection[0]
-        if (directory/'clocktree.json').is_file():self.load_result(directory/'clocktree.json')
+        result=directory/result_filename({'tree_type':self._active_tree_type})
+        if result.is_file():self.load_result(result)
         else:
             path=directory/'verdi.log'
             if path.is_file():
@@ -1038,14 +1161,14 @@ class ClockTreeApp(tk.Tk):
             fields=[('RTL 范围',node['path']),('显示类型','层次聚合（不是新增的 RTL 实例）'),
                     ('归属层','L{}'.format(node['layer'])),('实际实例数',len(node['members'])),
                     ('Module 分布','\n'.join('{} × {}'.format(k,v) for k,v in node['module_counts'].items())),
-                    ('器件类型分布',' / '.join('{} {}'.format(kind_label(k),v) for k,v in node.get('kind_counts',{}).items())),
+                    ('器件类型分布',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in node.get('kind_counts',{}).items())),
                     ('内部真实连线',node['internal_edges']),('根 / 末端','{} / {}'.format(node['root_count'],node['terminal_count']))]
             title='RTL 层次概览'
             members=set(node['members'])
             edges=[e for e in self.graph['edges'] if (e['source'] in members)!=(e['target'] in members)]
         else:
             boundaries=[b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
-            fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'))),('传播层次','L{}'.format(node['layer'])),
+            fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'),self._active_tree_type)),('传播层次','L{}'.format(node['layer'])),
                     ('关注输入','\n'.join(node['inputs'])),('关注输出',node['output']),
                     ('结构状态',' / '.join(x for value,x in [(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]
@@ -1142,7 +1265,7 @@ class ClockTreeApp(tk.Tk):
 
     def export_result(self,path=None):
         if not self.graph:return
-        path=path or filedialog.asksaveasfilename(parent=self,title='导出全量结构图',defaultextension='.json',initialfile='clocktree7-full.json',filetypes=[('JSON','*.json')])
+        path=path or filedialog.asksaveasfilename(parent=self,title='导出全量结构图',defaultextension='.json',initialfile=self._active_tree_type+'-full.json',filetypes=[('JSON','*.json')])
         if path:
             try:
                 write_json(path,self.graph)
@@ -1151,7 +1274,7 @@ class ClockTreeApp(tk.Tk):
 
     def export_svg(self,path=None):
         if not self.graph:return
-        path=path or filedialog.asksaveasfilename(parent=self,title='导出当前范围架构图',defaultextension='.svg',initialfile='clocktree7-architecture.svg',filetypes=[('SVG','*.svg')])
+        path=path or filedialog.asksaveasfilename(parent=self,title='导出当前范围架构图',defaultextension='.svg',initialfile=self._active_tree_type+'-architecture.svg',filetypes=[('SVG','*.svg')])
         if path:
             try:
                 Path(path).write_text(self.diagram.model.svg(),encoding='utf-8')

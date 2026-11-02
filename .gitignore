@@ -21,6 +21,7 @@ desktop.ini
 .clocktree-history/
 /raw.jsonl
 /clocktree.json
+/resettree.json
 /summary.json
 /config.json
 /rules.tcl

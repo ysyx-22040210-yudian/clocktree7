@@ -1,0 +1,24 @@
+{
+  "instances": 12,
+  "edges": 12,
+  "roots": 2,
+  "tree_type": "reset",
+  "terminals": 4,
+  "components": 2,
+  "reset_sources": 3,
+  "layers": {
+    "1": 3,
+    "2": 9
+  },
+  "terminal_layers": {
+    "1": 1,
+    "2": 3
+  },
+  "expected_pin_traces": 28,
+  "observed_pin_traces": 28,
+  "unresolved": 0,
+  "diagnostics": 0,
+  "extraction_finished": true,
+  "connectivity_complete": true,
+  "topology_valid": true
+}

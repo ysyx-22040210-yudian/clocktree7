@@ -11,6 +11,7 @@ import uuid
 
 from .config import validate_config
 from .extract import extract
+from .profiles import result_filename, tree_type
 
 
 class Server(ThreadingMixIn, HTTPServer):
@@ -50,7 +51,12 @@ def serve(host, port, runs, result=None):
                     self.send({"runs": records, "initial": bool(initial and initial.exists())})
                 elif route.path == "/api/result":
                     identifier = query.get("run", [""])[0]
-                    path = self.run_path(identifier) / "clocktree.json" if identifier else initial
+                    if identifier:
+                        directory = self.run_path(identifier)
+                        summary = json.loads((directory / 'summary.json').read_text()) if (directory / 'summary.json').is_file() else {}
+                        path = directory / result_filename(summary)
+                    else:
+                        path = initial
                     if not path or not path.is_file():
                         self.send({"error": "No result loaded"}, 404)
                     else:
@@ -87,7 +93,7 @@ def serve(host, port, runs, result=None):
                 if any(job.get("state") == "running" for job in jobs.values()):
                     self.send({"error": "An extraction is already running; wait for completion"}, 409)
                     return
-                identifier = time.strftime("run_%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
+                identifier = time.strftime(('rst_' if tree_type(config)=='reset' else 'run_') + "%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:6]
                 directory = self.run_path(identifier)
                 directory.mkdir()
                 path = directory / "config.json"

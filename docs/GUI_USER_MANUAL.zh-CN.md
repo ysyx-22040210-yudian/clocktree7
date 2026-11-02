@@ -1,8 +1,10 @@
-# ClockTree7 GUI 操作手册
+# ClockTree7 时钟树 / 复位树 GUI 操作手册
 
-**文档版本：1.1 · 更新日期：2026-11-02 · 适用界面：Python Tkinter / ttk 原生桌面版**
+**文档版本：1.2 · 更新日期：2026-11-02 · 适用界面：Python Tkinter / ttk 原生桌面版**
 
 本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。
+
+顶部 **WORKSPACE** 的分析功能可切换 **时钟树 / 复位树**。时钟树有上述四类模型；复位树只有 **MUX / RSY_SYNC**，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 [第 20 章](#reset-tree)。
 
 ![启动时的两级空白配置](images/default-two-layers.png)
 
@@ -29,6 +31,7 @@
 17. [故障排查](#troubleshooting)
 18. [鼠标操作、快捷键与交付核对](#shortcuts)
 19. [目录结构与验证范围](#files)
+20. [复位树分支：MUX、RSY_SYNC 与独立工作区](#reset-tree)
 
 <a id="scope"></a>
 ## 1. 用途、术语与结果范围
@@ -149,7 +152,7 @@ python3 scripts/make_flexible_fixture.py validation/fixtures/flexible --layers 2
 | 区域 | 内容 | 主要用途 |
 | --- | --- | --- |
 | 顶部深色栏 | 新建配置、查看示例、导入配置、保存配置、打开结果、导出… | 新建两级规则、打开四类器件示例和交付文件 |
-| WORKSPACE 栏 | 顶层、当前记录、状态标识 | 判断当前显示哪次结果 |
+| WORKSPACE 栏 | 时钟树/复位树切换、顶层、当前记录、状态标识 | 选择分析功能，判断当前显示哪次结果 |
 | 左侧“提取配置” | 设计入口、运行环境、动态层按钮、添加/删除层级、规则表、任务按钮 | 填写与执行提取 |
 | 左侧“运行记录” | 历史运行列表及状态 | 重新打开结果或日志 |
 | 左侧“实例导航” | 实例路径列表、筛选、定位 | 根据名称浏览真实实例 |
@@ -632,7 +635,7 @@ python3 scripts/make_flexible_fixture.py validation/fixtures/flexible --layers 2
 
 1. 当前 WORKSPACE 确实是本次设计和记录。
 2. KDB/RTL、顶层、各层范围与规则快照一致。
-3. 四类类型和关注端口填写正确；没有重复选入同一实际实例。
+3. 当前模式的类型和关注端口填写正确；没有重复选入同一实际实例。
 4. 当前显示为全量范围，或清楚标明局部视图范围。
 5. 检查 `connectivity_complete`、`topology_valid` 和诊断，逐项解释缺口。
 6. 核对全部根、网络、扇出、汇合及每层实际末端。
@@ -655,10 +658,109 @@ clocktree7/
 └─ validation/                   本机生成的提取和验证数据
 ```
 
-GUI 默认把新任务放到 `validation/runs`；完整任务目录包括 `config.json`、`rules.tcl`、`raw.jsonl`、`clocktree.json`、`summary.json`、`verdi.log`、`cli.log`、`gui-job.json`。Verdi 编译日志保留在 `.clocktree-runs/本次编号/verdiLog/`；路径也记录在结果的 `metadata.working_directory`。重用输出目录时，旧证据位于 `.clocktree-history/`。失败或取消任务可能只有其中一部分。
+GUI 默认把新任务放到 `validation/runs`；完整任务目录包括 `config.json`、`rules.tcl`、`raw.jsonl`、结果 JSON、`summary.json`、`verdi.log`、`cli.log`、`gui-job.json`。时钟结果为 `clocktree.json`，复位结果为 `resettree.json`。Verdi 编译日志保留在 `.clocktree-runs/本次编号/verdiLog/`；路径也记录在结果的 `metadata.working_directory`。重用输出目录时，旧证据位于 `.clocktree-history/`。失败或取消任务可能只有其中一部分。
 
 源码仓库包含工具、手册、截图和小型可浏览示例。本地大型 SoC 源码、编译/elab 库、第三方工具、许可证及临时运行数据不属于源码包；当前共享目录的这些文件仍在原处保留。
 
 已验证两级/十级四类器件全集、20 级增删控件、自动定位、同目录重跑与失败恢复，并兼容原有七级数据。此前完成七层全网样例、generate 路径、4096 实例压力样例、PULP SoC 和 OpenC910 的配置关注网络。OpenTitan 通过的是 `clkmgr` 子系统，整芯片受到当前旧版编译器兼容问题阻挡。精确计数、验证方式及边界见 [验证摘要](VALIDATION.zh-CN.md)。
 
 查看 [项目入口与快速启动](../README.md) 或 [随附示例说明](../examples/device_models/README.md)。
+
+<a id="reset-tree"></a>
+## 20. 复位树分支：MUX、RSY_SYNC 与独立工作区
+
+### 20.1 进入复位树模式
+
+1. 启动 GUI，在顶部 **WORKSPACE** 右侧下拉框选择 **复位树**。
+2. 首次进入显示 L1、L2 两级空白配置，标题为 **复位树架构图**，按钮为 **开始提取全部复位树**。
+3. 填写设计顶层和 KDB/RTL filelist。Verdi 自动定位，执行提取的仍是运行 GUI 的本机。
+4. 使用 **+ 添加层级** 增加 L3、L4 等，使用 **删除当前层** 删除并重新编号。层数没有固定上限。
+5. 为各层填写 RTL 实例范围与模块规则，然后开始提取。
+
+![复位树入口及默认两级配置](images/reset-default-two.png)
+
+两种分析在当前会话中分别保存草稿和图形。切回时钟树后会恢复其配置和结果，再返回复位树也会恢复复位工作区。运行或加载结果期间禁止切换分析类型。**这些会话草稿不是自动落盘保存；关闭程序前请保存配置、导出结果。**
+
+导入含 `tree_type: "reset"` 的配置，或打开复位结果时，会自动切到复位模式。旧配置没有 `tree_type` 时仍按时钟树处理。直接导入配置或结果会替换该模式的当前表单，尚未保存的修改应先保存。
+
+### 20.2 类型与关注端口
+
+| 类型 | 关注输入 | 关注输出 | JSON `kind` | 器件外观 |
+| --- | --- | --- | --- | --- |
+| MUX | 一个或多个复位输入 | 唯一一个复位输出 | `mux` | 蓝色梯形，标注 N:1 |
+| RSY_SYNC | 恰好一个复位输入 | 唯一一个复位输出 | `rsy_sync` | 粉色同步器方块，含同步级示意 |
+
+点击当前层 **+ 添加**，类型下拉框只有 **MUX** 与 **RSY_SYNC**。模块名仍填实际 RTL 的 module 定义名，如 `reset_mux`、`my_rst_sync`，不要求其定义名必须字面等于 MUX 或 RSY_SYNC。
+
+RSY_SYNC 只填写关注的复位输入和输出；同步时钟口、测试使能等不应混入关注复位输入。工具按用户配置追踪实际连线，不按端口名字猜测信号功能。输出、输入名保持实际 RTL 大小写，且不能重复。总线应显式选择单个位，例如 `rst_n[0]`。
+
+![复位树两种器件模型](images/reset-device-library.png)
+
+![RSY_SYNC 规则与实时预览](images/reset-sync-rule.png)
+
+模型中 S1/S2 是同步器示意，不代表已经推断用户模块的真实寄存器级数、复位极性或延迟，也不额外创建外部时钟引脚。实际外部连线只对应配置中的复位端口。
+
+### 20.3 两级完整配置示例
+
+```json
+{
+  "tree_type": "reset",
+  "design": {
+    "top": "soc_top",
+    "elab": "/work/soc/build/simv.daidir/kdb.elab++"
+  },
+  "layers": [
+    {"index": 1, "hierarchy": "soc_top.u_reset_ctrl", "modules": [
+      {"module": "reset_mux", "kind": "mux", "reset_inputs": ["rst0_ni", "rst1_ni"], "reset_output": "rst_no"}
+    ]},
+    {"index": 2, "hierarchy": "soc_top.u_reset_domains", "modules": [
+      {"module": "reset_sync", "kind": "rsy_sync", "reset_inputs": ["rst_ni"], "reset_output": "rst_no"}
+    ]}
+  ]
+}
+```
+
+复位模式使用 `reset_inputs`、`reset_output`；不要填成 `clock_inputs`、`clock_output`。工具会拒绝混用字段，以及把门控、OCC、DIV 填入复位规则。`design.filelist` 可以代替 `design.elab`。增加级数时，继续添加连续的 `index: 3`、`index: 4` 等条目。
+
+### 20.4 浏览样例与真实重跑
+
+只浏览：进入 **复位树** 后点击 **查看示例**，打开随附的 `examples/reset_tree/resettree.json`。这次操作读取已记录的 NPI 结果，不会重新运行 elaboration。
+
+实际重跑：在有 Verdi 的机器生成绝对路径配置：
+
+```bash
+python3 scripts/make_reset_fixture.py validation/fixtures/reset-tree --layers 2
+```
+
+在 GUI 导入生成的 `validation/fixtures/reset-tree/config.json`，核对顶层为 `reset_top`，然后点击 **开始提取全部复位树**。也可使用 CLI：
+
+```bash
+source scripts/eda_env.sh
+python3 -m clocktree extract --config validation/fixtures/reset-tree/config.json --out validation/runs/reset-check
+python3 scripts/check_golden.py validation/runs/reset-check/resettree.json validation/fixtures/reset-tree/golden.json
+```
+
+| 样例指标 | 结果 |
+| --- | ---: |
+| 目标实例 / 连线 | 12 / 12 |
+| MUX / RSY_SYNC | 4 / 8 |
+| 根 / 末端 / 独立网络 | 2 / 4 / 2 |
+| 复位源 | 3 |
+| 端口追踪 | 28 / 28 |
+| 未解析 / 诊断 | 0 / 0 |
+
+把生成命令中的 `--layers 2` 改成 `--layers 10` 可得到十级版本。两种版本均已在 VM 中完成实际 NPI 提取和实例、端口边、末端全集比对。十级样例包含空的 L6、L7、跨层跳接以及 L1/L2/L8/L10 末端。
+
+![十级复位全网架构，包含独立网络与提前结束的分支](images/reset-architecture-10.png)
+
+### 20.5 结果、证据与历史记录
+
+- 结果文件为 **`resettree.json`**，顶层及配置均记录 `tree_type: "reset"`，复位源列表为 `reset_sources`；统计中有 `summary.reset_sources`。
+- GUI 新复位任务以 `rst_...` 命名。**运行记录** 只列出当前分析类型的任务，打开后恢复该次配置和图形。
+- JSON 导出保留全部目标结构、关注端口与边；SVG 导出保留当前范围内全部图元，含 MUX、RSY_SYNC 专用模型及动态层级。
+- 点击实例、连线、上游/下游路径和连线证据的操作与时钟树相同。按具体复位输入/输出核对真实 NPI 路径。
+- 同目录可重复运行，也可轮流执行时钟和复位分析。旧结果、原始证据与日志先归档，本次输出不混用上次类型的结果文件。提取没有运行超时，仍可主动取消。
+
+![复位同步器定位与输出到输入的双向 NPI 证据](images/reset-sync-evidence.png)
+
+分析覆盖配置中的全部目标实例和端口；未配置的结构按已知边界或未知逻辑记录。绿色状态表示当前配置范围内连接与结构检查通过。此功能恢复静态复位结构，不分析工作模式下的时序、复位释放行为或 RDC 签核。

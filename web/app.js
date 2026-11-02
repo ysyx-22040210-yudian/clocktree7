@@ -4,17 +4,34 @@ let graph = null, positions = new Map(), selected = null, box = {x: 0, y: 0, w: 
 let drag = null, activeJob = null, nodeIndex = new Map(), viewNodes = new Map();
 let viewScope = '', viewDepth = 5;
 let savedDesign = {};
+let activeTree = 'clock';
+const workspaces = new Map();
+const profiles = {
+  clock:{label:'时钟树',network:'时钟网络',inputs:'clock_inputs',output:'clock_output',types:{mux:'选择器',gate:'门控',occ:'OCC',div:'DIV 分频器'}},
+  reset:{label:'复位树',network:'复位网络',inputs:'reset_inputs',output:'reset_output',types:{mux:'MUX',rsy_sync:'RSY_SYNC'}}
+};
 const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function element(tag, attrs = {}, text) { const node = document.createElementNS(ns, tag); for (const [k,v] of Object.entries(attrs)) node.setAttribute(k,v); if (text !== undefined) node.textContent = text; return node; }
 function download(name, data, type='application/json') { const url=URL.createObjectURL(new Blob([data],{type})); const a=document.createElement('a'); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000); }
-function addRule(container, data={module:'',clock_inputs:[],clock_output:''}) {
+function addRule(container, data={}) {
+  const info=profiles[activeTree];
   const row=document.createElement('div'); row.className='rule';
-  row.innerHTML='<input class="module" placeholder="module 定义名"><select class="kind"><option value="">选择器件类型</option><option value="mux">选择器</option><option value="gate">门控</option><option value="occ">OCC</option><option value="div">DIV 分频器</option></select><div class="pair"><input class="inputs" placeholder="输入口，逗号分隔"><input class="output" placeholder="唯一输出口"></div><button class="remove">删除规则</button>';
+  row.innerHTML='<input class="module" placeholder="module 定义名"><select class="kind"><option value="">选择器件类型</option>'+Object.entries(info.types).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')+'</select><div class="pair"><input class="inputs" placeholder="输入口，逗号分隔"><input class="output" placeholder="唯一输出口"></div><button class="remove">删除规则</button>';
   row.querySelector('.kind').value=data.kind||'';
-  row.querySelector('.module').value=data.module; row.querySelector('.inputs').value=data.clock_inputs.join(', '); row.querySelector('.output').value=data.clock_output;
+  row.querySelector('.module').value=data.module||''; row.querySelector('.inputs').value=(data[info.inputs]||[]).join(', '); row.querySelector('.output').value=data[info.output]||'';
   row.querySelector('.remove').onclick=()=>row.remove(); container.appendChild(row);
 }
 function setConfig(config) {
+  const mode=config.tree_type||'clock';
+  if(!profiles[mode])throw new Error('tree_type must be clock or reset');
+  const changed=mode!==activeTree;
+  if(activeJob&&changed)throw new Error('提取期间不能切换分析类型，请等待当前任务结束。');
+  if(changed){workspaces.set(activeTree,{config:getConfig(),graph});clearGraph();activeTree=mode;}
+  $('treeType').value=activeTree;
+  const info=profiles[activeTree];
+  $('run').textContent='解析 elab · 重建全部'+info.label;
+  $('empty').querySelector('h1').textContent='从 RTL 连接恢复完整'+info.network;
+  if(!graph)$('component').innerHTML='<option value="all">全部'+info.network+'</option>';
   const design=config.design || {}; savedDesign={...design}; $('top').value=design.top || '';
   $('designMode').value=design.elab?'elab':'filelist'; $('designPath').value=design.elab || design.filelist || '';
   $('layers').replaceChildren();
@@ -28,12 +45,16 @@ function setConfig(config) {
     $('layers').appendChild(row);
   }
   $('configJson').value=JSON.stringify(config,null,2);
+  if(changed)loadRuns().catch(error=>{$('log').textContent=error.message;});
 }
 function getConfig() {
-  const config={design:{...(savedDesign.verdi_home?{verdi_home:savedDesign.verdi_home}:{}),top:$('top').value.trim(),[$('designMode').value]:$('designPath').value.trim()},layers:[]};
-  [...$('layers').children].forEach((layer,i)=>config.layers.push({index:i+1,hierarchy:layer.querySelector('.hierarchy').value.trim(),modules:[...layer.querySelectorAll('.rule')].map(r=>({module:r.querySelector('.module').value.trim(),clock_inputs:r.querySelector('.inputs').value.split(',').map(s=>s.trim()).filter(Boolean),clock_output:r.querySelector('.output').value.trim(),...(r.querySelector('.kind').value?{kind:r.querySelector('.kind').value}:{})}))}));
+  const info=profiles[activeTree];
+  const config={tree_type:activeTree,design:{...(savedDesign.verdi_home?{verdi_home:savedDesign.verdi_home}:{}),top:$('top').value.trim(),[$('designMode').value]:$('designPath').value.trim()},layers:[]};
+  [...$('layers').children].forEach((layer,i)=>config.layers.push({index:i+1,hierarchy:layer.querySelector('.hierarchy').value.trim(),modules:[...layer.querySelectorAll('.rule')].map(r=>({module:r.querySelector('.module').value.trim(),[info.inputs]:r.querySelector('.inputs').value.split(',').map(s=>s.trim()).filter(Boolean),[info.output]:r.querySelector('.output').value.trim(),...(r.querySelector('.kind').value?{kind:r.querySelector('.kind').value}:{})}))}));
   return config;
 }
+function clearGraph(){graph=null;positions=new Map();nodeIndex=new Map();viewNodes=new Map();viewScope='';viewDepth=5;selected=null;$('scopeBar').hidden=true;$('scene').replaceChildren();$('empty').style.display='flex';[...$('stats').children].forEach(n=>n.querySelector('b').textContent='—');$('viewCount').textContent='';$('state').textContent='等待导入';$('state').className='state';$('details').replaceChildren();$('log').textContent='等待任务。';}
+$('treeType').onchange=()=>{if(activeJob){$('treeType').value=activeTree;return;}const target=$('treeType').value,saved=workspaces.get(target);if(saved?.graph){showGraph(saved.graph);setConfig(saved.config);}else setConfig(saved?.config||{tree_type:target,design:{},layers:[]});};
 function setBox() { $('graph').setAttribute('viewBox',`${box.x} ${box.y} ${box.w} ${box.h}`); }
 function fit() {
   if (!positions.size) return;
@@ -157,19 +178,19 @@ function locate() {
 }
 function showGraph(result) {
   if(!Array.isArray(result.nodes)||!Array.isArray(result.edges)||!result.summary)throw new Error('请选择 ClockTree7 结果 JSON');
-  graph=result;nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';setConfig(result.config);
+  setConfig(result.config);graph=result;nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';
   const s=result.summary,values=[s.instances,s.edges,s.roots,s.terminals,s.components,s.unresolved];
   [...$('stats').children].forEach((n,i)=>n.querySelector('b').textContent=values[i].toLocaleString());
   $('state').textContent=!s.connectivity_complete?'含未解析项 / 诊断':s.topology_valid===false?'连接已解析 · 存在结构异常':'全量连接已解析';$('state').className='state '+(s.connectivity_complete&&s.topology_valid!==false?'pass':'warn');
-  $('component').innerHTML='<option value="all">全部时钟网络</option>'+result.components.map(c=>`<option value="${c.id}">分量 ${c.id+1} · ${c.nodes.length} 实例</option>`).join('');
+  $('component').innerHTML='<option value="all">全部'+profiles[activeTree].network+'</option>'+result.components.map(c=>`<option value="${c.id}">分量 ${c.id+1} · ${c.nodes.length} 实例</option>`).join('');
   $('logTitle').textContent=`提取日志与诊断 · ${s.diagnostics} 项诊断 · ${s.unresolved} 个未解析断点`;
   $('log').textContent=JSON.stringify({summary:s,metadata:result.metadata,diagnostics:result.diagnostics},null,2);
   details('全量提取概况',{summary:s,terminal_layers:s.terminal_layers,metadata:result.metadata});draw();
 }
 async function api(path,options) {const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw new Error(data.error || response.statusText);return data;}
-async function loadRuns(){const data=await api('/api/runs');$('runs').innerHTML='<option value="">运行记录</option>'+data.runs.map(r=>`<option value="${esc(r.id)}">${esc(r.id)} · ${r.summary.instances} 实例</option>`).join('');return data;}
-async function run(){try{const config=getConfig();$('configJson').value=JSON.stringify(config,null,2);$('run').disabled=true;const data=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});activeJob=data.id;$('state').textContent='正在解析 elab';$('state').className='state';document.querySelector('.console').open=true;pollJob();}catch(error){$('run').disabled=false;alert(error.message);}}
-async function pollJob(){if(!activeJob)return;try{const data=await api('/api/job?id='+encodeURIComponent(activeJob));$('log').textContent=data.log||data.error||'正在启动 Verdi…';if(data.state==='running'){setTimeout(pollJob,1500);return;}const id=activeJob;activeJob=null;$('run').disabled=false;await loadRuns();if(data.state==='finished'){showGraph(await api('/api/result?run='+encodeURIComponent(id)));$('runs').value=id;}else{$('state').textContent='提取失败';$('state').className='state warn';}}catch(error){$('log').textContent=error.message;$('run').disabled=false;activeJob=null;}}
+async function loadRuns(){const data=await api('/api/runs');$('runs').innerHTML='<option value="">运行记录</option>'+data.runs.filter(r=>(r.summary.tree_type||'clock')===activeTree).map(r=>`<option value="${esc(r.id)}">${esc(r.id)} · ${r.summary.instances} 实例</option>`).join('');return data;}
+async function run(){try{const config=getConfig();$('configJson').value=JSON.stringify(config,null,2);$('run').disabled=true;$('treeType').disabled=true;const data=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});activeJob=data.id;$('state').textContent='正在解析 elab';$('state').className='state';document.querySelector('.console').open=true;pollJob();}catch(error){$('run').disabled=false;$('treeType').disabled=false;alert(error.message);}}
+async function pollJob(){if(!activeJob)return;try{const data=await api('/api/job?id='+encodeURIComponent(activeJob));$('log').textContent=data.log||data.error||'正在启动 Verdi…';if(data.state==='running'){setTimeout(pollJob,1500);return;}const id=activeJob;activeJob=null;$('run').disabled=false;$('treeType').disabled=false;await loadRuns();if(data.state==='finished'){showGraph(await api('/api/result?run='+encodeURIComponent(id)));$('runs').value=id;}else{$('state').textContent='提取失败';$('state').className='state warn';}}catch(error){$('log').textContent=error.message;$('run').disabled=false;$('treeType').disabled=false;activeJob=null;}}
 function chooseFile(callback){$('file').value='';$('file').onchange=async()=>{try{const file=$('file').files[0];if(file)callback(JSON.parse(await file.text()));}catch(error){alert(error.message);}};$('file').click();}
 $('loadConfig').onclick=()=>chooseFile(setConfig);$('loadResult').onclick=()=>chooseFile(showGraph);$('saveConfig').onclick=()=>download('clocktree7-config.json',JSON.stringify(getConfig(),null,2));
 $('addLayer').onclick=()=>{const config=getConfig();config.layers.push({index:config.layers.length+1,hierarchy:'',modules:[]});setConfig(config);};

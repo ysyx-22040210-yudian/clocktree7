@@ -3,12 +3,14 @@ from collections import Counter, defaultdict, deque
 import hashlib
 import json
 from .devices import resolve_kind
+from .profiles import profile, tree_type
 
 
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type"}
 
 
 def build_graph(events, config):
+    info = profile(config)
     nodes = {}
     traces = []
     diagnostics = []
@@ -158,12 +160,13 @@ def build_graph(events, config):
     fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation"}
     coverage_ok = completed and not missing and not unresolved and not any(d["code"] in fatal_codes for d in diagnostics)
     topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
-    return {"schema_version": 1, "tool_version": "0.1.0", "config": config, "metadata": metadata,
+    return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,
             "nodes": sorted(nodes.values(), key=lambda n: (n["layer"], n["id"])),
             "edges": sorted(edges.values(), key=lambda e: e["id"]), "boundaries": boundaries,
-            "components": components, "clock_sources": sorted(sources.values(), key=lambda s: s["id"]), "diagnostics": diagnostics,
+            "components": components, info['sources']: sorted(sources.values(), key=lambda s: s["id"]), "diagnostics": diagnostics,
             "summary": {"instances": len(nodes), "edges": len(edges), "roots": sum(n["root"] for n in nodes.values()),
-                        "terminals": sum(n["terminal"] for n in nodes.values()), "components": len(components), "clock_sources": len(sources),
+                        "tree_type": tree_type(config),
+                        "terminals": sum(n["terminal"] for n in nodes.values()), "components": len(components), info['sources']: len(sources),
                         "layers": dict(Counter(str(n["layer"]) for n in nodes.values())),
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
                         "expected_pin_traces": len(expected_traces), "observed_pin_traces": len(trace_keys),

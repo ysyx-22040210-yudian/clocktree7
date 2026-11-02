@@ -169,12 +169,13 @@ proc ct_walk {seed direction owner pin} {
     return $results
 }
 proc ct_main {} {
-    global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths
+    global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type
     source $env(CT7_CONFIG)
+    if {![info exists ct_tree_type]} {set ct_tree_type clock}
     set ct_stream [open $ct_output w]
     fconfigure $ct_stream -encoding utf-8
     ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
-        verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top]]
+        verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type]]
     source $env(VERDI_HOME)/share/NPI/L1/TCL/npi_L1.tcl
     schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on
     if {[info exists ct_elab] && $ct_elab ne ""} {

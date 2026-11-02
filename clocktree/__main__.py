@@ -6,7 +6,7 @@ from .extract import extract
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ClockTree7 full RTL clock network extraction")
+    parser = argparse.ArgumentParser(description="ClockTree7 full RTL clock/reset network extraction")
     commands = parser.add_subparsers(dest="command")
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
@@ -16,7 +16,7 @@ def main():
     serve.add_argument("--port", default=8767, type=int)
     serve.add_argument("--runs", default="output/runs")
     serve.add_argument("--result")
-    gui = commands.add_parser("gui", help="Native Tk/ttk clock architecture desktop application")
+    gui = commands.add_parser("gui", help="Native Tk/ttk clock and reset architecture desktop application")
     gui.add_argument("--runs", default=str(Path(__file__).resolve().parents[1] / "validation/runs"))
     gui.add_argument("--result")
     gui.add_argument("--config")

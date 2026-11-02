@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict, deque
 from xml.sax.saxutils import escape, quoteattr
 from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg
+from .profiles import tree_type
 
 
 NODE_WIDTH = 242
@@ -11,6 +12,7 @@ COLUMN_STEP = 302
 class GraphView:
     def __init__(self, graph):
         self.graph = graph
+        self.tree_type = tree_type(graph.get('config',graph))
         self.original = typed_nodes(graph)
         self.layer_count = max([2 if not graph.get('config', {}).get('layers') else len(graph['config']['layers'])] +
                                [n['layer'] for n in self.original.values()])
@@ -168,7 +170,7 @@ class GraphView:
     def svg(self):
         """Export the current scope at readable world scale, retaining all projected nodes."""
         _, _, width, height = self.bounds
-        lines = ['<svg xmlns="http://www.w3.org/2000/svg" width="{}" height="{}" viewBox="0 0 {} {}">'.format(width, height, width, height),
+        lines = ['<svg xmlns="http://www.w3.org/2000/svg" data-tree-type="{}" width="{}" height="{}" viewBox="0 0 {} {}">'.format(self.tree_type, width, height, width, height),
                  '<rect width="100%" height="100%" fill="#101b2e"/>',
                  '<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6c94c8"/></marker></defs>']
         for layer in range(1, self.layer_count + 1):

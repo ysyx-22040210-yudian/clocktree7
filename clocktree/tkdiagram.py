@@ -5,6 +5,7 @@ from collections import Counter
 
 from .viewmodel import GraphView, COLUMN_STEP, clip_segment
 from .devices import DEVICE_TYPES, symbol_parts
+from .profiles import tree_type
 
 
 COLORS = ['#55a9ff', '#46c8bb', '#a492f4', '#edb55b', '#df88bb', '#5db7d6', '#91bd72']
@@ -57,6 +58,7 @@ class ClockDiagram(tk.Frame):
         self.family = font_family
         self.on_node, self.on_edge, self.on_view, self.on_hover = on_node, on_edge, on_view, on_hover
         self.model = None
+        self.tree_type = 'clock'
         self.mode, self.component, self.scope, self.depth = 'instances', None, '', 5
         self.scale, self.ox, self.oy = 1., 0., 0.
         self.selected, self.highlights = None, set()
@@ -88,11 +90,22 @@ class ClockDiagram(tk.Frame):
         self.canvas.bind('<Leave>', lambda e: self.on_hover('滚轮缩放 · 拖动画布平移 · 双击聚合框展开'))
 
     def load(self, graph):
+        self.tree_type = tree_type(graph.get('config', graph))
         self.model = GraphView(graph)
         self.mode = 'hierarchy' if len(graph['nodes']) > 400 else 'instances'
         self.component, self.scope, self.depth = None, '', 5
         self.selected, self.highlights = None, set()
         self.rebuild()
+
+    def clear(self, mode='clock'):
+        self.tree_type=mode
+        self.model=None
+        self.selected,self.highlights=None,set()
+        self.scale,self.ox,self.oy=1.,0.,0.
+        self.mode,self.component,self.scope,self.depth='instances',None,'',5
+        self.rendered_nodes,self.rendered_wires={},{}
+        self.minimap.delete('all')
+        self.schedule()
 
     def rebuild(self, fit=True):
         if not self.model:
@@ -190,7 +203,7 @@ class ClockDiagram(tk.Frame):
         self.rendered_nodes, self.rendered_wires = {}, {}
         cw, ch = c.winfo_width(), c.winfo_height()
         if not self.model:
-            c.create_text(cw/2, ch/2-24, text='RTL CLOCK ARCHITECTURE', fill='#8ea9ce', font=(self.family, 18, 'bold'))
+            c.create_text(cw/2, ch/2-24, text='RTL RESET ARCHITECTURE' if self.tree_type=='reset' else 'RTL CLOCK ARCHITECTURE', fill='#8ea9ce', font=(self.family, 18, 'bold'))
             c.create_text(cw/2, ch/2+14, text='默认两级 · 可添加层级 · 配置规则后开始提取', fill='#617d9f', font=(self.family, 11))
             return
         scale = self.scale

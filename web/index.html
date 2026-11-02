@@ -1,9 +1,10 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClockTree7 · RTL 时钟网络</title><link rel="stylesheet" href="/style.css"></head>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ClockTree7 · RTL 时钟与复位网络</title><link rel="stylesheet" href="/style.css"></head>
 <body>
 <header><div class="brand"><span class="logo">◈</span><div><strong>ClockTree7</strong><small>RTL 时钟网络重建</small></div></div><span id="state" class="state">等待导入</span><div class="header-actions"><button id="loadConfig">导入配置</button><button id="saveConfig">导出配置</button><button id="loadResult">导入结果</button><button id="exportResult">导出全量 JSON</button></div></header>
 <main>
 <aside class="config"><div class="section-title"><h2>设计与传播规则</h2><span>默认两级，可自由添加层级</span></div>
+<label>分析功能<select id="treeType"><option value="clock">时钟树</option><option value="reset">复位树</option></select></label>
 <label>设计顶层<input id="top" placeholder="soc_top"></label><div class="hint">自动根据服务端的 verdi 命令定位安装目录；提取时间不设上限。</div>
 <label>设计入口<select id="designMode"><option value="elab">已有 elab / KDB</option><option value="filelist">RTL 文件列表（建立 elab）</option></select><input id="designPath" placeholder="/path/simv.daidir/kdb.elab++"></label>
 <div class="hint">每层填 RTL 范围、module 名和关注端口。同层串接、跳层及任意层结束均由真实连接确定。</div><div id="layers"></div><button id="addLayer">＋ 添加层级</button><button id="removeLayer">删除最后一级</button>

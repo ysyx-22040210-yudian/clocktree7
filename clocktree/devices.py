@@ -1,7 +1,8 @@
-"""User-declared clock device kinds and shared Tk/SVG symbol geometry."""
+"""User-declared clock/reset device kinds and shared Tk/SVG geometry."""
 import math
 import unicodedata
 from xml.sax.saxutils import escape, quoteattr
+from .profiles import profile, rule_ports
 
 
 DEVICE_TYPES = {
@@ -9,13 +10,21 @@ DEVICE_TYPES = {
     'gate': {'label': '门控', 'short': 'GATE', 'color': '#42d1b2', 'fill': '#163b38'},
     'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
     'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#bb9bff', 'fill': '#302847'},
+    'rsy_sync': {'label': 'RSY_SYNC', 'short': 'RSY_SYNC', 'color': '#f39bbd', 'fill': '#402939'},
 }
-TYPE_LABELS = [info['label'] for info in DEVICE_TYPES.values()]
+TYPE_LABELS = [DEVICE_TYPES[kind]['label'] for kind in profile({})['kinds']]
 LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
+LABEL_TO_KIND['MUX'] = 'mux'
 
 
-def kind_label(kind):
+def kind_label(kind, tree='clock'):
+    if kind == 'mux' and tree == 'reset':
+        return 'MUX'
     return DEVICE_TYPES[kind]['label'] if kind in DEVICE_TYPES else '未分类'
+
+
+def type_labels(config):
+    return [kind_label(kind, config.get('tree_type', 'clock')) for kind in profile(config)['kinds']]
 
 
 def scope_match(path, scope):
@@ -23,38 +32,43 @@ def scope_match(path, scope):
 
 
 def matching_rule(node, layer, rule):
+    inputs, output = rule_ports(rule)
     return (node['layer'] == layer['index'] and node['module'] == rule['module'] and
             scope_match(node['id'] if 'id' in node else node['path'], layer['hierarchy']) and
-            node['inputs'] == rule['clock_inputs'] and node['output'] == rule['clock_output'])
+            node['inputs'] == inputs and node['output'] == output)
 
 
 def resolve_kind(node, config):
     """Read explicit metadata only. A module name never determines its kind."""
-    if node.get('kind') in DEVICE_TYPES:
+    allowed = profile(config)['kinds']
+    if node.get('kind') in allowed:
         return node['kind']
     for layer in config.get('layers', []):
         for rule in layer.get('modules', []):
-            if rule.get('kind') in DEVICE_TYPES and matching_rule(node, layer, rule):
+            if rule.get('kind') in allowed and matching_rule(node, layer, rule):
                 return rule['kind']
     return None
 
 
 def typed_nodes(graph):
     result = {}
+    allowed = profile(graph.get('config', graph))['kinds']
     # Index rules so opening a large graph is linear in the number of instances.
     rules = {}
     for layer in graph.get('config', {}).get('layers', []):
         for rule in layer.get('modules', []):
-            if rule.get('kind') in DEVICE_TYPES:
+            if rule.get('kind') in allowed:
                 rules.setdefault((layer['index'], rule['module']), []).append((layer, rule))
     for original in graph['nodes']:
         node = dict(original)
         kind = node.get('kind')
-        if kind not in DEVICE_TYPES:
+        if kind not in allowed:
             kind = next((rule['kind'] for layer, rule in rules.get((node['layer'], node['module']), [])
                          if matching_rule(node, layer, rule)), None)
         if kind:
             node['kind'], node['kind_source'] = kind, 'configured'
+        else:
+            node.pop('kind', None)
         result[node['id']] = node
     return result
 
@@ -86,7 +100,7 @@ def _short(text, limit):
 def symbol_parts(node, width, height, selected=False):
     """Return neutral drawing primitives consumed by native Tk and SVG alike.
 
-    Only configured clock ports have external wires. Internal pulse/clock marks
+    Only configured ports have external wires. Internal pulse/clock marks
     are pictograms, not invented SEL/EN/test pins or simulated waveforms.
     """
     parts = []
@@ -106,7 +120,7 @@ def symbol_parts(node, width, height, selected=False):
         width=2 if selected else 1, dash=aggregate)
     path = node.get('path', node['id'])
     title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
-    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-70)
+    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-(88 if kind=='rsy_sync' else 70))
     text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-20)
     if aggregate:
         text(width-11, 16, 'RTL', size=9, fill='#9eb5d4', anchor='e')
@@ -151,6 +165,17 @@ def symbol_parts(node, width, height, selected=False):
                 fill=info['fill'], stroke=color, width=1.8)
             text(118, cy-10, 'DIV', size=15, fill=color, bold=True, anchor='center')
             text(118, cy+12, '÷N', size=17, fill='#d6c3ff', anchor='center')
+            input_end, output_start = left, right
+        elif kind == 'rsy_sync':
+            left, right = 66, 178
+            add('rect', x=left, y=cy-32, w=right-left, h=64, radius=5,
+                fill=info['fill'], stroke=color, width=1.8)
+            text(122, cy-18, 'RSY_SYNC', size=12, fill=color, bold=True, anchor='center')
+            for x, label in ((83, 'S1'), (135, 'S2')):
+                add('rect', x=x, y=cy-2, w=26, h=22, radius=2,
+                    fill='#2c2334', stroke=color, width=1.1)
+                text(x+13, cy+9, label, size=8, fill='#f3c9dc', anchor='center')
+            line([(109,cy+9),(132,cy+9),(127,cy+5)], stroke_width=1.1)
             input_end, output_start = left, right
         else:
             left, right, top, bottom, cut = 66, 178, cy-31, cy+31, 8

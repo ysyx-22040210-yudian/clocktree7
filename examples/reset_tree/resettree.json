@@ -1,0 +1,988 @@
+{
+  "schema_version": 1,
+  "tool_version": "0.1.0",
+  "tree_type": "reset",
+  "config": {
+    "tree_type": "reset",
+    "design": {
+      "top": "reset_top",
+      "filelist": "examples/reset_tree/rtl.f"
+    },
+    "layers": [
+      {
+        "index": 1,
+        "hierarchy": "reset_top.l1",
+        "modules": [
+          {
+            "module": "reset_mux",
+            "kind": "mux",
+            "reset_inputs": [
+              "rst0_ni",
+              "rst1_ni"
+            ],
+            "reset_output": "rst_no"
+          },
+          {
+            "module": "reset_sync",
+            "kind": "rsy_sync",
+            "reset_inputs": [
+              "rst_ni"
+            ],
+            "reset_output": "rst_no"
+          }
+        ]
+      },
+      {
+        "index": 2,
+        "hierarchy": "reset_top.l2",
+        "modules": [
+          {
+            "module": "reset_mux",
+            "kind": "mux",
+            "reset_inputs": [
+              "rst0_ni",
+              "rst1_ni"
+            ],
+            "reset_output": "rst_no"
+          },
+          {
+            "module": "reset_sync",
+            "kind": "rsy_sync",
+            "reset_inputs": [
+              "rst_ni"
+            ],
+            "reset_output": "rst_no"
+          }
+        ]
+      }
+    ]
+  },
+  "metadata": {
+    "event": "metadata",
+    "backend": "verdi_base_npi",
+    "top": "reset_top",
+    "tree_type": "reset",
+    "design_instances": 14,
+    "npi_counts": {
+      "event": "complete",
+      "instances": 12,
+      "pin_traces": 28
+    },
+    "compiler_error_count": 0,
+    "elapsed_seconds": 1.988,
+    "verdi_exit_code": 0,
+    "recorded_example": true,
+    "note": "Recorded VM NPI reset result; machine execution paths removed, connectivity and NPI evidence preserved."
+  },
+  "nodes": [
+    {
+      "event": "instance",
+      "path": "reset_top.l1.u_early1",
+      "module": "reset_sync",
+      "layer": 1,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l1.u_early1, {examples/reset_tree/fixture.sv : 9}",
+      "id": "reset_top.l1.u_early1",
+      "kind_source": "configured",
+      "component": 0,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l1.u_root_a",
+      "module": "reset_mux",
+      "layer": 1,
+      "inputs": [
+        "rst0_ni",
+        "rst1_ni"
+      ],
+      "output": "rst_no",
+      "kind": "mux",
+      "source": "npiModule, reset_top.l1.u_root_a, {examples/reset_tree/fixture.sv : 7}",
+      "id": "reset_top.l1.u_root_a",
+      "kind_source": "configured",
+      "component": 1,
+      "root": true,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l1.u_root_b",
+      "module": "reset_mux",
+      "layer": 1,
+      "inputs": [
+        "rst0_ni",
+        "rst1_ni"
+      ],
+      "output": "rst_no",
+      "kind": "mux",
+      "source": "npiModule, reset_top.l1.u_root_b, {examples/reset_tree/fixture.sv : 8}",
+      "id": "reset_top.l1.u_root_b",
+      "kind_source": "configured",
+      "component": 0,
+      "root": true,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_early2",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_early2, {examples/reset_tree/fixture.sv : 14}",
+      "id": "reset_top.l2.u_early2",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_early8",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_early8, {examples/reset_tree/fixture.sv : 18}",
+      "id": "reset_top.l2.u_early8",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_mux9",
+      "module": "reset_mux",
+      "layer": 2,
+      "inputs": [
+        "rst0_ni",
+        "rst1_ni"
+      ],
+      "output": "rst_no",
+      "kind": "mux",
+      "source": "npiModule, reset_top.l2.u_mux9, {examples/reset_tree/fixture.sv : 19}",
+      "id": "reset_top.l2.u_mux9",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_mux_mid",
+      "module": "reset_mux",
+      "layer": 2,
+      "inputs": [
+        "rst0_ni",
+        "rst1_ni"
+      ],
+      "output": "rst_no",
+      "kind": "mux",
+      "source": "npiModule, reset_top.l2.u_mux_mid, {examples/reset_tree/fixture.sv : 15}",
+      "id": "reset_top.l2.u_mux_mid",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_sync0",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_sync0, {examples/reset_tree/fixture.sv : 12}",
+      "id": "reset_top.l2.u_sync0",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_sync1",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_sync1, {examples/reset_tree/fixture.sv : 13}",
+      "id": "reset_top.l2.u_sync1",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_sync10",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_sync10, {examples/reset_tree/fixture.sv : 20}",
+      "id": "reset_top.l2.u_sync10",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": true,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_sync3",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_sync3, {examples/reset_tree/fixture.sv : 16}",
+      "id": "reset_top.l2.u_sync3",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    },
+    {
+      "event": "instance",
+      "path": "reset_top.l2.u_sync4",
+      "module": "reset_sync",
+      "layer": 2,
+      "inputs": [
+        "rst_ni"
+      ],
+      "output": "rst_no",
+      "kind": "rsy_sync",
+      "source": "npiModule, reset_top.l2.u_sync4, {examples/reset_tree/fixture.sv : 17}",
+      "id": "reset_top.l2.u_sync4",
+      "kind_source": "configured",
+      "component": 1,
+      "root": false,
+      "terminal": false,
+      "has_unresolved_output": false
+    }
+  ],
+  "edges": [
+    {
+      "id": "069e0e76ea577819ffae",
+      "source": "reset_top.l2.u_sync1",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_mux_mid",
+      "target_pin": "rst0_ni",
+      "evidence": {
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux_mid.rst0_ni",
+            "net": "reset_top.s_sync1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync1.rst_no",
+            "net": "reset_top.s_sync1"
+          }
+        ],
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync1.rst_no",
+            "net": "reset_top.s_sync1"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux_mid.rst0_ni",
+            "net": "reset_top.s_sync1"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "0e30185733f8a14172c6",
+      "source": "reset_top.l2.u_sync4",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_early8",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync4.rst_no",
+            "net": "reset_top.s_sync4"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_early8.rst_ni",
+            "net": "reset_top.s_sync4"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_early8.rst_ni",
+            "net": "reset_top.s_sync4"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync4.rst_no",
+            "net": "reset_top.s_sync4"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "3b024212acd64a18ff56",
+      "source": "reset_top.l2.u_mux_mid",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_sync3",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux_mid.rst_no",
+            "net": "reset_top.s_mux_mid"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync3.rst_ni",
+            "net": "reset_top.s_mux_mid"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync3.rst_ni",
+            "net": "reset_top.s_mux_mid"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux_mid.rst_no",
+            "net": "reset_top.s_mux_mid"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "73080b0e481ba99221af",
+      "source": "reset_top.l2.u_sync3",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_sync4",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync3.rst_no",
+            "net": "reset_top.s_sync3"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync4.rst_ni",
+            "net": "reset_top.s_sync3"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync4.rst_ni",
+            "net": "reset_top.s_sync3"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync3.rst_no",
+            "net": "reset_top.s_sync3"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "77c2f1e6739cdfbecba8",
+      "source": "reset_top.l1.u_root_b",
+      "source_pin": "rst_no",
+      "target": "reset_top.l1.u_early1",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_b.rst_no",
+            "net": "reset_top.s_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_early1.rst_ni",
+            "net": "reset_top.s_root_b"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_early1.rst_ni",
+            "net": "reset_top.s_root_b"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_b.rst_no",
+            "net": "reset_top.s_root_b"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "7dfab808cde9fb631f2c",
+      "source": "reset_top.l2.u_sync0",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_sync1",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync0.rst_no",
+            "net": "reset_top.s_sync0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync1.rst_ni",
+            "net": "reset_top.s_sync0"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync1.rst_ni",
+            "net": "reset_top.s_sync0"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync0.rst_no",
+            "net": "reset_top.s_sync0"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "8e7d016dd0e21ee131c7",
+      "source": "reset_top.l1.u_root_a",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_mux9",
+      "target_pin": "rst1_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux9.rst1_ni",
+            "net": "reset_top.s_root_a"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux9.rst1_ni",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "942fd4ef4b9131bbb2f4",
+      "source": "reset_top.l1.u_root_a",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_sync0",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync0.rst_ni",
+            "net": "reset_top.s_root_a"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync0.rst_ni",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "97ee041ebfd38c2e909e",
+      "source": "reset_top.l1.u_root_a",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_mux_mid",
+      "target_pin": "rst1_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux_mid.rst1_ni",
+            "net": "reset_top.s_root_a"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux_mid.rst1_ni",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          }
+        ]
+      },
+      "layer_delta": 1
+    },
+    {
+      "id": "9ef736045dd2b9399547",
+      "source": "reset_top.l2.u_mux9",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_sync10",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux9.rst_no",
+            "net": "reset_top.s_mux9"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync10.rst_ni",
+            "net": "reset_top.s_mux9"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync10.rst_ni",
+            "net": "reset_top.s_mux9"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux9.rst_no",
+            "net": "reset_top.s_mux9"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "a3befcf1d7d25e627b1f",
+      "source": "reset_top.l2.u_sync4",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_mux9",
+      "target_pin": "rst0_ni",
+      "evidence": {
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux9.rst0_ni",
+            "net": "reset_top.s_sync4"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync4.rst_no",
+            "net": "reset_top.s_sync4"
+          }
+        ],
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_sync4.rst_no",
+            "net": "reset_top.s_sync4"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_mux9.rst0_ni",
+            "net": "reset_top.s_sync4"
+          }
+        ]
+      },
+      "layer_delta": 0
+    },
+    {
+      "id": "a5cf55f04828d67f4519",
+      "source": "reset_top.l1.u_root_a",
+      "source_pin": "rst_no",
+      "target": "reset_top.l2.u_early2",
+      "target_pin": "rst_ni",
+      "evidence": {
+        "load": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_early2.rst_ni",
+            "net": "reset_top.s_root_a"
+          }
+        ],
+        "driver": [
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l2.u_early2.rst_ni",
+            "net": "reset_top.s_root_a"
+          },
+          {
+            "type": "npiNlInstPort",
+            "name": "reset_top.l1.u_root_a.rst_no",
+            "net": "reset_top.s_root_a"
+          }
+        ]
+      },
+      "layer_delta": 1
+    }
+  ],
+  "boundaries": [
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l1.u_root_a.rst0_ni",
+          "net": "reset_top.rst_a_ni"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "reset_top.rst_a_ni",
+          "net": "reset_top.rst_a_ni"
+        }
+      ],
+      "endpoint": "reset_top.rst_a_ni",
+      "instance": "reset_top.l1.u_root_a",
+      "pin": "rst0_ni",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l1.u_root_a.rst1_ni",
+          "net": "reset_top.rst_b_ni"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "reset_top.rst_b_ni",
+          "net": "reset_top.rst_b_ni"
+        }
+      ],
+      "endpoint": "reset_top.rst_b_ni",
+      "instance": "reset_top.l1.u_root_a",
+      "pin": "rst1_ni",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l1.u_root_b.rst0_ni",
+          "net": "reset_top.rst_c_ni"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "reset_top.rst_c_ni",
+          "net": "reset_top.rst_c_ni"
+        }
+      ],
+      "endpoint": "reset_top.rst_c_ni",
+      "instance": "reset_top.l1.u_root_b",
+      "pin": "rst0_ni",
+      "direction": "driver"
+    },
+    {
+      "status": "input_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l1.u_root_b.rst1_ni",
+          "net": "reset_top.rst_c_ni"
+        },
+        {
+          "type": "npiNlPort",
+          "name": "reset_top.rst_c_ni",
+          "net": "reset_top.rst_c_ni"
+        }
+      ],
+      "endpoint": "reset_top.rst_c_ni",
+      "instance": "reset_top.l1.u_root_b",
+      "pin": "rst1_ni",
+      "direction": "driver"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l1.u_early1.rst_no",
+          "net": "reset_top.s_early1"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.IH_s_early1,s_early2,s_early8,s_sync10#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.OH_sinks[3:0]#[3]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "reset_top.sinks[3:0]#[3]",
+          "net": ""
+        }
+      ],
+      "endpoint": "reset_top.sinks[3:0]#[3]",
+      "instance": "reset_top.l1.u_early1",
+      "pin": "rst_no",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l2.u_early2.rst_no",
+          "net": "reset_top.s_early2"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.IH_s_early1,s_early2,s_early8,s_sync10#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.OH_sinks[3:0]#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "reset_top.sinks[3:0]#[2]",
+          "net": ""
+        }
+      ],
+      "endpoint": "reset_top.sinks[3:0]#[2]",
+      "instance": "reset_top.l2.u_early2",
+      "pin": "rst_no",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l2.u_early8.rst_no",
+          "net": "reset_top.s_early8"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.IH_s_early1,s_early2,s_early8,s_sync10#[2]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.OH_sinks[3:0]#[1]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "reset_top.sinks[3:0]#[1]",
+          "net": ""
+        }
+      ],
+      "endpoint": "reset_top.sinks[3:0]#[1]",
+      "instance": "reset_top.l2.u_early8",
+      "pin": "rst_no",
+      "direction": "load"
+    },
+    {
+      "status": "output_boundary",
+      "path": [
+        {
+          "type": "npiNlInstPort",
+          "name": "reset_top.l2.u_sync10.rst_no",
+          "net": "reset_top.s_sync10"
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.IH_s_early1,s_early2,s_early8,s_sync10#[3]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoInstPort",
+          "name": "reset_top.reset_top(@1):Always0#SigTap0:22:22:Assignment.OH_sinks[3:0]#[0]",
+          "net": ""
+        },
+        {
+          "type": "npiNlPseudoPort",
+          "name": "reset_top.sinks[3:0]#[0]",
+          "net": ""
+        }
+      ],
+      "endpoint": "reset_top.sinks[3:0]#[0]",
+      "instance": "reset_top.l2.u_sync10",
+      "pin": "rst_no",
+      "direction": "load"
+    }
+  ],
+  "components": [
+    {
+      "id": 0,
+      "nodes": [
+        "reset_top.l1.u_early1",
+        "reset_top.l1.u_root_b"
+      ]
+    },
+    {
+      "id": 1,
+      "nodes": [
+        "reset_top.l1.u_root_a",
+        "reset_top.l2.u_early2",
+        "reset_top.l2.u_early8",
+        "reset_top.l2.u_mux9",
+        "reset_top.l2.u_mux_mid",
+        "reset_top.l2.u_sync0",
+        "reset_top.l2.u_sync1",
+        "reset_top.l2.u_sync10",
+        "reset_top.l2.u_sync3",
+        "reset_top.l2.u_sync4"
+      ]
+    }
+  ],
+  "reset_sources": [
+    {
+      "id": "reset_top.rst_a_ni",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "reset_top.l1.u_root_a",
+          "pin": "rst0_ni"
+        }
+      ]
+    },
+    {
+      "id": "reset_top.rst_b_ni",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "reset_top.l1.u_root_a",
+          "pin": "rst1_ni"
+        }
+      ]
+    },
+    {
+      "id": "reset_top.rst_c_ni",
+      "kind": "input_boundary",
+      "loads": [
+        {
+          "instance": "reset_top.l1.u_root_b",
+          "pin": "rst0_ni"
+        },
+        {
+          "instance": "reset_top.l1.u_root_b",
+          "pin": "rst1_ni"
+        }
+      ]
+    }
+  ],
+  "diagnostics": [],
+  "summary": {
+    "instances": 12,
+    "edges": 12,
+    "roots": 2,
+    "tree_type": "reset",
+    "terminals": 4,
+    "components": 2,
+    "reset_sources": 3,
+    "layers": {
+      "1": 3,
+      "2": 9
+    },
+    "terminal_layers": {
+      "1": 1,
+      "2": 3
+    },
+    "expected_pin_traces": 28,
+    "observed_pin_traces": 28,
+    "unresolved": 0,
+    "diagnostics": 0,
+    "extraction_finished": true,
+    "connectivity_complete": true,
+    "topology_valid": true
+  }
+}

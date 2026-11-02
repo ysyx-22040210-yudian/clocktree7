@@ -10,15 +10,16 @@ import uuid
 from .config import load_config, write_tcl_config
 from .graph import build_graph, read_events
 from .environment import resolve_verdi
+from .profiles import result_filename
 
 
-RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'summary.json')
+RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json')
 
 
 def prepare_output(out):
     """Retain previous evidence and use fresh Verdi scratch space on each run."""
     identifier = time.strftime('%Y%m%d_%H%M%S_') + uuid.uuid4().hex
-    if any((out / name).is_file() for name in ('raw.jsonl', 'verdi.log', 'clocktree.json', 'summary.json')):
+    if any((out / name).is_file() for name in ('raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json')):
         history = out / '.clocktree-history' / identifier
         history.mkdir(parents=True)
         for name in RESULT_FILES:
@@ -26,7 +27,7 @@ def prepare_output(out):
             if source.is_file():
                 shutil.copy2(str(source), str(history / name))
     # Stale evidence can never make a failed new attempt appear successful.
-    for name in ('raw.jsonl', 'clocktree.json', 'summary.json'):
+    for name in ('raw.jsonl', 'clocktree.json', 'resettree.json', 'summary.json'):
         source = out / name
         if source.exists():
             source.unlink()
@@ -75,6 +76,6 @@ def extract(config_path, output_dir):
         graph["summary"]["connectivity_complete"] = False
         graph["diagnostics"].append({"code": "verdi_exit", "exit_code": exit_code})
     graph["summary"]["diagnostics"] = len(graph["diagnostics"])
-    (out / "clocktree.json").write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding="utf-8")
+    (out / result_filename(config)).write_text(json.dumps(graph, indent=2, ensure_ascii=False), encoding="utf-8")
     (out / "summary.json").write_text(json.dumps(graph["summary"], indent=2), encoding="utf-8")
     return graph

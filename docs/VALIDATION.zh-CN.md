@@ -4,6 +4,17 @@
 
 ## 实际提取结果
 
+### 复位树分支回归
+
+- 默认两级，界面增至 20 级再删除恢复；类型选择仅 MUX / RSY_SYNC，RSY_SYNC 多输入会被拒绝。配置使用 `tree_type: reset` 与 `reset_inputs/reset_output`，旧时钟配置继续可用。
+- VM 中分别执行两级、十级真实 Verdi NPI：均为 **12 实例、12 连接、4 MUX、8 RSY_SYNC、2 根、4 末端、2 网络、3 复位源、28/28 追踪**，未解析和诊断均为 0。完整实例、端口边和末端集合与测试预期一致。
+- 十级版本包括同层串接、跨层跳接、空的 L6/L7，以及 L1/L2/L8/L10 末端；源文件中的同定义范围外 MUX 未被收进结果。`clk_i` 未被配置为复位端口，未进入复位源清单。
+- 时钟/复位工作区的未保存草稿、结果和类型列表分别恢复；运行时模式切换禁用。复位历史记录、真实连线点击与双向证据、全量 JSON、RSY_SYNC 原生 Tk/SVG 模型均通过。
+- 同一当前目录连续复位提取、切到时钟提取、再回到复位提取全部通过；两种结果分别归档，本次根目录不残留另一种分析的旧结果文件。
+- 再次通过原有七级真实时钟 NPI、6,984 实例 OpenC910 图形回归及真实进程组取消。当前 Python 检查为 **49 通过，Windows 跳过 1 项 Linux 符号链接检查**。
+
+原始记录：本机 `validation/reset-gui/check.json`、`validation/tk_gui_reset_regression/tk-check.json`。复位成功案例为自建 RTL 的真实 elaboration，尚未计为大规模真实 SoC 的复位网络验证。现有 PULP `pulp_soc` KDB 对 `rstgen` 规则的补充尝试未枚举到该定义，工具正确报告 `missing_module`；该记录已保存在 `validation/failed_runs/pulp_soc_reset_missing_rstgen_20261102`，不计为复位提取通过。
+
 ### 本次五项需求回归
 
 - 自动定位：配置不含 `verdi_home`，测试进程取消 `VERDI_HOME` 环境变量，仅依靠 PATH 中的 `verdi` 命令，在 VM 成功找到安装与 NPI 并完成实际提取。
@@ -12,7 +23,7 @@
 - 同目录重跑：省略 `--out`，在同一当前目录运行三次，再故意导入不存在的顶层，最后成功恢复；旧证据自动归档，失败结果不会沿用旧成功数据，源 RTL 未被修改。
 - 无超时：上述 CLI 保留旧 `timeout_seconds: 1`，每次实际 NPI 用时超过 1 秒仍正常完成；产品直接等待进程结束，没有提取计时终止器。QA 脚本自身的等待期限只用于判定测试是否失效。
 - 大图与取消：重新通过 6,984 实例 OpenC910 的原生 Tk 概览、展开、定位、证据、JSON/SVG 导出，并再次取消真实 NPI 进程组；未产生 GUI 回调异常。跨层跳接连线绕开中间层器件，避免图形误连。
-- 当前 Windows Python 检查为 **38 通过，1 跳过**；跳过项仅针对 Linux 符号链接包装命令。VM 实际使用的 Verdi 本身即通过包装符号链接运行，自动定位和真实提取已通过。
+- 上次五项需求的 Python 检查为 **38 通过，1 跳过**，已纳入上述当前检查；跳过项仅针对 Linux 符号链接包装命令。VM 实际使用的 Verdi 本身即通过包装符号链接运行，自动定位和真实提取已通过。
 
 本次原始记录位于本机 `validation/flexible-gui/check.json` 与 `validation/tk_gui_v2/tk-check.json`。以下 SoC 全库规模数据为此前验收记录；本次大图回归使用其完整已提取数据，不宣称重新完成全部 SoC 的 elaboration。
 
@@ -69,3 +80,5 @@ python3 scripts/check_golden.py validation/runs/my-device-check/clocktree.json v
 ```
 
 `--out` 可使用同一个目录反复运行；省略时输出到当前目录，旧证据自动归档。新增两级/十级及四类器件验收可运行 `python3 scripts/check_flexible_gui.py --extract`。完整交互步骤见 [GUI 操作手册](GUI_USER_MANUAL.zh-CN.md)。
+
+复位分支验收：`python3 scripts/check_reset_gui.py --extract`。无需 EDA 即可在 GUI 进入复位树模式，打开随附的 [复位记录示例](../examples/reset_tree/README.md)。

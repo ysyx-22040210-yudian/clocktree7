@@ -6,6 +6,9 @@ import time
 import re
 import shutil
 import uuid
+import platform
+import sys
+import tempfile
 
 from .config import load_config, write_tcl_config
 from .graph import build_graph, read_events
@@ -14,6 +17,24 @@ from .profiles import result_filename
 
 
 RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json')
+
+
+def vendor_safe_path(path):
+    # Old Verdi launch scripts use unquoted shell paths and legacy encodings.
+    value = Path(path).as_posix() if os.name == 'nt' else str(path)
+    return re.fullmatch(r'[A-Za-z0-9_./:+-]+', value) is not None
+
+
+def vendor_work_dir(preferred):
+    preferred = Path(preferred).resolve()
+    if vendor_safe_path(preferred):
+        preferred.mkdir(parents=True, exist_ok=True)
+        return preferred
+    base = Path(os.environ.get('CLOCKTREE_EDA_TMPDIR', tempfile.gettempdir())).expanduser().resolve()
+    if not vendor_safe_path(base):
+        raise ValueError('Set CLOCKTREE_EDA_TMPDIR to a writable ASCII directory without spaces or shell metacharacters')
+    base.mkdir(parents=True, exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix='clocktree7-', dir=str(base)))
 
 
 def prepare_output(out):
@@ -41,21 +62,35 @@ def extract(config_path, output_dir):
     environment = os.environ.copy()
     executable, verdi_home = resolve_verdi(config['design'], environment)
     environment['VERDI_HOME'] = verdi_home
-    for key in ('elab', 'filelist'):
-        if config['design'].get(key):
-            config['design'][key] = str(Path(config['design'][key]).expanduser().resolve())
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    work = prepare_output(out)
+    recorded_work = prepare_output(out)
+    work = vendor_work_dir(recorded_work)
+    if work != recorded_work:
+        (recorded_work / 'runtime-location.json').write_text(json.dumps({'working_directory': str(work)}), encoding='utf-8')
     root = Path(__file__).resolve().parents[1]
-    write_tcl_config(config, out / "rules.tcl", str(out / "raw.jsonl"))
+    runtime_config = json.loads(json.dumps(config))
+    for key in ('elab', 'filelist'):
+        source = runtime_config['design'].get(key)
+        if source and not vendor_safe_path(source):
+            alias = work / ('input-kdb.elab++' if key == 'elab' else 'input.f')
+            alias.symlink_to(source, target_is_directory=key == 'elab')
+            runtime_config['design'][key] = str(alias)
+    raw_path = out / 'raw.jsonl' if vendor_safe_path(out) else work / 'raw.jsonl'
+    write_tcl_config(runtime_config, work / 'rules.tcl', str(raw_path))
+    shutil.copy2(str(work / 'rules.tcl'), str(out / 'rules.tcl'))
+    # A relative -play path also avoids legacy Verdi path decoding on installs
+    # whose source directory contains Unicode characters or spaces.
+    shutil.copy2(str(root / 'npi/extract.tcl'), str(work / 'clocktree-extract.tcl'))
     (out / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
-    environment["CT7_CONFIG"] = str(out / "rules.tcl")
-    command = [executable, "-batch", "-nologo", "-play", str(root / "npi" / "extract.tcl")]
+    environment["CT7_CONFIG"] = str(work / "rules.tcl")
+    command = [executable, "-batch", "-nologo", "-play", 'clocktree-extract.tcl']
     started = time.time()
     with (out / "verdi.log").open("w", encoding="utf-8") as log:
         process = subprocess.Popen(command, cwd=str(work), env=environment, stdout=log, stderr=subprocess.STDOUT)
         exit_code = process.wait()
+    if raw_path != out / 'raw.jsonl' and raw_path.is_file():
+        shutil.copy2(str(raw_path), str(out / 'raw.jsonl'))
     if not (out / "raw.jsonl").exists():
         raise RuntimeError("Verdi produced no raw evidence; inspect " + str(out / "verdi.log"))
     graph = build_graph(read_events(out / "raw.jsonl"), config)
@@ -72,6 +107,7 @@ def extract(config_path, output_dir):
                               "command": command, "host": os.uname().nodename if hasattr(os, "uname") else os.environ.get("COMPUTERNAME"),
                               "output_directory": str(out), "working_directory": str(work),
                               "verdi_executable": executable, "verdi_home": verdi_home})
+    graph['metadata'].update(python_version=platform.python_version(), platform=sys.platform)
     if exit_code:
         graph["summary"]["connectivity_complete"] = False
         graph["diagnostics"].append({"code": "verdi_exit", "exit_code": exit_code})

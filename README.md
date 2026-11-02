@@ -4,7 +4,7 @@
 
 用户填写 RTL 层次范围、module 定义名、器件类型及关注输入/输出端口。工具枚举所有匹配实例，依据实际 elab 网络连接全部扇出、选择器汇合、同层串接及跨层跳接。分支可以在任意已配置层结束；产品名称 ClockTree7 不再表示层级上限。
 
-**[详细 GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md)** · [离线 HTML 阅读版](docs/GUI_USER_MANUAL.zh-CN.html) · [验证摘要](docs/VALIDATION.zh-CN.md) · [可浏览示例](examples/flexible_layers/README.md)
+**[详细 GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md)** · [离线 HTML 阅读版](docs/GUI_USER_MANUAL.zh-CN.html) · **[其他 EDA 设备部署与验收](docs/PORTABILITY.zh-CN.md)** · [验证摘要](docs/VALIDATION.zh-CN.md) · [可浏览示例](examples/flexible_layers/README.md)
 
 ![原生 Tk 工作台与完整七层架构图](docs/images/gui-overview.png)
 
@@ -17,6 +17,7 @@
 - 四类用户选定的器件：**选择器 / 门控 / OCC / DIV 分频器**，带专用模型和实时预览。
 - 复位树仅提供 **MUX / RSY_SYNC**，支持专用同步器模型及复位端口配置，不要求填写同步时钟口。
 - 自动从 `verdi` 命令定位安装目录，无需每次填写；提取运行时间不设上限。
+- 使用目标设备的 EDA 与许可环境；提供离线包、设备自检、真实时钟/复位 golden 验收及本机快捷方式生成。公共只读安装支持用户目录保存记录。
 - 同一当前目录可反复运行，旧证据自动归档，每次使用独立 Verdi 工作目录。
 - 完整静态结构图，保留多源、全部扇出、汇合、孤立结构及异常。
 - 驱动/负载双向 NPI 证据；缺失端口、未知逻辑、逆序层、环路、多驱动等诊断。
@@ -81,6 +82,21 @@ python3 scripts/check_golden.py \
 
 `--out` 可重复使用；省略时写入当前目录。上次证据保存在 `.clocktree-history/`，本次编译工作区位于 `.clocktree-runs/`。不限制重跑次数，不设置运行超时；旧 `timeout_seconds` 字段也不再生效。Windows GUI 可以浏览和编辑；使用虚拟机内 Verdi 提取时，请在虚拟机运行 GUI。
 
+## 在其他 EDA 设备部署
+
+Linux 目标设备启用自己的 Verdi 环境后，在工具目录运行：
+
+```bash
+bash clocktree.sh doctor --self-test --gui
+bash launch.sh
+```
+
+`doctor --self-test` 实际提取时钟和复位样例并比对全部实例、边和末端；`--gui` 另行检查两类架构的原生画布。无图形会话时省略 `--gui`；Windows 只检查浏览功能可用 `clocktree.cmd doctor --viewer-only --gui`。只有普通 `doctor` 通过并不表示许可和实际提取已验证。
+
+启动器不含固定 EDA 路径或许可证服务器。可写安装继续使用 `validation/runs`；只读安装使用用户状态目录，支持 `CLOCKTREE_RUNS` / `--runs` 自定义。安装/输出路径不适合旧 Verdi 时，自动选择安全临时工作目录并保留位置记录。`design.base_dir` 支持以配置文件为基准解析设计入口；filelist 内容中的 RTL/include 路径需由工程流程正确提供。
+
+离线包由 `python3 scripts/build_portable.py` 生成，附逐文件 SHA256；目标 Linux 上执行 `python3 scripts/install_desktop.py --desktop` 可生成指向实际位置的快捷方式。完整条件、环境入口、迁移步骤与问题定位见 [部署手册](docs/PORTABILITY.zh-CN.md)。真实提取需要 **Linux + Verdi/NPI + 有效许可**，尚未逐一验证其他 Verdi 版本。
+
 ## 时钟树规则与模型
 
 | 用户类型 | `kind` | 关注输入 | 关注输出 | 图形 |
@@ -131,7 +147,8 @@ python3 -m clocktree extract --config validation/fixtures/reset-tree/config.json
 
 已完成七层/generate/三类器件样例全集 golden 比对、4096 实例压力样例，以及 PULP SoC、OpenC910 配置关注网络的完整 KDB 提取。OpenTitan 通过的是 `clkmgr` 子系统，整芯片旧编译器兼容问题单独记录。
 
-- Python 检查：60 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- Python 检查：70 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- 迁移：离线包解压到独立的中文/空格路径，以普通用户、只读安装、独立环境完成两类真实 NPI golden 及 Tk 验收；Windows 结果浏览诊断通过。版本和实际限制见部署/验证手册。
 - 自动恢复：VM 中以独立进程关闭重开，验证两种模式草稿、器件外观修改、源文件移动、结果缺失处理、旧历史迁移和 6,984 实例大图；恢复过程不启动 EDA。
 - 新增 VM 两级/十级四类器件全网 golden 核对、20 级增删控件、同目录连续重跑与失败后恢复验证。
 - 复位分支：两级/十级实际 NPI 完整集合比对、RSY_SYNC 单输入校验、时钟口排除、独立工作区和同目录跨模式重跑通过。
@@ -164,6 +181,8 @@ GUI 验收脚本需测试用 Pillow 和系统 X11 工具；浏览器验收脚本
 | `docs/` | 操作手册、截图、验证摘要 |
 | `scripts/` / `tests/` | 样例生成、验证和自动检查 |
 | `launch.sh` / `launch_gui.sh` / `launch_gui.cmd` | 默认 Tk GUI 启动 |
+| `clocktree.sh` / `clocktree.cmd` | 通用启动器，支持 `doctor` / `gui` / `extract` / `serve` |
+| `scripts/build_portable.py` / `scripts/install_desktop.py` | 离线打包/校验、当前用户快捷方式 |
 | `launch_web.sh` | 可选 Web 入口 |
 | `validation/` | 本机生成数据，Git 默认忽略 |
 

@@ -1,11 +1,39 @@
 import json
+import os
 from pathlib import Path
 from .profiles import TREE_PROFILES, tree_type, profile, rule_ports
 
 
 def load_config(path):
     with open(str(path), encoding="utf-8-sig") as stream:
-        return validate_config(json.load(stream))
+        config = validate_config(json.load(stream))
+    return resolve_design_paths(config, path)
+
+
+def resolve_design_paths(config, config_path=None):
+    """Resolve a declared project base once, before a GUI job moves the config.
+
+    Legacy relative paths retain their launch-directory semantics. Explicit
+    base_dir is relative to the configuration file, making project configs
+    independent of where the tool itself is installed.
+    """
+    design = config['design']
+    base = Path.cwd()
+    if design.get('base_dir'):
+        base = expanded_path(design['base_dir'])
+        if not base.is_absolute():
+            base = (Path(config_path).resolve().parent if config_path else Path.cwd()) / base
+        base = base.resolve()
+        design['base_dir'] = str(base)
+    for key in ('elab', 'filelist'):
+        if design.get(key):
+            path = expanded_path(design[key])
+            design[key] = str((path if path.is_absolute() else base / path).resolve())
+    return config
+
+
+def expanded_path(value):
+    return Path(os.path.expandvars(str(value))).expanduser()
 
 
 def validate_config(config, allow_incomplete=False):

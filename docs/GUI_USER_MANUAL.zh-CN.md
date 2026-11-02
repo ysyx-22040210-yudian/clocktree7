@@ -1,6 +1,6 @@
 # ClockTree7 时钟树 / 复位树 GUI 操作手册
 
-**文档版本：1.3 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版**
+**文档版本：1.4 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版**
 
 本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。
 
@@ -35,6 +35,7 @@
 19. [目录结构与验证范围](#files)
 20. [复位树分支：MUX、RSY_SYNC 与独立工作区](#reset-tree)
 21. [启动自动恢复上次配置和结果](#auto-restore)
+22. [迁移到其他 EDA 设备](#portable-deployment)
 
 <a id="scope"></a>
 ## 1. 用途、术语与结果范围
@@ -83,6 +84,8 @@ GUI 中的 Verdi 路径始终指向**运行该 GUI 的机器**。Windows 打开�
 二者是同一份共享文件。GUI 在虚拟机执行提取时，设计入口、RTL filelist、KDB 及规则中的路径应当是虚拟机可访问的 Linux 路径。
 
 从 GitHub 克隆到其他目录后，下文所有命令先切换到实际仓库根目录；通过生成脚本重新建立本机路径配置。
+
+迁移部署不依赖以上共享目录。目标设备的离线安装、环境自检及快捷方式生成见 [第 22 章](#portable-deployment) 和 [部署手册](PORTABILITY.zh-CN.md)。
 
 ### 2.3 在虚拟机启动
 
@@ -818,3 +821,22 @@ python3 -m clocktree gui --no-session
 ```
 
 该次窗口不读取或写入自动记录。普通使用不需要此参数。新建两级规则可直接点击 **新建配置**，随后编辑和关闭的内容会成为新的自动恢复状态。
+
+<a id="portable-deployment"></a>
+## 22. 迁移到其他 EDA 设备
+
+将整个工具目录或离线包复制到目标设备，先启用目标设备自己的 Verdi 环境，然后执行：
+
+```bash
+bash clocktree.sh doctor --self-test --gui
+```
+
+该命令会真实提取时钟树与复位树小型样例，核对全部实例、连线、末端并短暂打开 Tk 窗口检查两种架构。最终 `PASS` 且报告的 `eda_verified` / `gui_verified` 均为 `true`，才表示本设备通过这组验收。只运行 `doctor` 只能确认安装与存储条件。目标 SoC 还需用自身工程配置再做提取检查。
+
+正常使用通过 `bash launch.sh` 启动。Linux 可以执行 `python3 scripts/install_desktop.py --desktop`，生成指向当前安装位置的快捷方式；安装路径改变后重新生成。Windows 使用 `launch_gui.cmd`，并可用 `clocktree.cmd doctor --viewer-only --gui` 检查浏览功能。
+
+真实提取需要 Linux 上有效的 Verdi/NPI 和许可；工具不再使用当前虚拟机写死的安装目录或许可证服务器。用户可以通过 `CLOCKTREE_EDA_SETUP` 指定站点 Bash 环境入口，通过 `CLOCKTREE_PYTHON` 选择解释器。共享只读安装会把运行记录放到用户目录，也可用 `CLOCKTREE_RUNS` / `--runs` 自定义。
+
+已有结果 JSON 可直接在其他设备浏览；重新提取前需改为目标设备可访问的 elab/filelist。`design.base_dir` 可让设计入口相对配置文件解析，filelist 内部的 RTL、include 和库路径仍应由原工程流程正确生成。不同设备的 GUI 自动恢复缓存分别保存；跨设备接续工程应手动导出并导入配置和结果。
+
+离线包校验、无图形服务器、用户环境入口、UTF-8 locale、旧 Verdi 路径限制和故障定位的完整步骤见 [其他 EDA 设备部署与验收](PORTABILITY.zh-CN.md)。

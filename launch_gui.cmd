@@ -1,3 +1,2 @@
 @echo off
-cd /d "%~dp0"
-python -m clocktree gui %*
+call "%~dp0clocktree.cmd" gui %*

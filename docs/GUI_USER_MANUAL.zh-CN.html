@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：1.3 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：1.4 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -39,6 +39,7 @@
 <li><a href="#files">目录结构与验证范围</a></li>
 <li><a href="#reset-tree">复位树分支：MUX、RSY_SYNC 与独立工作区</a></li>
 <li><a href="#auto-restore">启动自动恢复上次配置和结果</a></li>
+<li><a href="#portable-deployment">迁移到其他 EDA 设备</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -126,6 +127,7 @@
 </table>
 <p>二者是同一份共享文件。GUI 在虚拟机执行提取时，设计入口、RTL filelist、KDB 及规则中的路径应当是虚拟机可访问的 Linux 路径。</p>
 <p>从 GitHub 克隆到其他目录后，下文所有命令先切换到实际仓库根目录；通过生成脚本重新建立本机路径配置。</p>
+<p>迁移部署不依赖以上共享目录。目标设备的离线安装、环境自检及快捷方式生成见 <a href="#portable-deployment">第 22 章</a> 和 <a href="PORTABILITY.zh-CN.md">部署手册</a>。</p>
 <h3 id="23">2.3 在虚拟机启动</h3>
 <p>在虚拟机桌面双击 <strong>ClockTree7</strong> 快捷方式。也可在虚拟机桌面终端执行：</p>
 <pre><code class="language-bash">cd /mnt/hgfs/VMshare/clocktree7
@@ -1113,4 +1115,14 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 <p>显式指定 <code>--config</code> 或 <code>--result</code> 时，指定文件优先于自动恢复内容。需要完全隔离的查看或测试窗口时：</p>
 <pre><code class="language-bash">python3 -m clocktree gui --no-session
 </code></pre>
-<p>该次窗口不读取或写入自动记录。普通使用不需要此参数。新建两级规则可直接点击 <strong>新建配置</strong>，随后编辑和关闭的内容会成为新的自动恢复状态。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>该次窗口不读取或写入自动记录。普通使用不需要此参数。新建两级规则可直接点击 <strong>新建配置</strong>，随后编辑和关闭的内容会成为新的自动恢复状态。</p>
+<p><a id="portable-deployment"></a></p>
+<h2 id="22-eda">22. 迁移到其他 EDA 设备</h2>
+<p>将整个工具目录或离线包复制到目标设备，先启用目标设备自己的 Verdi 环境，然后执行：</p>
+<pre><code class="language-bash">bash clocktree.sh doctor --self-test --gui
+</code></pre>
+<p>该命令会真实提取时钟树与复位树小型样例，核对全部实例、连线、末端并短暂打开 Tk 窗口检查两种架构。最终 <code>PASS</code> 且报告的 <code>eda_verified</code> / <code>gui_verified</code> 均为 <code>true</code>，才表示本设备通过这组验收。只运行 <code>doctor</code> 只能确认安装与存储条件。目标 SoC 还需用自身工程配置再做提取检查。</p>
+<p>正常使用通过 <code>bash launch.sh</code> 启动。Linux 可以执行 <code>python3 scripts/install_desktop.py --desktop</code>，生成指向当前安装位置的快捷方式；安装路径改变后重新生成。Windows 使用 <code>launch_gui.cmd</code>，并可用 <code>clocktree.cmd doctor --viewer-only --gui</code> 检查浏览功能。</p>
+<p>真实提取需要 Linux 上有效的 Verdi/NPI 和许可；工具不再使用当前虚拟机写死的安装目录或许可证服务器。用户可以通过 <code>CLOCKTREE_EDA_SETUP</code> 指定站点 Bash 环境入口，通过 <code>CLOCKTREE_PYTHON</code> 选择解释器。共享只读安装会把运行记录放到用户目录，也可用 <code>CLOCKTREE_RUNS</code> / <code>--runs</code> 自定义。</p>
+<p>已有结果 JSON 可直接在其他设备浏览；重新提取前需改为目标设备可访问的 elab/filelist。<code>design.base_dir</code> 可让设计入口相对配置文件解析，filelist 内部的 RTL、include 和库路径仍应由原工程流程正确生成。不同设备的 GUI 自动恢复缓存分别保存；跨设备接续工程应手动导出并导入配置和结果。</p>
+<p>离线包校验、无图形服务器、用户环境入口、UTF-8 locale、旧 Verdi 路径限制和故障定位的完整步骤见 <a href="PORTABILITY.zh-CN.md">其他 EDA 设备部署与验收</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

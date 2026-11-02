@@ -234,7 +234,8 @@ try:
         assert not (cancelled_dir/'summary.json').exists()
         assert app.graph['summary']['instances']==6984
         process_table=subprocess.check_output(['/usr/bin/ps','-eo','pgid=,stat=,args='],universal_newlines=True)
-        alive=[line for line in process_table.splitlines() if line.strip().split(None,2)[0]==str(pgid) and not line.strip().split(None,2)[1].startswith('Z')]
+        rows=[line.split(None,2) for line in process_table.splitlines() if line.strip()]
+        alive=[row for row in rows if len(row)>=2 and row[0]==str(pgid) and not row[1].startswith('Z')]
         assert not alive,alive
         checks['cancel_real_npi_job']={'directory':str(cancelled_dir),'state':'cancelled',
                                       'process_group_terminated':True,'previous_graph_preserved':True,'partial_result_not_certified':True}

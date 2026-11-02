@@ -2,7 +2,6 @@
 from contextlib import contextmanager
 import copy
 import datetime
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -13,15 +12,11 @@ import uuid
 
 from .config import validate_config
 from .profiles import TREE_PROFILES, tree_type
+from .paths import user_state_root, path_key
 
 
 def default_session_dir(runs):
-    if os.name == 'nt':
-        base = Path(os.environ.get('LOCALAPPDATA') or (Path.home() / 'AppData/Local'))
-    else:
-        base = Path(os.environ.get('XDG_STATE_HOME') or (Path.home() / '.local/state'))
-    key = hashlib.sha256(os.path.normcase(str(Path(runs).resolve())).encode('utf-8')).hexdigest()[:20]
-    return base / 'clocktree7' / key
+    return user_state_root() / path_key(runs)
 
 
 def same_config(left, right):

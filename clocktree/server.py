@@ -12,6 +12,7 @@ import uuid
 from .config import validate_config
 from .extract import extract
 from .profiles import result_filename, tree_type
+from .paths import default_runs_dir
 
 
 class Server(ThreadingMixIn, HTTPServer):
@@ -19,7 +20,7 @@ class Server(ThreadingMixIn, HTTPServer):
 
 
 def serve(host, port, runs, result=None):
-    base = Path(runs).resolve()
+    base = Path(runs or default_runs_dir()).resolve()
     base.mkdir(parents=True, exist_ok=True)
     web = Path(__file__).resolve().parents[1] / "web"
     jobs = {}

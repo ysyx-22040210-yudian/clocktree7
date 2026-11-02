@@ -1,21 +1,23 @@
 #!/usr/bin/env bash
-# Source this file; it contains installation paths, never license contents.
-# Prefer the active verdi command; keep the existing VM deployment as a
-# fallback for desktop sessions that do not inherit the EDA shell profile.
-ct_verdi_command="$(command -v verdi || true)"
-if [[ -n "$ct_verdi_command" ]]; then
-  ct_verdi_path="$(readlink -f -- "$ct_verdi_command")"
-  ct_verdi_candidate="$(dirname -- "$(dirname -- "$ct_verdi_path")")"
-  if [[ -f "$ct_verdi_candidate/share/NPI/L1/TCL/npi_L1.tcl" ]]; then
-    export VERDI_HOME="$ct_verdi_candidate"
+# Source this file. Preserve the device's own EDA paths and license settings.
+# A site/user may opt in to an existing Bash EDA setup for desktop launches.
+ct_setup_default="${XDG_CONFIG_HOME:-$HOME/.config}/clocktree7/eda.sh"
+ct_setup="${CLOCKTREE_EDA_SETUP:-$ct_setup_default}"
+if [[ -n "${CLOCKTREE_EDA_SETUP:-}" ]] || { ! command -v verdi >/dev/null 2>&1 && [[ -f "$ct_setup" ]]; }; then
+  if [[ ! -r "$ct_setup" ]]; then
+    echo "ClockTree7: cannot read EDA setup: $ct_setup" >&2
+    return 1
+  fi
+  ct_restore_nounset=0
+  case "$-" in *u*) ct_restore_nounset=1; set +u ;; esac
+  if source "$ct_setup"; then ct_setup_status=0; else ct_setup_status=$?; fi
+  if [[ "$ct_restore_nounset" == 1 ]]; then set -u; fi
+  if [[ "$ct_setup_status" != 0 ]]; then
+    echo "ClockTree7: EDA setup returned an error: $ct_setup" >&2
+    return "$ct_setup_status"
   fi
 fi
-if [[ -z "${VERDI_HOME:-}" && -x /home/synopsys/verdi/Verdi_O-2018.09-SP2/bin/verdi ]]; then
-  export VERDI_HOME=/home/synopsys/verdi/Verdi_O-2018.09-SP2
+if ! command -v verdi >/dev/null 2>&1 && [[ -n "${VERDI_HOME:-}" && -x "$VERDI_HOME/bin/verdi" ]]; then
+  export PATH="$VERDI_HOME/bin:$PATH"
 fi
-export VCS_HOME="${VCS_HOME:-/home/synopsys/vcs/O-2018.09-SP2}"
-export VCS_TARGET_ARCH="${VCS_TARGET_ARCH:-linux64}"
-export LM_LICENSE_FILE="${LM_LICENSE_FILE:-27000@IC_EDA}"
-export SNPSLMD_LICENSE_FILE="${SNPSLMD_LICENSE_FILE:-$LM_LICENSE_FILE}"
-export PATH="$VCS_HOME/bin:${VERDI_HOME:+$VERDI_HOME/bin:}$PATH"
-unset ct_verdi_command ct_verdi_path ct_verdi_candidate
+unset ct_setup ct_setup_default ct_restore_nounset ct_setup_status

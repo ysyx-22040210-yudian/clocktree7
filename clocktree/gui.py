@@ -17,6 +17,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
 from .config import load_config, validate_config
+from .paths import default_runs_dir
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule
@@ -146,7 +147,7 @@ class ClockTreeApp(tk.Tk):
         self.family = next((x for x in ['Microsoft YaHei UI','Microsoft YaHei','WenQuanYi Micro Hei','Noto Sans CJK SC','DejaVu Sans'] if x in families),'sans-serif')
         self.mono = 'Consolas' if 'Consolas' in families else 'DejaVu Sans Mono'
         self._style()
-        self.runs = Path(runs or ROOT/'validation/runs').resolve()
+        self.runs = Path(runs or default_runs_dir()).resolve()
         self.runs.mkdir(parents=True, exist_ok=True)
         self.events = queue.Queue()
         self._session_store=SessionStore(self.runs,session_dir) if remember else None
@@ -951,7 +952,7 @@ class ClockTreeApp(tk.Tk):
         def detect():
             try:
                 executable,home=resolve_verdi(self._base_config.get('design',{}))
-                detected.set('命令：{}\n安装目录：{}\nNPI：可用'.format(executable,home))
+                detected.set('命令：{}\n安装目录：{}\nNPI 安装文件：已找到'.format(executable,home))
             except ValueError as error:detected.set(str(error))
         ttk.Label(frame,textvariable=detected,style='White.TLabel',wraplength=570).pack(anchor='w')
         ttk.Button(frame,text='重新检测',command=detect).pack(anchor='w',pady=(12,0))

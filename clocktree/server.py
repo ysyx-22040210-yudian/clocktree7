@@ -61,7 +61,16 @@ def serve(host, port, runs, result=None):
                     if not path or not path.is_file():
                         self.send({"error": "No result loaded"}, 404)
                     else:
-                        self.send(path.read_bytes())
+                        # Stream the canonical result; avoid a second full-file
+                        # byte buffer in the legacy web server process.
+                        import shutil
+                        self.send_response(200)
+                        self.send_header('Content-Type', 'application/json; charset=utf-8')
+                        self.send_header('Content-Length', str(path.stat().st_size))
+                        self.send_header('Cache-Control', 'no-store')
+                        self.end_headers()
+                        with path.open('rb') as stream:
+                            shutil.copyfileobj(stream, self.wfile, 65536)
                 elif route.path == "/api/job":
                     identifier = query.get("id", [""])[0]
                     job = dict(jobs.get(identifier, {"state": "unknown"}))

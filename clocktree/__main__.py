@@ -2,6 +2,7 @@ import argparse
 import json
 
 from .extract import extract
+from .memory import MemoryResumeError
 
 
 def main():
@@ -10,6 +11,7 @@ def main():
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
     run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
+    run.add_argument('--memory-limit-gib', type=float, help='Verdi + extraction RSS limit; default 60 GiB or config memory_limit_gib. 0 disables rotation.')
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", default=8767, type=int)
@@ -28,7 +30,10 @@ def main():
     doctor.add_argument('--viewer-only', action='store_true', help='Check result browsing without requiring EDA (Windows/Linux)')
     args = parser.parse_args()
     if args.command == "extract":
-        graph = extract(args.config, args.out)
+        try:
+            graph = extract(args.config, args.out, args.memory_limit_gib)
+        except MemoryResumeError as error:
+            parser.exit(1, 'ClockTree7: ' + str(error) + '\n')
         print(json.dumps(graph["summary"], indent=2))
         return 0 if graph["summary"]["connectivity_complete"] else 2
     if args.command == "serve":

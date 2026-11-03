@@ -9,10 +9,12 @@ import re
 import threading
 import time
 import uuid
+import sqlite3
 
 from .config import validate_config
 from .profiles import TREE_PROFILES, tree_type
 from .paths import user_state_root, path_key
+from .storage import IndexedGraph, PresentedNodes, open_graph, snapshot_index
 
 
 def default_session_dir(runs):
@@ -23,6 +25,7 @@ def same_config(left, right):
     def normalized(config):
         result = dict(config, tree_type=tree_type(config))
         result.pop('timeout_seconds', None)
+        result.pop('memory_limit_gib', None)
         return result
     return normalized(left) == normalized(right)
 
@@ -30,8 +33,11 @@ def same_config(left, right):
 def snapshot_graph(graph):
     # The viewer never mutates connectivity/evidence. Copy the fields changed
     # by device-type edits, keeping large immutable connectivity lists shared.
-    result = dict(graph)
-    result['nodes'] = [dict(node) for node in graph['nodes']]
+    result = IndexedGraph(graph.store, graph) if isinstance(graph, IndexedGraph) else dict(graph)
+    if isinstance(graph, IndexedGraph):
+        result['nodes'] = PresentedNodes(graph.store, result)
+    else:
+        result['nodes'] = [dict(node) for node in graph['nodes']]
     result['config'] = copy.deepcopy(graph['config'])
     if 'presentation' in graph:
         result['presentation'] = copy.deepcopy(graph['presentation'])
@@ -39,9 +45,12 @@ def snapshot_graph(graph):
 
 
 def read_graph(path, expected=None):
-    with Path(path).open(encoding='utf-8-sig') as stream:
-        graph = json.load(stream)
-    if (not isinstance(graph, dict) or not all(isinstance(graph.get(k), list) for k in ('nodes', 'edges', 'components'))
+    try:
+        graph = open_graph(path)
+    except sqlite3.Error as error:
+        raise ValueError('Result index is unreadable: ' + str(error))
+    from collections.abc import Sequence
+    if (not isinstance(graph, dict) or not all(isinstance(graph.get(k), Sequence) and not isinstance(graph[k], (str, bytes)) for k in ('nodes', 'edges', 'components'))
             or not isinstance(graph.get('summary'), dict) or not isinstance(graph.get('config'), dict)):
         raise ValueError('Not a clock/reset result')
     mode = tree_type(graph['config'])
@@ -144,7 +153,10 @@ class SessionStore:
                         raise ValueError('Invalid result revision')
                     filename = '{}-{}.json'.format(mode, token)
                     if not (self.directory / filename).is_file():
-                        self._atomic_json(self.directory / filename, graph)
+                        if isinstance(graph, IndexedGraph):
+                            snapshot_index(self.directory / filename, graph)
+                        else:
+                            self._atomic_json(self.directory / filename, graph)
                 entries[mode] = {'config': workspace['config'], 'result': filename,
                                  'source_result': str(workspace['path']) if workspace.get('path') else None,
                                  'dirty': bool(workspace.get('dirty')), 'active_layer': workspace.get('active_layer', 1)}
@@ -158,6 +170,9 @@ class SessionStore:
                 if re.fullmatch(r'(clock|reset)-[0-9a-f]{32}\.json', path.name) and path.name not in keep:
                     try:
                         path.unlink()
+                        database = path.with_suffix('.sqlite3')
+                        if database.is_file():
+                            database.unlink()
                     except OSError:
                         pass
 

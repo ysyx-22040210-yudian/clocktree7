@@ -1,5 +1,6 @@
 import json
 import os
+import math
 from pathlib import Path
 from .profiles import TREE_PROFILES, tree_type, profile, rule_ports
 
@@ -86,6 +87,10 @@ def validate_config(config, allow_incomplete=False):
     if not isinstance(trace_scope, str):
         raise ValueError('trace_scope must be an exact RTL hierarchy string')
     trace_scope = trace_scope.strip().rstrip('./')
+    if 'memory_limit_gib' in config and not allow_incomplete:
+        limit = config['memory_limit_gib']
+        if type(limit) not in (int, float) or not math.isfinite(limit) or limit < 0:
+            raise ValueError('memory_limit_gib must be a finite nonnegative number (0 disables memory protection)')
     if trace_scope and not allow_incomplete:
         if '*' in trace_scope or '?' in trace_scope or not hierarchy_contains(trace_scope, design['top']):
             raise ValueError('trace_scope must be an exact hierarchy at or below design.top')

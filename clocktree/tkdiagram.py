@@ -91,7 +91,9 @@ class ClockDiagram(tk.Frame):
 
     def load(self, graph):
         self.tree_type = tree_type(graph.get('config', graph))
-        self.model = GraphView(graph)
+        from .storage import IndexedGraph
+        from .indexed_view import IndexedGraphView
+        self.model = IndexedGraphView(graph) if isinstance(graph, IndexedGraph) else GraphView(graph)
         self.mode = 'hierarchy' if len(graph['nodes']) > 400 else 'instances'
         self.component, self.scope, self.depth = None, '', 5
         self.selected, self.highlights = None, set()
@@ -111,6 +113,7 @@ class ClockDiagram(tk.Frame):
         if not self.model:
             return
         self.model.project(self.mode, self.component, self.scope, self.depth)
+        self.mode = getattr(self.model, 'effective_mode', self.mode)
         if fit:
             self.fit()
         else:
@@ -121,7 +124,15 @@ class ClockDiagram(tk.Frame):
         if self.model:
             self.on_view({'mode': self.mode, 'scope': self.scope, 'component': self.component,
                           'boxes': len(self.model.nodes), 'actual': self.model.actual_count,
-                          'total': len(self.model.original), 'zoom': self.scale})
+                          'total': len(self.model.original), 'zoom': self.scale,
+                          'focus': getattr(self.model, 'focus', None), 'page': getattr(self.model, 'page', 0),
+                          'pages': getattr(self.model, 'pages', 1), 'external_edges': getattr(self.model, 'external_edges', 0)})
+
+    def page_view(self, delta):
+        if self.model and hasattr(self.model, 'page'):
+            self.model.page += delta
+            self.selected, self.highlights = None, set()
+            self.rebuild()
 
     def fit(self):
         if not self.model:
@@ -165,7 +176,13 @@ class ClockDiagram(tk.Frame):
         if not self.model:
             return
         self.mode, self.component, self.scope = 'instances', None, ''
-        self.rebuild(fit=False)
+        from .indexed_view import DETAIL_LIMIT
+        if hasattr(self.model, 'project_focus') and len(self.model.original) > DETAIL_LIMIT:
+            self.model.project_focus(node)
+            self.schedule()
+        else:
+            self.rebuild(fit=False)
+        node = self.model.original[node['id']]
         x, y, w, h = self.model.positions[node['id']]
         self.scale = min(1.05, max(.7, self.canvas.winfo_width()/1100))
         self.ox = self.canvas.winfo_width()/2 - (x+w/2)*self.scale
@@ -176,9 +193,12 @@ class ClockDiagram(tk.Frame):
     def select(self, node):
         self.selected = node['id']
         self.highlights = set()
-        members = node.get('members', [node['id']])
-        for key in members:
-            self.highlights.update(e['id'] for e in self.model.incoming[key] + self.model.outgoing[key])
+        if hasattr(self.model, 'selection_edges'):
+            self.highlights = self.model.selection_edges(node)
+        else:
+            members = node.get('members', [node['id']])
+            for key in members:
+                self.highlights.update(e['id'] for e in self.model.incoming[key] + self.model.outgoing[key])
         self.schedule()
         self.on_node(node)
 
@@ -215,7 +235,7 @@ class ClockDiagram(tk.Frame):
         # edges sharing a trunk. Its click inspector preserves all edge IDs.
         segments = {}
         for edge in self.model.edges:
-            highlighted = bool(self.highlights.intersection(edge.get('members', [edge['id']])))
+            highlighted = bool(self.highlights) and bool(self.highlights.intersection(edge.get('members', [edge['id']])))
             color = '#70bbff' if highlighted else ('#ee8783' if edge['layer_delta'] < 0 else '#4b6c96')
             points = self.model.edge_points(edge)
             for i, (a, b) in enumerate(zip(points, points[1:])):

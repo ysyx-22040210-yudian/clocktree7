@@ -2,6 +2,8 @@
 from collections import Counter, defaultdict, deque
 import hashlib
 import json
+import sys
+from itertools import chain
 from .devices import resolve_kind
 from .profiles import profile, tree_type
 from .config import hierarchy_contains
@@ -10,18 +12,65 @@ from .config import hierarchy_contains
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type"}
 
 
-def build_graph(events, config):
+def build_graph(events, config, evidence_store=None):
     info = profile(config)
     nodes = {}
-    traces = []
     diagnostics = []
     metadata = {}
+    edges, boundaries, trace_keys = {}, [], set()
+    active = {}
+    trace_index = 0
+
+    def consume(trace, result):
+        if result['status'] == 'sink':
+            cell = result.get('cell', '')
+            group = trace['sinks'].setdefault(cell, {'status': 'sink_group', 'cell': cell, 'count': 0,
+                'instance': trace['instance'], 'pin': trace['pin'], 'direction': trace['direction'],
+                'examples': [], 'evidence_ref': {'file': 'raw.jsonl', 'trace_index': trace['index']}})
+            if 'trace_id' in trace:
+                group['evidence_ref']['trace_id'] = trace['trace_id']
+            group['count'] += 1
+            if len(group['examples']) < 5:
+                group['examples'].append(result.get('endpoint', ''))
+            return
+        result = dict(result)
+        if 'path_id' in result:
+            result['path'] = evidence_store.trace_path(trace['trace_id'], result.pop('path_id'))
+        elif evidence_store is not None and 'path' in result:
+            result['path'] = evidence_store.add_path(result['path'])
+        if result['status'] == 'target':
+            if trace['direction'] == 'load':
+                src, sp, dst, dp = trace['instance'], trace['pin'], result['instance'], result['pin']
+            else:
+                src, sp, dst, dp = result['instance'], result['pin'], trace['instance'], trace['pin']
+            edge_key = tuple(sys.intern(part) for part in (src, sp, dst, dp))
+            if edge_key not in edges:
+                edges[edge_key] = {'id': hashlib.sha256('\0'.join(edge_key).encode()).hexdigest()[:20],
+                    'source': edge_key[0], 'source_pin': edge_key[1], 'target': edge_key[2], 'target_pin': edge_key[3],
+                    'evidence': {}}
+            edges[edge_key]['evidence'][trace['direction']] = result.get('path', [])
+        else:
+            boundaries.append(dict(result, instance=trace['instance'], pin=trace['pin'], direction=trace['direction']))
+
+    def begin(item):
+        nonlocal trace_index
+        trace = {key: item[key] for key in ('instance', 'pin', 'direction')}
+        trace.update(sinks={}, index=trace_index, count=0)
+        if 'trace_id' in item:
+            trace['trace_id'] = item['trace_id']
+        trace_index += 1
+        return trace
+
+    def finish(trace):
+        trace_keys.add((trace['instance'], trace['pin'], trace['direction']))
+        boundaries.extend(trace['sinks'].values())
+
     trace_scope = config.get('trace_scope', '').strip().rstrip('./')
     completed = False
     for item in events:
         kind = item.get("event")
         if kind == "instance":
-            key = item["path"]
+            key = sys.intern(item["path"])
             if trace_scope and not hierarchy_contains(key, trace_scope):
                 diagnostics.append({'code': 'target_outside_trace_scope', 'instance': key, 'scope': trace_scope})
                 continue
@@ -30,7 +79,36 @@ def build_graph(events, config):
                 continue
             nodes[key] = dict(item, id=key)
         elif kind == "trace":
-            traces.append(item)
+            trace = begin(item)
+            for result in item.get('results', []):
+                consume(trace, result)
+            finish(trace)
+        elif kind == 'trace_begin':
+            if evidence_store is None:
+                from .storage import ResultStore
+                import tempfile
+                from pathlib import Path
+                temporary = tempfile.TemporaryDirectory(prefix='ct7-evidence-')
+                evidence_store = ResultStore(Path(temporary.name) / 'evidence.sqlite3', create=True)
+                evidence_store.temporary = temporary
+            if item['trace_id'] in active:
+                raise ValueError('Duplicate trace_begin')
+            active[item['trace_id']] = begin(item)
+        elif kind == 'path_step':
+            if item['trace_id'] not in active:
+                raise ValueError('Path outside an active trace')
+            evidence_store.trace_step(item['trace_id'], item['path_id'], item['parent_id'], item['evidence'])
+        elif kind == 'trace_result':
+            trace = active[item['trace_id']]
+            consume(trace, item['result'])
+            trace['count'] += 1
+        elif kind == 'trace_end':
+            trace = active.pop(item['trace_id'])
+            if not trace['count'] or trace['count'] != item['result_count']:
+                diagnostics.append({'code': 'trace_protocol', 'trace_id': item['trace_id'], 'message': 'Result count mismatch'})
+            else:
+                finish(trace)
+            evidence_store.end_trace(item['trace_id'])
         elif kind == "diagnostic":
             diagnostics.append(item)
         elif kind == "metadata":
@@ -44,46 +122,17 @@ def build_graph(events, config):
         kind = resolve_kind(node, config)
         if kind:
             node['kind'], node['kind_source'] = kind, 'configured'
-    edges = {}
-    boundaries = []
-    trace_keys = set()
-    coverage = {}
-    for trace_index, trace in enumerate(traces):
-        sink_groups = {}
-        key = (trace["instance"], trace["pin"], trace["direction"])
-        trace_keys.add(key)
-        coverage[key] = trace
-        for result in trace.get("results", []):
-            if result["status"] == "sink":
-                # Register/RAM consumers are outside the configured structure
-                # view. Keep full per-pin evidence in raw.jsonl; summarize it
-                # here so the browser does not load tens of thousands of long,
-                # duplicated hierarchy paths just to draw the clock structures.
-                cell = result.get("cell", "")
-                group = sink_groups.setdefault(cell, {"status": "sink_group", "cell": cell, "count": 0,
-                    "instance": trace["instance"], "pin": trace["pin"], "direction": trace["direction"],
-                    "examples": [], "evidence_ref": {"file": "raw.jsonl", "trace_index": trace_index}})
-                group["count"] += 1
-                if len(group["examples"]) < 5:
-                    group["examples"].append(result.get("endpoint", ""))
-                continue
-            if result["status"] == "target":
-                if trace["direction"] == "load":
-                    src, sp, dst, dp = trace["instance"], trace["pin"], result["instance"], result["pin"]
-                else:
-                    src, sp, dst, dp = result["instance"], result["pin"], trace["instance"], trace["pin"]
-                if src not in nodes or dst not in nodes:
-                    diagnostics.append({"code": "unknown_target", "source": src, "target": dst})
-                    continue
-                edge_key = (src, sp, dst, dp)
-                if edge_key not in edges:
-                    edges[edge_key] = {"id": hashlib.sha256("\0".join(edge_key).encode()).hexdigest()[:20],
-                                       "source": src, "source_pin": sp, "target": dst, "target_pin": dp,
-                                       "evidence": {}, "layer_delta": nodes[dst]["layer"] - nodes[src]["layer"]}
-                edges[edge_key]["evidence"][trace["direction"]] = result.get("path", [])
-            else:
-                boundaries.append(dict(result, instance=trace["instance"], pin=trace["pin"], direction=trace["direction"]))
-        boundaries.extend(sink_groups.values())
+    for trace in active.values():
+        boundaries.extend(trace['sinks'].values())
+        diagnostics.append({'code': 'trace_protocol', 'trace_id': trace['trace_id'], 'message': 'Missing trace_end'})
+    # Resolve topology after enumeration, allowing legacy interleaved events.
+    for key in list(edges):
+        edge = edges[key]
+        if edge['source'] not in nodes or edge['target'] not in nodes:
+            diagnostics.append({'code': 'unknown_target', 'source': edge['source'], 'target': edge['target']})
+            del edges[key]
+            continue
+        edge['layer_delta'] = nodes[edge['target']]['layer'] - nodes[edge['source']]['layer']
     for edge in edges.values():
         if len(edge["evidence"]) != 2:
             diagnostics.append({"code": "trace_mismatch", "edge": edge["id"], "observed": sorted(edge["evidence"])})
@@ -92,6 +141,7 @@ def build_graph(events, config):
     # A physical external clock can feed many L1 gates; keep its identity and
     # join those branches in the same network without duplicating RTL instances.
     sources = {}
+    source_loads = defaultdict(set)
     source_neighbours = defaultdict(set)
     for boundary in boundaries:
         is_source_boundary = boundary["status"] == "input_boundary" or (
@@ -102,8 +152,11 @@ def build_graph(events, config):
                 continue
             source = sources.setdefault(name, {"id": name, "kind": boundary["status"], "loads": []})
             load = {"instance": boundary["instance"], "pin": boundary["pin"]}
-            if load not in source["loads"]:
+            load_key = (load['instance'], load['pin'])
+            if load_key not in source_loads[name]:
                 source["loads"].append(load)
+                source_loads[name].add(load_key)
+    del source_loads
     for source in sources.values():
         members = sorted(set(load["instance"] for load in source["loads"]))
         for member in members[1:]:
@@ -118,11 +171,15 @@ def build_graph(events, config):
     for (instance, pin), drivers in pin_drivers.items():
         if len(drivers) > 1:
             diagnostics.append({"code": "multiple_drivers", "instance": instance, "pin": pin, "drivers": sorted(drivers)})
-    expected_traces = set()
+    expected_count = 0
+    missing = []
     for node in nodes.values():
-        expected_traces.add((node["id"], node["output"], "load"))
-        expected_traces.update((node["id"], pin, "driver") for pin in node["inputs"])
-    missing = sorted(expected_traces - trace_keys)
+        for pin, direction in [(node['output'], 'load')] + [(pin, 'driver') for pin in node['inputs']]:
+            expected_count += 1
+            key = (node['id'], pin, direction)
+            if key not in trace_keys:
+                missing.append(key)
+    missing.sort()
     for node, pin, direction in missing:
         diagnostics.append({"code": "missing_trace", "instance": node, "pin": pin, "direction": direction})
     # Connected components are independent of root reachability: no node is filtered.
@@ -137,39 +194,39 @@ def build_graph(events, config):
         while queue:
             current = queue.popleft()
             members.append(current)
-            for neighbour in sorted(outgoing[current] | incoming[current] | source_neighbours[current]):
+            for neighbour in chain(outgoing.get(current, ()), incoming.get(current, ()), source_neighbours.get(current, ())):
                 if neighbour not in component_id:
                     component_id[neighbour] = len(components)
                     queue.append(neighbour)
         components.append({"id": len(components), "nodes": sorted(members)})
     # Kahn identifies cycles without recursion limits on large SoCs.
-    degree = {node: len(incoming[node]) for node in nodes}
+    degree = {node: len(incoming.get(node, ())) for node in nodes}
     queue = deque(sorted(n for n in nodes if degree[n] == 0))
-    visited = []
+    visited = 0
     while queue:
         current = queue.popleft()
-        visited.append(current)
-        for nxt in outgoing[current]:
+        visited += 1
+        for nxt in outgoing.get(current, ()):
             degree[nxt] -= 1
             if degree[nxt] == 0:
                 queue.append(nxt)
-    if len(visited) != len(nodes):
+    if visited != len(nodes):
         diagnostics.append({"code": "cycle_or_cycle_downstream", "instances": sorted(n for n in nodes if degree[n])})
-    unresolved = [b for b in boundaries if b["status"] in UNRESOLVED]
-    unresolved_outputs = {b["instance"] for b in unresolved if b["direction"] == "load"}
+    unresolved_count = sum(b['status'] in UNRESOLVED for b in boundaries)
+    unresolved_outputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'load'}
     scope_outputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'load'}
     scope_inputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'driver'}
     for node in nodes.values():
         node["component"] = component_id[node["id"]]
-        node["root"] = not incoming[node["id"]]
-        node["terminal"] = not outgoing[node["id"]] and node["id"] not in (unresolved_outputs | scope_outputs) and (node["id"], node["output"], "load") in trace_keys
+        node["root"] = not incoming.get(node['id'])
+        node["terminal"] = not outgoing.get(node['id']) and node['id'] not in unresolved_outputs and node['id'] not in scope_outputs and (node["id"], node["output"], "load") in trace_keys
         node['scope_input_boundary'] = node['id'] in scope_inputs
         node['scope_output_boundary'] = node['id'] in scope_outputs
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
         if node["root"] and node["layer"] != 1 and not node['scope_input_boundary']:
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
-    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope'}
-    coverage_ok = completed and not missing and not unresolved and not any(d["code"] in fatal_codes for d in diagnostics)
+    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal'}
+    coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
     topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
     return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,
             "nodes": sorted(nodes.values(), key=lambda n: (n["layer"], n["id"])),
@@ -180,8 +237,8 @@ def build_graph(events, config):
                         "terminals": sum(n["terminal"] for n in nodes.values()), "components": len(components), info['sources']: len(sources),
                         "layers": dict(Counter(str(n["layer"]) for n in nodes.values())),
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
-                        "expected_pin_traces": len(expected_traces), "observed_pin_traces": len(trace_keys),
-                        "unresolved": len(unresolved), "diagnostics": len(diagnostics),
+                        "expected_pin_traces": expected_count, "observed_pin_traces": len(trace_keys),
+                        "unresolved": unresolved_count, "diagnostics": len(diagnostics),
                         'trace_scope': trace_scope, 'scope_limited': bool(trace_scope),
                         'scope_boundaries': sum(b['status'] == 'scope_boundary' for b in boundaries),
                         'scope_output_instances': len(scope_outputs),
@@ -191,4 +248,6 @@ def build_graph(events, config):
 
 def read_events(path):
     with open(str(path), encoding="utf-8") as stream:
-        return [json.loads(line) for line in stream if line.strip()]
+        for line in stream:
+            if line.strip():
+                yield json.loads(line)

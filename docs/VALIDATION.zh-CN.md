@@ -1,6 +1,19 @@
 # 验证摘要
 
-更新日期：2026-11-03。数据来自本地实际保存的 Verdi NPI 结果和 Tk 界面验收；以下为可随源码分享的摘要。完整原始记录保留在本机 `validation/`，不随仓库上传。
+更新日期：2026-11-04。数据来自本地实际保存的 Verdi NPI 结果和 Tk 界面验收；以下为可随源码分享的摘要。完整原始记录保留在本机 `validation/`，不随仓库上传。
+
+## 内存优化与 Verdi 重启续跑
+
+- 删除非必要全芯片统计，按相同查询根＋module 复用查找；回收队列项、共享路径前缀、逐终点写入，Python 逐事件处理，SQLite 保存证据与结果索引，完整 JSON 流式导出。
+- 同一 OpenC910 原始证据（6,984 实例 / 6,983 边）的独立进程基准：旧版 Python 后处理峰值 **426.19 MiB**，优化后 **73.41 MiB**；打开结果、投影概览和准备快照的模型基准由 **203.32 MiB** 降为 **19.51 MiB**。均不含 Verdi；后处理耗时由约 2.1 秒增加到约 19.8 秒，交换了内存与磁盘开销。
+- 原生 Tk：大图概览、点选双向证据、全量 JSON、源文件移动后新进程恢复和两类工作区切换通过。合成 **100,001 实例 / 100,000 边** 检查全网覆盖、宽层次翻页、连接列表翻页、精确定位及磁盘路径高亮，未记录 Tk 回调异常；此项是 GUI 压力测试，不能当成真实 NPI SoC 提取。
+- Linux 真实 RSS 检测：受控子进程分配 128 MiB，在 **0.12 GiB** 阈值下触发两次实际强制重启并完成 3 个已提交单元，观察峰值约 **0.147 GiB**。
+- 真实 Verdi 的时钟、复位分别在模块枚举和端口追踪阶段注入 55/61 GiB 读数，验证软轮换和强制终止回退；各经历两次重启后，完整实例/边集合、双向路径及边界证据与不中断提取一致，实例及 trace ID 没有重复，原始证据仅一个最终完成标志。
+- OpenC910 全量 Verdi 在枚举和追踪各注入一次强制重启，最终 **6,984 实例 / 6,983 边 / 6,959 末端，13,968/13,968 追踪**，完整拓扑和全部双向路径与原始结果一致。测试没有实际分配 60 GiB；商业芯片 64G 额度的结果仍需目标设备实测。
+- 低于基线的真实阈值验证：同一断点连续 3 次无法推进即停止，不生成完整结果；普通 EDA 错误不会被误当内存重试。GUI 阈值、读数、配置保存与关闭重开，以及取消时同时结束 CLI 与 Verdi 的两个进程组均通过。
+- 当前 Windows Python 检查 **97 通过，跳过 1 项 Linux 符号链接检查**。VM 保持 Python 3.6.8、Tk 8.5.13、SQLite 3.7.17 和 Verdi O-2018.09-SP2，生产依赖仍为 Python 标准库和系统 EDA。
+
+原始记录：本机 `validation/low-memory/profiles/`、`validation/low-memory/gui/`、`validation/low-memory/gui-final/`、`validation/memory-resume/full-acceptance/acceptance.json` 与 `validation/memory-resume/gui-final/acceptance.json`。复现脚本为 `profile_low_memory.py`、`check_indexed_gui.py`、`check_memory_resume.py --soc`、`check_memory_gui.py`。设置和行为详见 [内存优化与重启续跑](MEMORY.zh-CN.md)。
 
 ## 实际提取结果
 

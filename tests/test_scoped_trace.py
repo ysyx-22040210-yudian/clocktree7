@@ -93,6 +93,10 @@ def tcl_walk():
         set ct_owner_paths {}
         set ct_max_steps 0
         set visits {}
+        set records {}
+        proc ct_emit {record} {global records; lappend records $record}
+        proc flush {args} {}
+        set ct_stream unused
         proc ct_prop {hdl property} {
             if {$hdl eq ""} {return ""}
             switch $property {
@@ -120,10 +124,27 @@ def tcl_walk():
     return interp
 
 
+def streamed_walk(interp, seed, direction, owner, pin):
+    interp.call('ct_walk', seed, direction, owner, pin, 1)
+    steps, results = {}, []
+    for data in interp.splitlist(interp.getvar('records')):
+        item = json.loads(str(data))
+        if item['event'] == 'path_step':
+            steps[item['path_id']] = (item['parent_id'], item['evidence'])
+        elif item['event'] == 'trace_result':
+            result = item['result']
+            key, path = result.pop('path_id'), []
+            while key:
+                key, evidence = steps[key]
+                path.append(evidence)
+            result['path'] = list(reversed(path))
+            results.append(result)
+    return results
+
+
 def test_tcl_never_expands_outside_handle_and_keeps_only_inside_evidence():
     interp = tcl_walk()
-    result = interp.splitlist(interp.call('ct_walk', 'top.domain.u.i', 'driver', 'top.domain.u', 'i'))
-    records = [json.loads(str(item)) for item in result]
+    records = streamed_walk(interp, 'top.domain.u.i', 'driver', 'top.domain.u', 'i')
     assert len(records) == 1 and records[0]['status'] == 'scope_boundary'
     assert records[0]['endpoint'] == 'top.domain.wire'
     assert [p['name'] for p in records[0]['path']] == ['top.domain.u.i', 'top.domain.wire']
@@ -135,7 +156,6 @@ def test_tcl_never_expands_outside_handle_and_keeps_only_inside_evidence():
 def test_root_interface_is_a_boundary_even_when_it_is_the_seed():
     for pin, direction in [('i', 'driver'), ('o', 'load')]:
         interp = tcl_walk()
-        result = interp.splitlist(interp.call('ct_walk', 'top.domain.' + pin, direction, 'top.domain', pin))
-        record = json.loads(str(result[0]))
+        record = streamed_walk(interp, 'top.domain.' + pin, direction, 'top.domain', pin)[0]
         assert record['status'] == 'scope_boundary' and len(record['path']) == 1
         assert interp.getvar('visits') == ''

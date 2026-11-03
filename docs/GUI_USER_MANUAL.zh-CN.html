@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：1.5 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：1.6 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -41,6 +41,8 @@
 <li><a href="#auto-restore">启动自动恢复上次配置和结果</a></li>
 <li><a href="#portable-deployment">迁移到其他 EDA 设备</a></li>
 <li><a href="#bounded-tracing">限定实例查找与端口追踪范围</a></li>
+<li><a href="#disk-index">大图内存优化、结果索引与分页</a></li>
+<li><a href="#memory-restart">监测内存、自动重启 Verdi 并续跑</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -1210,4 +1212,29 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 <p>复位配置使用相同的 <code>trace_scope</code>，模块与端口继续使用 MUX / RSY_SYNC 及 <code>reset_inputs/reset_output</code>。</p>
 <h3 id="235">23.5 内存收益与运行记录</h3>
 <p>本模式消除了额外的全芯片实例统计，减少范围外候选句柄及端口追踪；完整 KDB 仍由 Verdi 导入，因此不能仅凭范围变小承诺总内存降到某一固定数值。大芯片仍应核对作业实际限额和峰值。</p>
-<p>日志新增 <code>CT7_IMPORT_BEGIN/END</code> 和各规则的 <code>CT7_ENUM_BEGIN</code>，帮助区分导入、查找及追踪阶段。结果 <code>metadata.scoped_queries</code> 记录实际查询范围与候选数；<code>summary.trace_scope</code>、<code>scope_limited</code>、<code>scope_boundaries</code>、<code>scope_output_instances</code> 记录范围语义。未引入提取超时，仍支持当前目录重复运行。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>日志新增 <code>CT7_IMPORT_BEGIN/END</code> 和各规则的 <code>CT7_ENUM_BEGIN</code>，帮助区分导入、查找及追踪阶段。结果 <code>metadata.scoped_queries</code> 记录实际查询范围与候选数；<code>summary.trace_scope</code>、<code>scope_limited</code>、<code>scope_boundaries</code>、<code>scope_output_instances</code> 记录范围语义。未引入提取超时，仍支持当前目录重复运行。</p>
+<p><a id="disk-index"></a></p>
+<h2 id="24">24. 大图内存优化、结果索引与分页</h2>
+<p>新提取结果同时生成完整 JSON 和磁盘索引。打开大图与启动恢复时，工具先读取配置、统计与索引，显示层次概览；展开范围、搜索定位或点击连接后，再读取相应实例及路径证据。首次打开没有索引的大型旧 JSON，会在后台建立索引，等待完成即可。</p>
+<p>全网概览仍覆盖全部关注实例。特别宽的层次展开后用“上一组 / 下一组”翻页，范围栏显示组数；跨组连接可在实例属性中查看。精确定位超大图时显示实例邻域，按“返回全网”回到整体概览。</p>
+<p>属性区的连接列表每页最多 500 条，用“上一页 / 下一页”查看其余连接。连接总数来自完整索引；点选任意一条才读取双向 NPI 证据。全量 JSON 导出继续包含所有实例、连线及证据，SVG 导出当前投影范围。</p>
+<p><a class="figure" href="images/indexed-100k-overview.png" target="_blank"><img alt="十万扇出合成数据的聚合概览与连接分页" src="images/indexed-100k-overview.png" /></a></p>
+<p>历史恢复保存配置清单和结果数据库快照；原 JSON 被移动后，缓存快照仍能恢复。索引损坏或丢失时，可以重新打开原 JSON 建立索引。共享部署、只读路径及实测数据详见 <a href="MEMORY.zh-CN.md">内存优化说明</a>。</p>
+<p><a id="memory-restart"></a></p>
+<h2 id="25-verdi">25. 监测内存、自动重启 Verdi 并续跑</h2>
+<h3 id="251">25.1 设置和读取内存</h3>
+<p>左侧“端口追踪根层次”下方新增“内存重启阈值（GiB）”。默认 <strong>60</strong>，可输入非负数字，<strong>0</strong> 关闭内存轮换。启动后显示当前合计 RSS、阈值和重启次数；提取结束后显示 Verdi 阶段峰值。时钟/复位各自保存设置，关闭重开会恢复。单独调整阈值不会让已有连接结果失效。</p>
+<p><a class="figure" href="images/memory-guard.png" target="_blank"><img alt="内存保护配置和已完成任务的峰值" src="images/memory-guard.png" /></a></p>
+<p>该读数是 Linux 上 Verdi、其后代及提取控制进程的合计 RSS，每秒采样；包括共享映射的重复计数，不等同于整机总占用或 dsub 调度器记账。GUI 及 Verdi 退出后的结果生成阶段不在该读数内。</p>
+<h3 id="252">25.2 超过阈值后如何继续</h3>
+<ol>
+<li>接近阈值（默认约 54 GiB）时，工具请求在当前完整模块查询或端口追踪结束后保存并轮换 Verdi。</li>
+<li>触及阈值（默认 60 GiB）时，结束本次 Verdi 进程组，撤回未提交记录，从最后完整断点重试。当前没做完的 module 查询或追踪批次可能重做。</li>
+<li>新 Verdi 重新导入原库，按名称重建 NPI 句柄；跳过已完成查询，继续后面的工作。已完成实例、连线和证据不会重复写入。</li>
+<li>相同断点连续 3 次发生内存失败且没有进展，会停止并报错，保留进度与日志，不跳过失败模块，不给出完整通过结论。</li>
+</ol>
+<p>仍然没有提取运行超时。<code>memory.json</code> 显示实时状态和断点位置；<code>memory-restarts.jsonl</code> 保存全部轮换记录；任务日志含 <code>CT7_MEMORY_*</code>、<code>CT7_RESUME</code> 标记。</p>
+<h3 id="253">25.3 配置、限制和故障处理</h3>
+<p>保存配置会包含顶层 <code>"memory_limit_gib": 60</code>，缺少该字段时默认也是 60。CLI 可以追加 <code>--memory-limit-gib 60</code>，或使用 0 关闭。</p>
+<p>如果导入 elab、恢复已选端口或单个 NPI 查询本身就超过阈值，重启不能使该操作变小，需要缩小层次、拆分查询或增加内存。应保持同次任务的 RTL/elab 输入不变。采样无法保证抢在所有瞬时峰值或调度器 OOM 之前；60 GiB 也不一定等于集群“60G”的单位。</p>
+<p>自动续跑针对同一控制进程内的 Verdi 轮换。如果整个任务被杀，重新在当前目录发起提取仍创建新任务并归档旧证据。完整机制、文件含义、实测边界及验收命令见 <a href="MEMORY.zh-CN.md">内存优化与重启续跑</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

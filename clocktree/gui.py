@@ -2,6 +2,7 @@
 import copy
 import datetime
 import json
+import math
 import os
 from pathlib import Path
 import queue
@@ -13,6 +14,7 @@ import threading
 import time
 import uuid
 from collections import Counter
+from itertools import islice
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
@@ -24,6 +26,8 @@ from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_
 from .viewmodel import GraphView
 from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
 from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
+from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
+from .indexed_view import IndexedGraphView
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +40,7 @@ def read_json(path):
 
 
 def write_json(path, data):
-    Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+    write_graph(path, data)
 
 
 class RuleDialog(tk.Toplevel):
@@ -319,6 +323,8 @@ class ClockTreeApp(tk.Tk):
         self.mode_var=tk.StringVar(value='已有 elab / KDB')
         self.path_var=tk.StringVar()
         self.trace_scope_var=tk.StringVar()
+        self.memory_limit_var=tk.StringVar(value='60')
+        self.memory_status=tk.StringVar(value='等待提取 · RSS 监测在 Linux 上启用')
         self.hierarchy_var=tk.StringVar()
         top_label=ttk.Frame(settings,style='White.TFrame')
         top_label.pack(fill='x')
@@ -335,6 +341,13 @@ class ClockTreeApp(tk.Tk):
         self.trace_scope_entry=ttk.Entry(settings,textvariable=self.trace_scope_var)
         self.trace_scope_entry.pack(fill='x',pady=(5,4))
         ttk.Label(settings,text='填写后仅追踪该层次及其子层次\n留空保留原有顶层追踪方式',style='Muted.TLabel').pack(anchor='w')
+        memory_row=ttk.Frame(settings,style='White.TFrame')
+        memory_row.pack(fill='x',pady=(12,4))
+        ttk.Label(memory_row,text='内存重启阈值（GiB）',style='Small.TLabel').pack(side='left')
+        self.memory_limit_entry=ttk.Entry(memory_row,textvariable=self.memory_limit_var,width=7)
+        self.memory_limit_entry.pack(side='right')
+        ttk.Label(settings,text='默认60；0关闭。接近阈值提交断点并重启\n监测 Verdi 与提取控制进程的合计 RSS',style='Muted.TLabel').pack(anchor='w')
+        ttk.Label(settings,textvariable=self.memory_status,style='Muted.TLabel',wraplength=260).pack(anchor='w',pady=(4,0))
         ttk.Separator(settings).pack(fill='x',pady=15)
         rule_heading=ttk.Frame(settings,style='White.TFrame')
         rule_heading.pack(fill='x')
@@ -381,6 +394,7 @@ class ClockTreeApp(tk.Tk):
         self.bind('<Button-5>',self._config_wheel,add='+')
         for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var,self.trace_scope_var]:
             variable.trace('w',self.mark_dirty)
+        self.memory_limit_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
         self.runs_tree.heading('#0',text='运行记录')
         self.runs_tree.heading('count',text='实例')
@@ -459,6 +473,8 @@ class ClockTreeApp(tk.Tk):
         scopebar=tk.Frame(self.center,bg='#edf2fa',height=31)
         scopebar.pack(fill='x')
         scopebar.pack_propagate(False)
+        self.view_prev=ttk.Button(scopebar,text='上一组',width=6,command=lambda:self.diagram.page_view(-1))
+        self.view_next=ttk.Button(scopebar,text='下一组',width=6,command=lambda:self.diagram.page_view(1))
         tk.Label(scopebar,textvariable=self.scope_label,font=(self.family,8),fg='#6680a4',bg='#edf2fa',anchor='w',width=1).pack(side='left',fill='x',expand=True,padx=14)
         legend=tk.Canvas(scopebar,width=158,height=31,bg='#edf2fa',highlightthickness=0)
         legend.create_oval(6,12,12,18,fill='#29aa85',outline='')
@@ -529,6 +545,12 @@ class ClockTreeApp(tk.Tk):
         self.connections.pack(fill='x')
         self.connections.bind('<<TreeviewSelect>>',self.inspect_related)
         self.connections.bind('<Double-1>',self.locate_related)
+        connection_pager=ttk.Frame(prop,style='White.TFrame')
+        connection_pager.pack(fill='x',pady=(3,0))
+        self.connection_prev=ttk.Button(connection_pager,text='上一页',command=lambda:self.connection_page(-1),state='disabled')
+        self.connection_prev.pack(side='left')
+        self.connection_next=ttk.Button(connection_pager,text='下一页',command=lambda:self.connection_page(1),state='disabled')
+        self.connection_next.pack(side='right')
         ttk.Label(prop,text='单击连线查看证据 · 双击对端定位',style='Muted.TLabel').pack(anchor='w',pady=(6,0))
         self.evidence_text=self._scroll_text(ev,self.mono,8)
         self.diag_text=self._scroll_text(diag,self.family,9)
@@ -874,21 +896,24 @@ class ClockTreeApp(tk.Tk):
         if self.active_layer>len(self.graph.get('config',{}).get('layers',[])):return False
         layer=self.graph['config']['layers'][self.active_layer-1]
         if layer['hierarchy']!=self.hierarchy_var.get().strip():return False
-        matching=[n for n in self.graph['nodes'] if matching_rule(n,layer,new)]
-        if not matching:return False
+        candidates=RecordSequence(self.graph.store,'nodes','layer=? AND module=?',(self.active_layer,new['module'])) if isinstance(self.graph,IndexedGraph) else self.graph['nodes']
+        matching_count=0
+        for node in candidates:
+            if matching_rule(node,layer,new):
+                matching_count+=1
+                if not isinstance(self.graph,IndexedGraph):node['kind'],node['kind_source']=new['kind'],'configured'
+        if not matching_count:return False
         for rule in layer['modules']:
             if all(rule.get(k)==old.get(k) for k in ('module',profile(self._base_config)['inputs'],profile(self._base_config)['output'])):rule['kind']=new['kind']
-        for node in matching:
-            node['kind'],node['kind_source']=new['kind'],'configured'
         self.graph.setdefault('presentation',{}).setdefault('kind_overrides',[]).append({
-            'layer':self.active_layer,'module':new['module'],'kind':new['kind'],'instances':len(matching),
+            'layer':self.active_layer,'module':new['module'],'kind':new['kind'],'from_kind':old.get('kind'),'instances':matching_count,
             'changed_at':datetime.datetime.now().isoformat(),'source':'user_type_selection'})
         self._graph_token=uuid.uuid4().hex
         selected=self.diagram.selected
-        self.diagram.model=GraphView(self.graph)
+        self.diagram.model=IndexedGraphView(self.graph) if isinstance(self.graph,IndexedGraph) else GraphView(self.graph)
         self.diagram.rebuild()
         if selected in self.diagram.model.nodes:self.diagram.select(self.diagram.model.nodes[selected])
-        self.set_status('已将 {} 的 {} 个实例更新为{}模型。'.format(new['module'],len(matching),kind_label(new['kind'],self._active_tree_type)))
+        self.set_status('已将 {} 的 {} 个实例更新为{}模型。'.format(new['module'],matching_count,kind_label(new['kind'],self._active_tree_type)))
         self._schedule_session_save()
         return True
 
@@ -914,6 +939,7 @@ class ClockTreeApp(tk.Tk):
         self.mode_var.set('已有 elab / KDB' if use_elab else 'RTL 文件列表')
         self.path_var.set(design.get('elab',design.get('filelist','')))
         self.trace_scope_var.set(config.get('trace_scope',''))
+        self.memory_limit_var.set(str(config.get('memory_limit_gib',60)))
         self.layers=copy.deepcopy(config.get('layers',[]))
         if not self.layers:
             self.layers=[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]
@@ -938,6 +964,15 @@ class ClockTreeApp(tk.Tk):
         scope=self.trace_scope_var.get().strip().rstrip('./')
         if scope:data['trace_scope']=scope
         else:data.pop('trace_scope',None)
+        memory_text=self.memory_limit_var.get().strip()
+        try:
+            memory_limit=float(memory_text)
+            if not math.isfinite(memory_limit):raise ValueError('finite number required')
+        except ValueError:
+            if validate:raise ValueError('内存阈值需填写非负数字，单位 GiB；0 表示关闭。')
+            memory_limit=memory_text
+        if memory_limit==60 and 'memory_limit_gib' not in self._base_config:data.pop('memory_limit_gib',None)
+        else:data['memory_limit_gib']=memory_limit
         data.pop('timeout_seconds',None)
         return validate_config(data) if validate else data
 
@@ -1048,7 +1083,7 @@ class ClockTreeApp(tk.Tk):
         self.set_status('读取提取结果：{}'.format(path))
         def worker():
             try:
-                graph=read_json(path)
+                graph=read_graph(path)
                 if not all(k in graph for k in ['nodes','edges','summary','config']):
                     raise ValueError('请选择 clocktree.json 或 resettree.json 提取结果。')
                 mode=tree_type(graph['config'])
@@ -1062,6 +1097,8 @@ class ClockTreeApp(tk.Tk):
         self.set_config(graph['config'])
         self.graph=graph
         self.graph_file=Path(path) if path else None
+        memory=graph.get('metadata',{}).get('memory_protection',{})
+        self.memory_status.set(('Verdi 阶段峰值 {} GiB · 重启 {} 次'.format(memory.get('peak_rss_gib','—'),memory.get('restart_count',0)) if memory.get('enabled') else '本次运行未启用 RSS 监测') if memory else '等待提取 · RSS 监测在 Linux 上启用')
         self._graph_token=graph_token or uuid.uuid4().hex
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
@@ -1070,8 +1107,9 @@ class ClockTreeApp(tk.Tk):
             self._badge('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析','pass')
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
         else:self._badge('存在未解析断点 / 诊断','warn')
-        self.component_ids=[None]+[c['id'] for c in graph['components']]
-        values=['全部'+profile(graph['config'])['network']]+['网络 {} · {} 实例'.format(c['id']+1,len(c['nodes'])) for c in graph['components']]
+        components=graph['components'][:500]
+        self.component_ids=[None]+[c['id'] for c in components]
+        values=['全部'+profile(graph['config'])['network']]+['网络 {} · {} 实例'.format(c['id']+1,len(c['nodes'])) for c in components]
         self.component_combo.configure(values=values)
         self.component_combo.current(0)
         self.diagram.load(graph)
@@ -1086,11 +1124,12 @@ class ClockTreeApp(tk.Tk):
             ('端口追踪范围',graph['config'].get('trace_scope') or '设计顶层（兼容模式）'),
             ('范围出口','{} 个实例；出口不计为分支末端'.format(summary.get('scope_output_instances',0))),
             ('覆盖规模','{:,} 个结构 · {:,} 条端口连线'.format(summary['instances'],summary['edges'])),
-            ('器件类型',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in Counter(n.get('kind') for n in self.diagram.model.original.values()).items())),
+            ('器件类型',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in (graph.kind_counts() if isinstance(graph,IndexedGraph) else Counter(n.get('kind') for n in self.diagram.model.original.values())).items())),
+            ('结果读取','磁盘索引 · 概览优先 · 展开读取明细' if isinstance(graph,IndexedGraph) else '直接读取'),
             ('分支末端','  /  '.join('L{}: {}'.format(k,v) for k,v in sorted(summary.get('terminal_layers',{}).items()))),
             ('完整性','全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
-        self._replace_text(self.diag_text,json.dumps({'summary':summary,'diagnostics':graph.get('diagnostics',[]),'metadata':graph.get('metadata',{})},ensure_ascii=False,indent=2))
+        self._replace_text(self.diag_text,json.dumps({'summary':summary,'diagnostics':graph.get('diagnostics',[])[:500],'diagnostic_rows_shown':min(500,len(graph.get('diagnostics',[]))),'metadata':graph.get('metadata',{})},ensure_ascii=False,indent=2))
         self.refresh_nodes()
         self.refresh_runs()
         self.set_status('架构图就绪 · {:,} 实例 / {:,} 连接 · 滚轮缩放，拖动画布平移'.format(summary['instances'],summary['edges']))
@@ -1132,7 +1171,7 @@ class ClockTreeApp(tk.Tk):
                 self.process=None
                 if self.cancel_event.is_set():self.events.put(('cancelled',directory))
                 elif code in (0,2) and result_path.is_file():
-                    self.events.put(('loaded',read_json(result_path),result_path,directory))
+                    self.events.put(('loaded',read_graph(result_path),result_path,directory))
                 else:
                     detail=(directory/'cli.log').read_text(encoding='utf-8',errors='replace')[-6000:]
                     self.events.put(('error','提取失败',detail or '请查看运行目录中的 verdi.log。'))
@@ -1193,6 +1232,15 @@ class ClockTreeApp(tk.Tk):
                     self.refresh_runs()
         except queue.Empty:pass
         if self.job_kind=='extract' and self.job_dir:
+            memory_file=self.job_dir/'memory.json'
+            try:
+                stamp=(memory_file.stat().st_mtime,memory_file.stat().st_size)
+                if stamp!=getattr(self,'_memory_mtime',None):
+                    self._memory_mtime=stamp
+                    memory=read_json(memory_file)
+                    used=memory.get('current_rss_gib')
+                    self.memory_status.set('RSS {} GiB / {} GiB · 重启 {} 次'.format(used if used is not None else '—',memory.get('limit_gib','—'),memory.get('restart_count',0)))
+            except (OSError,ValueError,KeyError):pass
             log=self.job_dir/'verdi.log'
             if log.is_file():
                 stamp=(log.stat().st_mtime,log.stat().st_size)
@@ -1285,11 +1333,23 @@ class ClockTreeApp(tk.Tk):
     def view_changed(self,info):
         self.view_mode.set('RTL 层次概览' if info['mode']=='hierarchy' else '实例明细')
         if hasattr(self,'component_ids'):
+            if info['component'] not in self.component_ids:
+                self.component_ids.append(info['component'])
+                values=list(self.component_combo['values'])+['网络 {}'.format(info['component']+1)]
+                self.component_combo.configure(values=values)
             self.component_combo.current(self.component_ids.index(info['component']))
         self.zoom_label.configure(text='{:.0f}%'.format(info['zoom']*100))
         self.view_label.set('{:,} 图元 · 当前 {:,} / 全量 {:,} 实例'.format(info['boxes'],info['actual'],info['total']))
         scope=info['scope']
-        self.scope_label.set(('局部范围 / '+scope[-95:]) if scope else '全部层次 / 全量关注结构')
+        label=('实例邻域 / '+info['focus'][-70:]) if info.get('focus') else (('局部范围 / '+scope[-70:]) if scope else '全部层次 / 全量关注结构')
+        if info.get('pages',1)>1:
+            label+=' · 第 {}/{} 组 · {} 条跨组连接可在属性中查看'.format(info['page']+1,info['pages'],info.get('external_edges',0))
+            self.view_prev.pack(side='left'); self.view_next.pack(side='left')
+            self.view_prev.configure(state='normal' if info['page'] else 'disabled')
+            self.view_next.configure(state='normal' if info['page']+1<info['pages'] else 'disabled')
+        else:
+            self.view_prev.pack_forget(); self.view_next.pack_forget()
+        self.scope_label.set(label)
 
     def _properties(self,title,fields):
         text=self.prop_text
@@ -1312,10 +1372,14 @@ class ClockTreeApp(tk.Tk):
                     ('器件类型分布',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in node.get('kind_counts',{}).items())),
                     ('内部真实连线',node['internal_edges']),('根 / 末端','{} / {}'.format(node['root_count'],node['terminal_count']))]
             title='RTL 层次概览'
-            members=set(node['members'])
-            edges=[e for e in self.graph['edges'] if (e['source'] in members)!=(e['target'] in members)]
+            if isinstance(self.graph,IndexedGraph):
+                members=node['members']
+                edges=self.diagram.model.connections_for(node)
+            else:
+                members=set(node['members'])
+                edges=[e for e in self.graph['edges'] if (e['source'] in members)!=(e['target'] in members)]
         else:
-            boundaries=[b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
+            boundaries=self.graph.boundaries_for(node['id']) if isinstance(self.graph,IndexedGraph) else [b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
             fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'),self._active_tree_type)),('传播层次','L{}'.format(node['layer'])),
                     ('关注输入','\n'.join(node['inputs'])),('关注输出',node['output']),
                     ('结构状态',' / '.join(x for value,x in [(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
@@ -1328,9 +1392,17 @@ class ClockTreeApp(tk.Tk):
         self.inspector_tabs.select(0)
 
     def _fill_connections(self,edges,members=None):
+        self._connection_rows,self._connection_members,self._connection_offset=edges,members,0
+        self.connection_page(0)
+
+    def connection_page(self,delta):
+        edges=getattr(self,'_connection_rows',[])
+        members=getattr(self,'_connection_members',None)
+        total=len(edges)
+        self._connection_offset=max(0,min(max(0,((total-1)//500)*500),getattr(self,'_connection_offset',0)+delta*500))
         self.connections.delete(*self.connections.get_children())
         self.related_edges={}
-        unique={e['id']:e for e in edges}
+        unique={e['id']:e for e in edges[self._connection_offset:self._connection_offset+500]}
         for i,edge in enumerate(unique.values()):
             upstream=members and edge['target'] in members
             other=edge['source'] if upstream else edge['target']
@@ -1338,20 +1410,36 @@ class ClockTreeApp(tk.Tk):
             key=str(i)
             self.related_edges[key]=edge
             self.connections.insert('','end',iid=key,text=label,values=('上游' if upstream else '下游',edge['source_pin'] if upstream else edge['target_pin']))
-        self.connection_title.configure(text='相关端口连接 · {:,} 条'.format(len(unique)))
+        self.connection_title.configure(text='连接 {:,}–{:,} / {:,}'.format(self._connection_offset+1 if total else 0,min(total,self._connection_offset+500),total))
+        self.connection_prev.configure(state='normal' if self._connection_offset else 'disabled')
+        self.connection_next.configure(state='normal' if self._connection_offset+500<total else 'disabled')
 
     def inspect_edges(self,display_edges):
-        edges={}
-        for edge in display_edges:
-            for item in self.diagram.model.actual_edges(edge):edges[item['id']]=item
+        if isinstance(self.graph,IndexedGraph):
+            # A clipped line may represent several bundles. SQL UNION preserves
+            # exact unique edge counts and enables paging without materializing.
+            from .indexed_view import QuerySequence
+            clauses,params=[],[]
+            for edge in display_edges:
+                if 'members' in edge:
+                    clauses.append(edge['members'].sql); params.extend(edge['members'].params)
+                else:
+                    clauses.append('SELECT id FROM edges WHERE id=?'); params.append(edge['id'])
+            if not clauses:return
+            edges=QuerySequence(self.graph.store,'SELECT data FROM edges WHERE id IN ('+' UNION '.join(clauses)+')',params,decode=True)
+        else:
+            unique={}
+            for edge in display_edges:
+                for item in self.diagram.model.actual_edges(edge):unique[item['id']]=item
+            edges=list(unique.values())
         if not edges:return
         self.selected_object=None
         self.expand_button.configure(state='disabled')
-        self._fill_connections(list(edges.values()))
+        self._fill_connections(edges)
         self._properties('实际端口连接', [('共用当前线段','{} 条真实端口连接'.format(len(edges))),
                                         ('查看依据','在下面列表选择具体连线，或在“连线证据”页查看第一条。'),
                                         ('数据来源','驱动 / 负载双向 NPI 静态网络追踪')])
-        self._edge_evidence(next(iter(edges.values())))
+        self._edge_evidence(edges[0])
         self.inspector_tabs.select(1)
 
     def _edge_evidence(self,edge):

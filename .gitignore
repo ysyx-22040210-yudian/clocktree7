@@ -19,6 +19,8 @@ Thumbs.db
 desktop.ini
 .clocktree-runs/
 .clocktree-history/
+.clocktree-indexes/
+*.json.index.json
 /raw.jsonl
 /clocktree.json
 /resettree.json

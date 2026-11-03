@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：1.6.1 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：1.7 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -1225,7 +1225,7 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 <h3 id="251">25.1 设置和读取内存</h3>
 <p>左侧“端口追踪根层次”下方新增“内存重启阈值（GiB）”。默认 <strong>60</strong>，可输入非负数字，<strong>0</strong> 关闭内存轮换。启动后显示当前合计 RSS、阈值和重启次数；提取结束后显示 Verdi 阶段峰值。时钟/复位各自保存设置，关闭重开会恢复。单独调整阈值不会让已有连接结果失效。</p>
 <p><a class="figure" href="images/memory-guard.png" target="_blank"><img alt="内存保护配置和已完成任务的峰值" src="images/memory-guard.png" /></a></p>
-<p>该读数是 Linux 上 Verdi、其后代及提取控制进程的合计 RSS，每秒采样；包括共享映射的重复计数，不等同于整机总占用或 dsub 调度器记账。GUI 及 Verdi 退出后的结果生成阶段不在该读数内。</p>
+<p>该读数是 Linux 上 Verdi、其后代及提取控制进程的合计 RSS，周期性每秒采样，并在每条 module 查找结束后立即额外采样；包括共享映射的重复计数，不等同于整机总占用或 dsub 调度器记账。GUI 及 Verdi 退出后的结果生成阶段不在该读数内。</p>
 <h3 id="252">25.2 超过阈值后如何继续</h3>
 <ol>
 <li>接近阈值（默认约 54 GiB）时，工具请求在当前完整模块查询或端口追踪结束后保存并轮换 Verdi。</li>
@@ -1241,4 +1241,10 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 <h3 id="254">25.4 自定义阈值的实际验证</h3>
 <p>60 GiB 是默认值，输入框可修改。虚拟机已使用 0.375、0.5、0.625 GiB 等小阈值，让真实 Verdi 进程实际申请内存并触发重启，没有替换 RSS 读数。时钟和复位小型 RTL 的五组检查均在重启两次后完成，实例、连线和双向证据与不中断运行一致。</p>
 <p>下图为阈值 0.375 GiB、观测峰值约 0.438 GiB、重启两次的真实界面。GUI 修改为 0.42 GiB 后保存配置、关闭并重开，仍恢复该自定义值及已完成结果。完整表格及复现命令见 <a href="MEMORY.zh-CN.md#实测与复现">自定义阈值实测</a>。</p>
-<p><a class="figure" href="images/real-threshold-retries.png" target="_blank"><img alt="自定义阈值与真实重启结果" src="images/real-threshold-retries.png" /></a></p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p><a class="figure" href="images/real-threshold-retries.png" target="_blank"><img alt="自定义阈值与真实重启结果" src="images/real-threshold-retries.png" /></a></p>
+<h3 id="255-module">25.5 每条 module 完成后的独立断点</h3>
+<p>每条配置中的 module 查找规则处理完毕后，工具立即保存一个独立断点，记录层级、完整查找路径、module、匹配数量、新增实例数量、完成序号和原始数据位置。即使多条规则共用同一批 NPI 候选句柄，也分别保存。完成断点后会额外检查一次实际 RSS，收到监控进程的继续/轮换确认后，才进入下一条规则。</p>
+<p>运行时左侧显示最近的 module 断点；结束后显示提交数量。以下截图中时钟样例已提交 5 条查找断点，重启两次后结果仍完整。</p>
+<p><a class="figure" href="images/module-checkpoints.png" target="_blank"><img alt="逐 module 独立断点数量与恢复结果" src="images/module-checkpoints.png" /></a></p>
+<p>查看任务工作区的 <code>checkpoint.json</code>：<code>completed_modules</code> 是已完成规则数，<code>last_module</code> 记录最后模块。各独立快照保存在同目录 <code>module-checkpoints/00000001.json</code> 等文件；<code>memory.json</code> 给出该目录路径。任务根目录的 <code>module-memory-checks.jsonl</code> 保存每次额外内存检查，日志可搜索 <code>CT7_MODULE_CHECKPOINT</code>、<code>CT7_MODULE_MEMORY_CHECK</code>、<code>CT7_MODULE_SKIP</code>。</p>
+<p>重试恢复已提交前缀并跳过完成的规则，从未完成规则继续；当前查询组还没结束时，可能重新获取该组候选句柄。零匹配或不存在的层次会保存相应失败状态和诊断，断点本身不代表检查通过。将阈值设为 0 后，逐 module 断点仍然保存。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

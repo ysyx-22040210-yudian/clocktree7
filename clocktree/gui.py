@@ -1099,6 +1099,8 @@ class ClockTreeApp(tk.Tk):
         self.graph_file=Path(path) if path else None
         memory=graph.get('metadata',{}).get('memory_protection',{})
         self.memory_status.set(('Verdi 阶段峰值 {} GiB · 重启 {} 次'.format(memory.get('peak_rss_gib','—'),memory.get('restart_count',0)) if memory.get('enabled') else '本次运行未启用 RSS 监测') if memory else '等待提取 · RSS 监测在 Linux 上启用')
+        if memory.get('last_checkpoint',{}).get('completed_modules') is not None:
+            self.memory_status.set(self.memory_status.get()+'\n已提交 {} 条 module 查找断点'.format(memory['last_checkpoint']['completed_modules']))
         self._graph_token=graph_token or uuid.uuid4().hex
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
@@ -1240,6 +1242,8 @@ class ClockTreeApp(tk.Tk):
                     memory=read_json(memory_file)
                     used=memory.get('current_rss_gib')
                     self.memory_status.set('RSS {} GiB / {} GiB · 重启 {} 次'.format(used if used is not None else '—',memory.get('limit_gib','—'),memory.get('restart_count',0)))
+                    module=memory.get('last_checkpoint',{}).get('last_module')
+                    if module:self.memory_status.set(self.memory_status.get()+'\n断点 {} · L{} {}'.format(module['index'],module['layer'],module['module'][-30:]))
             except (OSError,ValueError,KeyError):pass
             log=self.job_dir/'verdi.log'
             if log.is_file():
@@ -1257,6 +1261,11 @@ class ClockTreeApp(tk.Tk):
                         self.progress.stop()
                         self.progress.configure(mode='determinate',value=100*done/max(1,total))
                         self._badge('正在追踪端口 · {:,} / {:,}'.format(done,total),'busy')
+                    else:
+                        modules=re.findall(r'CT7_MODULE_CHECKPOINT index=(\d+)/(\d+)',value)
+                        if modules:
+                            done,total=map(int,modules[-1])
+                            self._badge('模块查找已提交断点 · {} / {}'.format(done,total),'busy')
         if self._closing and (not self.busy or self.job_kind=='session_save'):
             self._finish_close()
             if self._destroying:return

@@ -14,7 +14,7 @@ GUI 左侧新增 **内存重启阈值（GiB）**。默认 `60`，`0` 关闭内�
 bash clocktree.sh extract --config my_config.json --out . --memory-limit-gib 60
 ```
 
-每秒采样一次 Linux `/proc`，合计当前提取控制进程、Verdi 及其后代/进程组的 RSS。不会把其他用户或其他提取任务的进程计入本次 RSS。共享映射可能重复计数，这是保守的 RSS 合计，不等同于唯一物理页占用或调度器记账。GUI 和 Verdi 退出后的 Python 结果处理不在该读数中。
+周期性每秒采样一次 Linux `/proc`，并在每条 module 查找规则完成后额外立即采样。合计当前提取控制进程、Verdi 及其后代/进程组的 RSS。不会把其他用户或其他提取任务的进程计入本次 RSS。共享映射可能重复计数，这是保守的 RSS 合计，不等同于唯一物理页占用或调度器记账。GUI 和 Verdi 退出后的 Python 结果处理不在该读数中。
 
 `1 GiB = 1,073,741,824 bytes`。应核对目标集群“64G”的实际单位和计费范围，给 GUI、文件缓存及其他作业开销留余量。采样不是操作系统硬限额；单次内存突增仍可能先触发调度器 OOM，不能保证 64G 商业任务一定完成。
 
@@ -29,7 +29,9 @@ bash clocktree.sh extract --config my_config.json --out . --memory-limit-gib 60
 
 未设置提取运行超时。单次查询在阈值以下运行很久时，工具仍会等待。
 
-模块查询按 **精确查找根层次＋module 规则** 分组；完成一组即提交。端口追踪通常每 32 个完整追踪提交一次，收到轮换请求时会提前提交当前已完成追踪。强制结束可能重做当前模块查询或尚未提交的追踪批次。
+模块查询仍按 **精确查找根层次＋module 名** 合并获取候选句柄，但**每条配置中的 module 规则结束即独立提交断点**。监控进程在该断点重新读取实际 RSS 并确认继续或轮换后，才进入下一条规则。此检查不等待下一次周期采样。端口追踪通常每 32 个完整追踪提交一次，收到轮换请求时会提前提交当前已完成追踪。强制结束可能重做当前未提交的模块规则或追踪批次。
+
+同一查询组中，第一条规则完成、后续规则尚未处理时也可以重启。新进程恢复已提交实例，跳过已完成规则，再继续组内剩余规则；仍未完成的组可能需要重新获取 NPI 候选句柄。重试进展同时考察完成的 module 规则数，避免因查询组数和实例数暂时不变而误报“没有进展”。
 
 断点同时记录 `raw.jsonl` 和实例清单的已提交字节位置。重启前将两个文件的未提交后缀截掉，再启动全新 Verdi 工作目录。已提交记录保留一次；完整追踪、完整实例和结束标志才参与最终验收。
 
@@ -43,12 +45,20 @@ bash clocktree.sh extract --config my_config.json --out . --memory-limit-gib 60
 | --- | --- |
 | `memory.json` | 当前/峰值 RSS、配置阈值、当前阶段、工作进程 PID、重启次数、最近 32 次重启摘要。 |
 | `memory-restarts.jsonl` | 逐条追加的完整重启审计记录。 |
+| `module-memory-checks.jsonl` | 每条 module 结束后的实时 RSS 检查、模块身份、工作进程、检查时间与继续/轮换/强制停止动作。 |
 | `verdi.log` | 每次导入、查询、追踪及 `CT7_MEMORY_SOFT/HARD/RESTART`、`CT7_RESUME` 标记。 |
 | `.clocktree-runs/<本次任务>/checkpoint.json` | 当前完整断点；同时保留上一份断点作为损坏回退。 |
+| 同目录 `module-checkpoints/00000001.json` 等 | 按完成序号保存的逐 module 断点，包含规则游标和最后模块明细。 |
 | 同目录 `targets.tcl` | 已提交实例与端口的名称清单，按数据列表流式解析；不会直接作为脚本执行。 |
 | 同目录 `attempt-0001/` 等 | 每次全新 Verdi 的工作区和编译日志。 |
 
 结果 `metadata.memory_protection` 记录该次运行的内存策略与重启摘要。含空格/中文的输出路径仍使用原有安全工作区映射，真实位置保存在 `runtime-location.json`。
+
+每条 module 断点包括 `completed_modules`、完整查询组数、当前规则在组内的位置、layer/scope/module、匹配数、新增实例数、状态，以及 `raw_offset/targets_offset`。最新断点的 `last_module` 可直接定位最后处理的模块。日志有 `CT7_MODULE_CHECKPOINT`、`CT7_MODULE_MEMORY_CHECK` 和恢复后的 `CT7_MODULE_SKIP`。GUI 显示已提交 module 断点数，运行中显示最近模块。
+
+零匹配、层次不存在或规则冲突也保存该规则的处理状态，诊断仍保留并影响完整性结论。断点表示该条查找已处理，不代表设计检查通过。新结果会核对 module 断点数量与顺序，缺失或重复时不会给出完整通过结论。阈值为 0 时仍保存逐 module 断点，只关闭内存采样与自动内存轮换。
+
+编号快照只有在 `index <= checkpoint.json.completed_modules` 时属于当前已提交前缀；重启会清理被中断发布的编号后缀，撤回原始数据和实例清单的未提交后缀，再继续。快照不保存跨进程 NPI 句柄。
 
 自动续跑的范围是**同一提取控制进程内的 Verdi 内存轮换**。若整个 dsub 任务或控制进程被杀，不会自动在另一新任务中接着旧断点执行。在当前目录重新发起提取仍按“新任务”处理：旧结果、日志和内存记录归档，避免混用不同配置的证据。
 
@@ -102,6 +112,9 @@ python3 scripts/check_memory_resume.py --soc
 python3 scripts/check_memory_gui.py
 python3 scripts/check_indexed_gui.py
 python3 scripts/check_real_memory_threshold.py --gui
+python3 scripts/check_module_checkpoints.py --soc
 ```
 
-后三类 GUI 检查须在图形会话中运行。`profile_low_memory.py` 支持分别运行旧版后处理、索引后处理和两种结果打开基准，测量各自独立进程的 RSS。完整原始记录保存在本机 `validation/`，不随源码包分发。
+包含 `--gui` 的检查及 `check_memory_gui.py`、`check_indexed_gui.py` 须在图形会话中运行。`profile_low_memory.py` 支持分别运行旧版后处理、索引后处理和两种结果打开基准，测量各自独立进程的 RSS。完整原始记录保存在本机 `validation/`，不随源码包分发。
+
+逐 module 验收：时钟保存 5 个、复位保存 2 个独立断点，每个断点对应一次额外 RSS 检查；4 条共用查询的规则在组内连续重启 3 次后完成全部 8 条规则，已完成规则没有重复写入，拓扑和双向证据一致。零匹配及无效层次保存失败状态且不误报完整；关闭监测仍保存断点。OpenC910 全量提取保存 3 条 module 规则断点并完成 6,984 实例 / 6,983 边，完整路径证据一致。

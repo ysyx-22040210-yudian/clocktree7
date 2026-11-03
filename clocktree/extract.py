@@ -18,7 +18,7 @@ from .storage import new_store, index_graph, write_graph, publish_index, index_p
 from .memory import run_verdi
 
 
-RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json', 'memory.json', 'memory-restarts.jsonl')
+RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json', 'memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl')
 
 
 def vendor_safe_path(path):
@@ -72,7 +72,7 @@ def prepare_output(out):
         pointer = index_pointer(source)
         if pointer.is_file():
             pointer.unlink()
-    for name in ('memory.json', 'memory-restarts.jsonl'):
+    for name in ('memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl'):
         source = out / name
         if source.is_file():
             source.unlink()

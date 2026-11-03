@@ -240,12 +240,60 @@ proc ct_worker_status {stage {unit ""}} {
 }
 proc ct_save_checkpoint {stage queries traces} {
     global ct_context ct_checkpoint ct_signature ct_stream ct_target_stream ct_instances
+    global ct_completed_modules ct_last_module ct_saved_module ct_module_checkpoint_dir
     if {!$ct_context} {return}
     flush $ct_stream
     flush $ct_target_stream
-    ct_atomic_json $ct_checkpoint [ct_object version 1 signature [ct_js $ct_signature] stage [ct_js $stage] \
+    set record [ct_object version 1 signature [ct_js $ct_signature] stage [ct_js $stage] \
         completed_queries $queries completed_traces $traces instances [dict size $ct_instances] \
-        raw_offset [tell $ct_stream] targets_offset [tell $ct_target_stream]] 1
+        completed_modules $ct_completed_modules last_module $ct_last_module \
+        raw_offset [tell $ct_stream] targets_offset [tell $ct_target_stream]]
+    if {$stage eq "enumerate" && $ct_completed_modules > $ct_saved_module} {
+        # The candidate snapshot is published before the authoritative cursor.
+        # Recovery discards snapshots beyond that cursor if the worker dies
+        # between these two atomic replacements.
+        ct_atomic_json [file join $ct_module_checkpoint_dir [format %08d.json $ct_completed_modules]] $record
+        set ct_saved_module $ct_completed_modules
+    }
+    ct_atomic_json $ct_checkpoint $record 1
+}
+proc ct_module_memory_check {} {
+    global ct_context ct_module_check_enabled ct_module_check_request ct_module_check_ack ct_completed_modules ct_controller_pid
+    if {!$ct_context || !$ct_module_check_enabled} {return}
+    set temporary "$ct_module_check_request.tmp"
+    set stream [open $temporary w]
+    puts $stream $ct_completed_modules
+    close $stream
+    file rename -force $temporary $ct_module_check_request
+    # This is a boundary handshake, not a runtime timeout. Do not enter the
+    # next module until the supervisor has sampled actual RSS at this point.
+    while {1} {
+        if {[file exists $ct_module_check_ack] && ![catch {set stream [open $ct_module_check_ack r]}]} {
+            set reply [read $stream]; close $stream
+            if {[llength $reply] == 3 && [lindex $reply 0] eq "$ct_completed_modules"} {
+                if {[lindex $reply 1] ni {continue rotate} || ![string is wideinteger -strict [lindex $reply 2]]} {
+                    error "Invalid module memory check response"
+                }
+                return
+            }
+        }
+        if {![file exists /proc/$ct_controller_pid]} {error "Extraction controller exited during module checkpoint check"}
+        after 20
+    }
+}
+proc ct_commit_module {queries query rule layer scope module matched added status} {
+    global ct_completed_modules ct_last_module ct_total_modules
+    incr ct_completed_modules
+    set ct_last_module [ct_object index $ct_completed_modules query_index $query rule_in_query $rule \
+        layer $layer scope [ct_js $scope] module [ct_js $module] matched_instances $matched \
+        new_instances $added status [ct_js $status]]
+    ct_emit [ct_object event [ct_js module_checkpoint] checkpoint $ct_last_module]
+    ct_save_checkpoint enumerate $queries 0
+    puts "CT7_MODULE_CHECKPOINT index=$ct_completed_modules/$ct_total_modules query=$query rule=$rule layer=$layer module=$module scope=$scope matched=$matched status=$status"
+    flush stdout
+    ct_worker_status module_checkpoint "module $ct_completed_modules/$ct_total_modules L$layer $scope / $module"
+    ct_module_memory_check
+    return [ct_maybe_rotate enumerate $queries 0]
 }
 proc ct_close_streams {} {
     global ct_stream ct_target_stream
@@ -321,6 +369,7 @@ proc ct_restore_targets {} {
 proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
+    global ct_resume_completed_modules ct_resume_last_module ct_completed_modules ct_last_module ct_saved_module ct_total_modules
     source $env(CT7_CONFIG)
     set ct_context [info exists env(CT7_RESUME)]
     if {$ct_context} {
@@ -331,6 +380,8 @@ proc ct_main {} {
         set ct_resume_completed_traces 0
         set ct_resume_instances 0
         set ct_resume_stage import
+        set ct_resume_completed_modules 0
+        set ct_resume_last_module null
     }
     if {![info exists ct_tree_type]} {set ct_tree_type clock}
     if {![info exists ct_trace_scope]} {set ct_trace_scope ""}
@@ -339,6 +390,10 @@ proc ct_main {} {
     set ct_owner_paths [dict create]
     set ct_pins_to_trace [dict create]
     set ct_pin_count 0
+    set ct_completed_modules $ct_resume_completed_modules
+    set ct_last_module $ct_resume_last_module
+    set ct_saved_module $ct_resume_completed_modules
+    set ct_total_modules [llength $ct_rules]
     set ct_stream [open $ct_output [expr {$ct_context ? "a" : "w"}]]
     set ct_pending 0
     fconfigure $ct_stream -encoding utf-8 -translation lf
@@ -350,7 +405,7 @@ proc ct_main {} {
     }
     if {[tell $ct_stream] == 0} {
         ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
-            verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] raw_protocol 2]
+            verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] raw_protocol 2 module_checkpoint_protocol 1]
         flush $ct_stream
         ct_save_checkpoint import 0 0
     }
@@ -383,7 +438,7 @@ proc ct_main {} {
         ct_worker_status restore_targets
         ct_restore_targets
     }
-    puts "CT7_RESUME queries=$ct_resume_completed_queries traces=$ct_resume_completed_traces instances=[dict size $ct_instances]"
+    puts "CT7_RESUME queries=$ct_resume_completed_queries traces=$ct_resume_completed_traces instances=[dict size $ct_instances] modules=$ct_resume_completed_modules"
     flush stdout
     set query_groups [dict create]
     foreach rule $ct_rules {
@@ -396,48 +451,72 @@ proc ct_main {} {
     # Never widen a query to a common ancestor: share only identical scope /
     # module queries. This preserves strict hierarchy bounds and conflicts.
     set query_count 0
+    set module_cursor 0
     dict for {query rules} $query_groups {
         incr query_count
-        if {$query_count <= $ct_resume_completed_queries} {continue}
-        lassign $query scope module
-        ct_worker_status enumerate "$scope / $module"
-        if {[npi_handle_by_name -name $scope -scope ""] eq ""} {
-            ct_emit [ct_object event [ct_js diagnostic] code [ct_js scope_not_found] hierarchy [ct_js $scope]]
-            ct_save_checkpoint enumerate $query_count 0
-            if {[ct_maybe_rotate enumerate $query_count 0]} {return}
+        set group_end [expr {$module_cursor + [llength $rules]}]
+        if {$group_end <= $ct_resume_completed_modules} {
+            set module_cursor $group_end
+            puts "CT7_MODULE_SKIP query=$query_count completed_modules=$module_cursor"
+            flush stdout
             continue
         }
+        lassign $query scope module
+        ct_worker_status enumerate "$scope / $module"
+        set scope_found [expr {[npi_handle_by_name -name $scope -scope ""] ne ""}]
         set handles {}
-        puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules]"
-        flush stdout
-        ::npi_L1::npi_find_inst_with_def_wildcard $scope $module handles
-        ct_emit [ct_object event [ct_js scoped_query] scope [ct_js $scope] module [ct_js $module] rules [llength $rules] candidates [llength $handles]]
+        if {$scope_found} {
+            puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules]"
+            flush stdout
+            ::npi_L1::npi_find_inst_with_def_wildcard $scope $module handles
+            ct_emit [ct_object event [ct_js scoped_query] query_index $query_count scope [ct_js $scope] module [ct_js $module] \
+                rules [llength $rules] candidates [llength $handles] resumed_rules [expr {max(0,$ct_resume_completed_modules-$module_cursor)}]]
+        }
+        set rule_index 0
         foreach rule $rules {
+        incr module_cursor
+        incr rule_index
+        if {$module_cursor <= $ct_resume_completed_modules} {
+            puts "CT7_MODULE_SKIP index=$module_cursor query=$query_count rule=$rule_index"
+            flush stdout
+            continue
+        }
         lassign $rule layer scope module inputs output kind
         set matched 0
-        foreach hdl $handles {
+        set before [dict size $ct_instances]
+        set status ok
+        if {!$scope_found} {
+            set status scope_not_found
+            ct_emit [ct_object event [ct_js diagnostic] code [ct_js scope_not_found] hierarchy [ct_js $scope] layer $layer]
+        } else {
+          foreach hdl $handles {
             set path [npi_get_str -property npiFullName -object $hdl]
             if {![ct_scope_match $path $scope]} {continue}
             if {$ct_trace_scope ne "" && ![ct_scope_match $path $ct_trace_scope]} {error "NPI returned target outside port trace root: $path"}
             incr matched
             if {[dict exists $ct_instances $path]} {
                 if {[dict get $ct_instances $path] != $layer} {
+                    set status layer_conflict
                     ct_emit [ct_object event [ct_js diagnostic] code [ct_js layer_conflict] instance [ct_js $path]]
                 }
                 continue
             }
             ct_register_instance $path $module $layer $inputs $output $kind [::npi_L1::npi_ut_get_hdl_info $hdl] 1
+          }
         }
-        if {!$matched} {
+        if {$scope_found && !$matched} {
+            set status missing_module
             ct_emit [ct_object event [ct_js diagnostic] code [ct_js missing_module] module [ct_js $module] hierarchy [ct_js $scope] layer $layer]
         }
         puts "CT7_ENUM layer=$layer module=$module instances=$matched"
         flush stdout
+        set committed_queries [expr {$rule_index == [llength $rules] ? $query_count : $query_count-1}]
+        if {$rule_index == [llength $rules]} {unset handles}
+        if {[ct_commit_module $committed_queries $query_count $rule_index $layer $scope $module $matched \
+                [expr {[dict size $ct_instances]-$before}] $status]} {return}
         }
-        unset handles
-        ct_save_checkpoint enumerate $query_count 0
-        if {[ct_maybe_rotate enumerate $query_count 0]} {return}
     }
+    if {$ct_completed_modules != $ct_total_modules} {error "Module checkpoint count does not cover all configured rules"}
     unset query_groups ct_rules
     ct_save_checkpoint trace $query_count $ct_resume_completed_traces
     set count $ct_resume_completed_traces
@@ -456,7 +535,7 @@ proc ct_main {} {
             ct_worker_status trace "$count / $ct_pin_count"
         }
     }
-    ct_emit [ct_object event [ct_js complete] instances [dict size $ct_instances] pin_traces $count]
+    ct_emit [ct_object event [ct_js complete] instances [dict size $ct_instances] pin_traces $count module_rules $ct_completed_modules]
     ct_save_checkpoint complete $query_count $count
     ct_worker_status complete
     ct_close_streams

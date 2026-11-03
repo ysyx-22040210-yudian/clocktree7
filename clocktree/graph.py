@@ -115,9 +115,21 @@ def build_graph(events, config, evidence_store=None):
             metadata.update(item)
         elif kind == 'scoped_query':
             metadata.setdefault('scoped_queries', []).append({k: v for k, v in item.items() if k != 'event'})
+        elif kind == 'module_checkpoint':
+            checkpoint = item.get('checkpoint', {})
+            index = metadata.get('module_checkpoints', 0) + 1
+            if metadata.get('module_checkpoint_protocol') and checkpoint.get('index') != index:
+                diagnostics.append({'code': 'module_checkpoint_sequence', 'expected': index, 'observed': checkpoint.get('index')})
+            metadata['module_checkpoints'] = index
+            metadata['last_module_checkpoint'] = checkpoint
         elif kind == "complete":
             completed = True
             metadata["npi_counts"] = item
+    if metadata.get('module_checkpoint_protocol'):
+        expected_modules = sum(len(layer.get('modules', [])) for layer in config.get('layers', []))
+        metadata['expected_module_checkpoints'] = expected_modules
+        if metadata.get('module_checkpoints', 0) != expected_modules or (completed and metadata.get('npi_counts', {}).get('module_rules') != expected_modules):
+            diagnostics.append({'code': 'missing_module_checkpoint', 'expected': expected_modules, 'observed': metadata.get('module_checkpoints', 0)})
     for node in nodes.values():
         kind = resolve_kind(node, config)
         if kind:
@@ -225,7 +237,7 @@ def build_graph(events, config, evidence_store=None):
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
         if node["root"] and node["layer"] != 1 and not node['scope_input_boundary']:
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
-    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal'}
+    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint'}
     coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
     topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
     return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,

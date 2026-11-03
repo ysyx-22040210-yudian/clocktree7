@@ -216,3 +216,94 @@ def test_target_manifest_is_parsed_as_data_and_never_executed(tmp_path):
     assert interpreter.eval('info exists injected') == '0'
     target.write_text('set injected 1\n')
     with pytest.raises(tkinter.TclError, match='Invalid target'):interpreter.call('ct_restore_targets')
+
+
+def duplicate_rules(count):
+    return {'layers':[{'index':1,'hierarchy':'top','modules':[{'module':'gate'} for _ in range(count)]}],
+            'design':{'top':'top'},'memory_limit_gib':60}
+
+
+def module_commit(values, raw, index, total, complete=False):
+    state=commit(values,raw,queries=1 if index==total else 0,stage='complete' if complete else 'enumerate')
+    state.update(instances=1,completed_modules=index,last_module={'index':index,'layer':1,'module':'gate','scope':'top'})
+    write_graph(values['ct_checkpoint'],state)
+    Path(values['ct_module_check_request']).write_text(str(index)+'\n',encoding='ascii')
+    return state
+
+
+def test_every_module_boundary_forces_a_fresh_sample_between_periodic_ticks(tmp_path,monkeypatch):
+    work,output,raw=setup_run(tmp_path)
+    contexts,processes,samples=[],[],[]
+    monkeypatch.setattr(memory.time,'monotonic',lambda:100.)
+    def launch(command,**kwargs):
+        values=context(kwargs['env']);contexts.append(values)
+        module_commit(values,raw,1,2)
+        process=FakeProcess(12345);processes.append(process)
+        return process
+    def sample(pid):
+        samples.append(pid)
+        return {'rss_bytes':memory.GIB}
+    def pause(seconds):
+        values=contexts[-1]
+        reply=Path(values['ct_module_check_ack']).read_text().split()
+        assert reply[1:] == ['continue',str(memory.GIB)]
+        if reply[0]=='1':module_commit(values,raw,2,2)
+        else:
+            module_commit(values,raw,2,2,complete=True)
+            processes[-1].done=True
+    code,_,report=memory.run_verdi(['verdi'],work,{},raw,output/'verdi.log',output,duplicate_rules(2),
+                                  sampler=sample,pause=pause,popen=launch,monitored=True)
+    assert code==0 and len(samples)==2 and report['module_checks']==2
+    assert [json.loads(line)['index'] for line in (output/'module-memory-checks.jsonl').read_text().splitlines()]==[1,2]
+
+
+def test_partial_group_rules_advance_retry_cursor_even_without_new_instances(tmp_path,monkeypatch):
+    work,output,raw=setup_run(tmp_path)
+    attempts=[]
+    def launch(command,**kwargs):
+        values=context(kwargs['env']);attempts.append(values)
+        assert int(values['ct_resume_completed_modules'])==len(attempts)-1
+        module_commit(values,raw,len(attempts),4,complete=len(attempts)==4)
+        return FakeProcess(len(attempts),done=len(attempts)==4)
+    monkeypatch.setattr(memory,'_stop_worker',lambda process:process.wait())
+    code,_,report=memory.run_verdi(['verdi'],work,{},raw,output/'verdi.log',output,duplicate_rules(4),
+        sampler=lambda pid:{'rss_bytes':61*memory.GIB},pause=lambda seconds:None,popen=launch,monitored=True)
+    assert code==0 and len(attempts)==4 and report['restart_count']==3
+    assert [event['checkpoint']['completed_queries'] for event in report['restarts']]==[0,0,0]
+    assert [event['checkpoint']['completed_modules'] for event in report['restarts']]==[1,2,3]
+
+
+def test_module_cursor_validation_legacy_inference_and_uncommitted_snapshot_cleanup(tmp_path):
+    work,output,raw=setup_run(tmp_path)
+    raw.write_bytes(b'123456');targets=work/'targets.tcl';targets.write_bytes(b'abc')
+    path=work/'checkpoint.json'
+    state=dict(version=1,signature='s',stage='enumerate',completed_queries=1,completed_traces=0,instances=1,raw_offset=4,targets_offset=2)
+    write_graph(path,state)
+    assert memory.read_checkpoint(path,'s',raw,targets,duplicate_rules(2))['completed_modules']==2
+    state.update(completed_queries=0,completed_modules=1,last_module={'index':1})
+    write_graph(path,state)
+    restored=memory.read_checkpoint(path,'s',raw,targets,duplicate_rules(2))
+    directory=work/'module-checkpoints';directory.mkdir()
+    for name in ('00000001.json','00000002.json','notes.json'):(directory/name).write_text('retained only if committed')
+    memory.rollback_files(restored,raw,targets,directory)
+    assert sorted(p.name for p in directory.iterdir())==['00000001.json','notes.json']
+    state['completed_modules']=2;state['last_module']={'index':2}
+    write_graph(path,state)
+    with pytest.raises(memory.MemoryResumeError,match='prefix'):
+        memory.read_checkpoint(path,'s',raw,targets,duplicate_rules(2))
+
+
+def test_new_results_require_complete_ordered_module_checkpoints():
+    from clocktree.graph import build_graph
+    cfg=duplicate_rules(2)
+    prefix=[{'event':'metadata','module_checkpoint_protocol':1},
+            {'event':'instance','path':'top.a','module':'gate','layer':1,'inputs':['i'],'output':'o'},
+            {'event':'trace','instance':'top.a','pin':'i','direction':'driver','results':[{'status':'input_boundary','endpoint':'top.clk'}]},
+            {'event':'trace','instance':'top.a','pin':'o','direction':'load','results':[{'status':'no_load'}]}]
+    end={'event':'complete','module_rules':2}
+    valid=prefix+[{'event':'module_checkpoint','checkpoint':{'index':i}} for i in (1,2)]+[end]
+    assert build_graph(valid,cfg)['summary']['connectivity_complete']
+    for events in (prefix+[end],prefix+[valid[-3],valid[-3],end]):
+        graph=build_graph(events,cfg)
+        assert not graph['summary']['connectivity_complete']
+        assert any(d['code'] in ('missing_module_checkpoint','module_checkpoint_sequence') for d in graph['diagnostics'])

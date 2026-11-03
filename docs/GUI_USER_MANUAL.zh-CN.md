@@ -1,6 +1,6 @@
 # ClockTree7 时钟树 / 复位树 GUI 操作手册
 
-**文档版本：1.6.1 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版**
+**文档版本：1.7 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版**
 
 本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。
 
@@ -938,7 +938,7 @@ bash clocktree.sh doctor --self-test --gui
 
 ![内存保护配置和已完成任务的峰值](images/memory-guard.png)
 
-该读数是 Linux 上 Verdi、其后代及提取控制进程的合计 RSS，每秒采样；包括共享映射的重复计数，不等同于整机总占用或 dsub 调度器记账。GUI 及 Verdi 退出后的结果生成阶段不在该读数内。
+该读数是 Linux 上 Verdi、其后代及提取控制进程的合计 RSS，周期性每秒采样，并在每条 module 查找结束后立即额外采样；包括共享映射的重复计数，不等同于整机总占用或 dsub 调度器记账。GUI 及 Verdi 退出后的结果生成阶段不在该读数内。
 
 ### 25.2 超过阈值后如何继续
 
@@ -964,3 +964,15 @@ bash clocktree.sh doctor --self-test --gui
 下图为阈值 0.375 GiB、观测峰值约 0.438 GiB、重启两次的真实界面。GUI 修改为 0.42 GiB 后保存配置、关闭并重开，仍恢复该自定义值及已完成结果。完整表格及复现命令见 [自定义阈值实测](MEMORY.zh-CN.md#实测与复现)。
 
 ![自定义阈值与真实重启结果](images/real-threshold-retries.png)
+
+### 25.5 每条 module 完成后的独立断点
+
+每条配置中的 module 查找规则处理完毕后，工具立即保存一个独立断点，记录层级、完整查找路径、module、匹配数量、新增实例数量、完成序号和原始数据位置。即使多条规则共用同一批 NPI 候选句柄，也分别保存。完成断点后会额外检查一次实际 RSS，收到监控进程的继续/轮换确认后，才进入下一条规则。
+
+运行时左侧显示最近的 module 断点；结束后显示提交数量。以下截图中时钟样例已提交 5 条查找断点，重启两次后结果仍完整。
+
+![逐 module 独立断点数量与恢复结果](images/module-checkpoints.png)
+
+查看任务工作区的 `checkpoint.json`：`completed_modules` 是已完成规则数，`last_module` 记录最后模块。各独立快照保存在同目录 `module-checkpoints/00000001.json` 等文件；`memory.json` 给出该目录路径。任务根目录的 `module-memory-checks.jsonl` 保存每次额外内存检查，日志可搜索 `CT7_MODULE_CHECKPOINT`、`CT7_MODULE_MEMORY_CHECK`、`CT7_MODULE_SKIP`。
+
+重试恢复已提交前缀并跳过完成的规则，从未完成规则继续；当前查询组还没结束时，可能重新获取该组候选句柄。零匹配或不存在的层次会保存相应失败状态和诊断，断点本身不代表检查通过。将阈值设为 0 后，逐 module 断点仍然保存。

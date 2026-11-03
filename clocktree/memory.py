@@ -12,6 +12,7 @@ import subprocess
 import sys
 import threading
 import time
+from collections import OrderedDict
 
 from .config import tcl_string
 from .storage import write_graph
@@ -73,10 +74,19 @@ def _stop_worker(process):
 def _initial_checkpoint(signature):
     return {'version': CHECKPOINT_VERSION, 'signature': signature, 'stage': 'import',
             'completed_queries': 0, 'completed_traces': 0, 'instances': 0,
-            'raw_offset': 0, 'targets_offset': 0}
+            'completed_modules': 0, 'last_module': None, 'raw_offset': 0, 'targets_offset': 0}
 
 
-def read_checkpoint(path, signature, raw, targets):
+def _module_groups(config):
+    groups = OrderedDict()
+    for layer in config.get('layers', []):
+        scope = layer['hierarchy'].strip().rstrip('./') or config.get('trace_scope', '').strip().rstrip('./') or config.get('design', {}).get('top', '')
+        for rule in layer.get('modules', []):
+            groups.setdefault((scope, rule['module']), []).append(rule)
+    return list(groups.values())
+
+
+def read_checkpoint(path, signature, raw, targets, config=None):
     errors = []
     for candidate in (Path(path), Path(str(path) + '.previous')):
         try:
@@ -87,6 +97,26 @@ def read_checkpoint(path, signature, raw, targets):
             for key in ('completed_queries', 'completed_traces', 'instances', 'raw_offset', 'targets_offset'):
                 if type(data.get(key)) is not int or data[key] < 0:
                     raise ValueError('Invalid checkpoint ' + key)
+            groups = _module_groups(config or {})
+            # Older checkpoints committed entire groups. Infer their module
+            # cursor from that prefix without treating unfinished rules as done.
+            if 'completed_modules' not in data:
+                data['completed_modules'] = sum(len(group) for group in groups[:data['completed_queries']])
+            data.setdefault('last_module', None)
+            modules = data['completed_modules']
+            if type(modules) is not int or modules < 0:
+                raise ValueError('Invalid completed_modules')
+            last = data['last_module']
+            if last is not None and (not isinstance(last, dict) or type(last.get('index')) is not int or last['index'] != modules):
+                raise ValueError('Invalid last_module checkpoint')
+            if groups:
+                queries = data['completed_queries']
+                if queries > len(groups):
+                    raise ValueError('Checkpoint exceeds configured queries')
+                lower = sum(len(group) for group in groups[:queries])
+                upper = lower + (len(groups[queries]) if queries < len(groups) else 0)
+                if not (lower <= modules < upper if queries < len(groups) else modules == lower):
+                    raise ValueError('Module cursor does not match the completed query prefix')
             for source, key in ((raw, 'raw_offset'), (targets, 'targets_offset')):
                 size = source.stat().st_size if source.exists() else 0
                 if data[key] > size:
@@ -97,7 +127,7 @@ def read_checkpoint(path, signature, raw, targets):
     raise MemoryResumeError('Cannot safely resume: ' + '; '.join(errors))
 
 
-def rollback_files(checkpoint, raw, targets):
+def rollback_files(checkpoint, raw, targets, module_directory=None):
     """Discard only the uncommitted suffix of this run's two known files."""
     for path, key in ((raw, 'raw_offset'), (targets, 'targets_offset')):
         if path.exists():
@@ -105,14 +135,26 @@ def rollback_files(checkpoint, raw, targets):
                 stream.truncate(checkpoint[key])
         elif checkpoint[key]:
             raise MemoryResumeError('Missing committed file: ' + str(path))
+    if module_directory is not None:
+        # A snapshot published just before a killed latest-checkpoint update
+        # is an uncommitted candidate. Remove only our numbered suffix files.
+        for path in Path(module_directory).glob('*.json'):
+            if path.stem.isdigit() and len(path.stem) >= 8 and int(path.stem) > checkpoint.get('completed_modules', 0):
+                path.unlink()
 
 
-def _context(path, checkpoint, signature, raw, targets, control, status, checkpoint_path):
+def _context(path, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled):
     lines = []
     for key, value in (('checkpoint', checkpoint_path), ('target_file', targets),
                        ('rotate_file', control), ('status_file', status), ('signature', signature)):
         lines.append('set ct_' + key + ' ' + tcl_string(str(value)))
-    for key in ('completed_queries', 'completed_traces', 'instances', 'raw_offset', 'targets_offset'):
+    for key, value in (('module_checkpoint_dir', checkpoint_path.parent / 'module-checkpoints'),
+                       ('module_check_request', checkpoint_path.parent / 'module-check.request'),
+                       ('module_check_ack', checkpoint_path.parent / 'module-check.ack')):
+        lines.append('set ct_' + key + ' ' + tcl_string(str(value)))
+    lines.extend(['set ct_module_check_enabled ' + str(int(enabled)), 'set ct_controller_pid ' + str(os.getpid()),
+                  'set ct_resume_last_module ' + tcl_string(json.dumps(checkpoint.get('last_module'), ensure_ascii=False))])
+    for key in ('completed_queries', 'completed_traces', 'completed_modules', 'instances', 'raw_offset', 'targets_offset'):
         lines.append('set ct_resume_' + key + ' ' + str(checkpoint[key]))
     lines.append('set ct_resume_stage ' + tcl_string(checkpoint['stage']))
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
@@ -129,12 +171,16 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
     signature = hashlib.sha256(json.dumps(config, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
     checkpoint_path, targets = work / 'checkpoint.json', work / 'targets.tcl'
     control, status = work / 'rotate.request', work / 'worker-status.json'
+    module_directory = work / 'module-checkpoints'
+    module_directory.mkdir(exist_ok=True)
+    module_request, module_ack = work / 'module-check.request', work / 'module-check.ack'
     checkpoint = _initial_checkpoint(signature)
     write_graph(checkpoint_path, checkpoint)
     report_path = output / 'memory.json'
     report = {'enabled': enabled, 'limit_gib': limit_gib, 'soft_limit_gib': limit_gib*.9,
               'metric': 'supervisor_and_verdi_tree_rss', 'restart_count': 0, 'attempts': 0,
               'scope': 'Verdi worker phase, including extraction controller; excludes GUI and later graph processing',
+              'module_checks': 0, 'module_checkpoint_directory': str(module_directory),
               'peak_rss_gib': 0., 'current_rss_gib': None, 'state': 'starting',
               'checkpoint_file': str(checkpoint_path), 'restarts': []}
     last_key, stalls, process = None, 0, None
@@ -157,28 +203,38 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 attempt_dir.mkdir()
                 import shutil
                 shutil.copy2(str(work / 'clocktree-extract.tcl'), str(attempt_dir / 'clocktree-extract.tcl'))
-                rollback_files(checkpoint, raw, targets)
-                for path in (control, status):
+                rollback_files(checkpoint, raw, targets, module_directory)
+                for path in (control, status, module_request, module_ack):
                     if path.exists():
                         path.unlink()
                 context = attempt_dir / 'resume.tcl'
-                _context(context, checkpoint, signature, raw, targets, control, status, checkpoint_path)
+                _context(context, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled)
                 worker_environment = dict(environment, CT7_RESUME=str(context))
                 report.update(state='running', last_checkpoint=checkpoint, current_rss_gib=None)
                 write_graph(report_path, report)
-                log.write('CT7_WORKER_BEGIN attempt={} queries={} traces={}\n'.format(attempt, checkpoint['completed_queries'], checkpoint['completed_traces']))
+                log.write('CT7_WORKER_BEGIN attempt={} queries={} traces={} modules={}\n'.format(attempt, checkpoint['completed_queries'], checkpoint['completed_traces'], checkpoint['completed_modules']))
                 log.flush()
                 kwargs = dict(cwd=str(attempt_dir), env=worker_environment, stdout=log, stderr=subprocess.STDOUT)
                 if monitored:
                     kwargs['start_new_session'] = True
                 process = popen(command, **kwargs)
                 report['worker_pid'] = getattr(process, 'pid', None)
-                memory_hit, soft_requested = False, False
+                memory_hit, soft_requested, rotation_rss = False, False, None
                 if not enabled:
                     code = process.wait()
                 else:
+                    next_sample, serviced_module = 0., 0
                     while process.poll() is None:
+                        try:
+                            pending_module = int(module_request.read_text(encoding='ascii').strip())
+                        except (OSError, ValueError):
+                            pending_module = 0
+                        boundary = pending_module > 0 and pending_module != serviced_module
+                        if not boundary and time.monotonic() < next_sample:
+                            pause(.1)
+                            continue
                         sample = sampler(process.pid)
+                        next_sample = time.monotonic() + 1.
                         used = sample['rss_bytes'] / GIB
                         report['current_rss_gib'] = round(used, 3)
                         report['peak_rss_gib'] = round(max(report['peak_rss_gib'], used), 3)
@@ -187,8 +243,25 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                             report['worker'] = json.loads(status.read_text(encoding='utf-8'))
                         except (OSError, ValueError):
                             pass
+                        if boundary:
+                            committed = read_checkpoint(checkpoint_path, signature, raw, targets, config)
+                            if committed['completed_modules'] != pending_module:
+                                raise MemoryResumeError('Module memory check does not match its durable checkpoint')
+                            report['last_checkpoint'] = committed
+                            report['module_checks'] += 1
+                            check = {'attempt': attempt, 'index': pending_module, 'module': committed['last_module'],
+                                     'worker_pid': process.pid, 'sampled_at': time.time(),
+                                     'rss_gib': round(used, 3), 'limit_gib': limit_gib,
+                                     'action': 'hard_stop' if used >= limit_gib else ('rotate' if soft_requested or control.exists() or used >= limit_gib*.9 else 'continue')}
+                            report['last_module_check'] = check
+                            with (output / 'module-memory-checks.jsonl').open('a', encoding='utf-8') as audit:
+                                audit.write(json.dumps(check, ensure_ascii=False) + '\n')
+                            log.write('CT7_MODULE_MEMORY_CHECK index={} rss_gib={:.3f} limit_gib={:.3f} action={}\n'.format(
+                                pending_module, used, limit_gib, check['action']))
+                            log.flush()
                         if used >= limit_gib:
                             memory_hit = True
+                            rotation_rss = used
                             report['state'] = 'restarting'
                             write_graph(report_path, report)
                             log.write('CT7_MEMORY_HARD rss_gib={:.3f} limit_gib={:.3f}\n'.format(used, limit_gib))
@@ -198,14 +271,21 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                         if used >= limit_gib*.9 and not soft_requested:
                             control.write_text('rotate at a complete checkpoint\n', encoding='utf-8')
                             soft_requested = True
+                            rotation_rss = used
                             log.write('CT7_MEMORY_SOFT rss_gib={:.3f}; checkpoint rotation requested\n'.format(used))
                             log.flush()
+                        if boundary:
+                            action = 'rotate' if soft_requested or control.exists() else 'continue'
+                            temporary = module_ack.with_name(module_ack.name + '.tmp')
+                            temporary.write_text('{} {} {}\n'.format(pending_module, action, sample['rss_bytes']), encoding='ascii')
+                            os.replace(str(temporary), str(module_ack))
+                            serviced_module = pending_module
                         write_graph(report_path, report)
-                        pause(1.)
+                        pause(.1)
                     else:
                         code = process.wait()
                 process = None
-                checkpoint = read_checkpoint(checkpoint_path, signature, raw, targets)
+                checkpoint = read_checkpoint(checkpoint_path, signature, raw, targets, config)
                 try:
                     worker_status = json.loads(status.read_text(encoding='utf-8'))
                 except (OSError, ValueError):
@@ -215,12 +295,12 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                     break
                 if not memory_hit and worker_status.get('stage') != 'rotating':
                     break  # an ordinary EDA failure is never a memory restart
-                key = tuple(checkpoint[k] for k in ('completed_queries', 'completed_traces', 'instances'))
+                key = tuple(checkpoint[k] for k in ('completed_queries', 'completed_modules', 'completed_traces', 'instances'))
                 stalls = stalls+1 if key == last_key else 1
                 last_key = key
                 reason = 'hard_limit' if memory_hit else 'checkpoint_rotation'
                 event = {'attempt': attempt, 'reason': reason, 'exit_code': code, 'checkpoint': checkpoint,
-                         'worker': worker_status, 'rss_gib': report['current_rss_gib']}
+                         'worker': worker_status, 'rss_gib': round(rotation_rss, 3) if rotation_rss is not None else report['current_rss_gib']}
                 report['restarts'].append(event)
                 # Keep the complete audit on disk and only a bounded preview
                 # in memory.json / the result metadata.
@@ -228,7 +308,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                     audit.write(json.dumps(event, ensure_ascii=False) + '\n')
                 report['restarts'] = report['restarts'][-32:]
                 if stalls >= MAX_STALLED_ATTEMPTS:
-                    rollback_files(checkpoint, raw, targets)
+                    rollback_files(checkpoint, raw, targets, module_directory)
                     report.update(state='blocked', last_checkpoint=checkpoint,
                                   error='Memory pressure repeated without checkpoint progress')
                     write_graph(report_path, report)

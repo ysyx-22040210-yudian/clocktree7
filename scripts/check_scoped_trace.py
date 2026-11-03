@@ -138,15 +138,15 @@ def main():
     invalid = run(bad, out / 'missing-root')
     assert not invalid['summary']['connectivity_complete'] and not invalid['nodes']
     assert any(d['code'] == 'scope_not_found' for d in invalid['diagnostics'])
-    # A leaf instance is included by the NPI root query, not just descendants.
+    # Instance search only examines direct children, excluding the root itself.
     leaf_scope = 'scope_top.domain.u_mux'
     leaf_filelist = out / 'module/fixture/rtl.f'
     leaf = config('scope_top.domain', leaf_filelist, 'clock')
     leaf['trace_scope'] = leaf_scope
     leaf['layers'] = [dict(index=1, hierarchy=leaf_scope, modules=leaf['layers'][0]['modules'])]
     leaf_graph = run(leaf, out / 'leaf-root')
-    assert leaf_graph['summary']['connectivity_complete'] and len(leaf_graph['nodes']) == 1
-    assert leaf_graph['summary']['scope_boundaries'] == 3 and not leaf_graph['nodes'][0]['terminal']
+    assert not leaf_graph['summary']['connectivity_complete'] and not leaf_graph['nodes']
+    assert any(d['code']=='missing_module' for d in leaf_graph['diagnostics'])
     gen = config('scope_top.g[0].domain', out / 'generate/fixture/rtl.f', 'clock')
     gen['trace_scope'] = 'scope_top.g[0]'
     gen_graph = run(gen, out / 'generate-root')
@@ -160,7 +160,7 @@ def main():
         assert const_graph['summary']['connectivity_complete'], const_graph['diagnostics']
         assert any(b['status'] == 'constant' for b in const_graph['boundaries']), const_graph['boundaries']
     report = {'pass': True, 'cases': checks, 'missing_root_rejected': True,
-              'leaf_root_included': True, 'generate_root_supported': True, 'constant_inputs_preserved': True}
+              'search_root_itself_excluded': True, 'generate_root_supported': True, 'constant_inputs_preserved': True}
     (out / 'check.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(report, indent=2))
 

@@ -159,3 +159,35 @@ def test_root_interface_is_a_boundary_even_when_it_is_the_seed():
         record = streamed_walk(interp, 'top.domain.' + pin, direction, 'top.domain', pin)[0]
         assert record['status'] == 'scope_boundary' and len(record['path']) == 1
         assert interp.getvar('visits') == ''
+
+
+def test_direct_query_never_descends_and_keeps_only_module_definition_matches():
+    source=(ROOT/'npi/extract.tcl').read_text(encoding='utf-8').split('if {[catch {ct_main}')[0]
+    interp=tkinter.Tcl();interp.eval(source)
+    interp.eval('''
+        set scanned {};set released {};set pending {}
+        proc npi_iterate {args} {
+            global scanned pending
+            if {$args ne {-type npiInternalScope -refHandle top.domain}} {error "Unexpected recursive traversal: $args"}
+            lappend scanned top.domain
+            set pending {top.domain.u0 top.domain.u_other top.domain.g top.domain.arr[0] top.domain.arr[1]}
+            return direct_iterator
+        }
+        proc npi_scan {args} {
+            global pending
+            set value [lindex $pending 0];set pending [lrange $pending 1 end];return $value
+        }
+        proc npi_get_str {args} {
+            set prop [lindex $args 1];set object [lindex $args 3]
+            if {$prop eq "npiType"} {return [expr {$object eq "top.domain.g" ? "npiGenScope" : "npiModule"}]}
+            if {$prop eq "npiDefName"} {return [expr {$object eq "top.domain.u_other" ? "gate_other" : "gate"}]}
+            error "Unexpected property: $prop"
+        }
+        proc npi_release_handle {args} {global released;lappend released [lindex $args 1]}
+    ''')
+    assert interp.call('ct_find_direct_instances','top.domain','gate','matches')==5
+    assert interp.splitlist(interp.getvar('scanned'))==('top.domain',)
+    assert interp.splitlist(interp.getvar('matches'))==('top.domain.u0','top.domain.arr[0]','top.domain.arr[1]')
+    assert interp.splitlist(interp.getvar('released'))==('top.domain.u_other','top.domain.g')
+    interp.call('ct_release_instances',interp.getvar('matches'))
+    assert len(interp.splitlist(interp.getvar('released')))==5

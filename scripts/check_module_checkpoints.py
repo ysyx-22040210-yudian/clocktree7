@@ -139,14 +139,14 @@ def main():
     same_graph(baseline['clock'],graph)
     report['cases'].append({'case':'memory_disabled','pass':True,'module_checkpoints':len(modules),'memory_checks':0})
     if args.soc:
-        from clocktree.session import read_graph
-        source=ROOT/'validation/configs/openc910_ordered7_kdb.json'
-        cfg=load_config(source)
+        from check_direct_instances import direct_soc_config
+        cfg,source,expected=direct_soc_config(out)
         directory=out/'openc910'
         graph=extraction.extract(source,directory)
         modules=inspect(directory,graph,cfg)
-        same_graph(read_graph(ROOT/'validation/runs/openc910-ordered7-01/clocktree.json'),graph)
-        report['soc']={'pass':True,'module_checkpoints':len(modules),'instances':6984,'edges':6983,'dual_evidence_equal':True}
+        assert graph['summary']['connectivity_complete'] and {n['id'] for n in graph['nodes']}==expected
+        report['soc']={'pass':True,'module_checkpoints':len(modules),'instances':len(expected),
+                       'edges':len(graph['edges']),'scope':cfg['trace_scope'],'full_chip':False,'direct_nodes_match_reference':True}
     report['pass']=True
     write_graph(out/'acceptance.json',report)
     print(json.dumps(report,indent=2))

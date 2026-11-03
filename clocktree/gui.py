@@ -386,9 +386,10 @@ class ClockTreeApp(tk.Tk):
         self.add_layer_button.pack(side='left')
         self.remove_layer_button=ttk.Button(layer_actions,text='删除当前层',command=self.remove_layer)
         self.remove_layer_button.pack(side='left',padx=(5,0))
-        self.layer_title=ttk.Label(settings,text='L1 · RTL 层次范围',style='Small.TLabel')
+        self.layer_title=ttk.Label(settings,text='L1 · RTL 父层路径',style='Small.TLabel')
         self.layer_title.pack(anchor='w')
         ttk.Entry(settings,textvariable=self.hierarchy_var).pack(fill='x',pady=(5,10))
+        ttk.Label(settings,text='填写父层路径，仅查本层直接例化\n不递归查找子层次中的 module',style='Muted.TLabel').pack(anchor='w',pady=(0,8))
         self.rules_tree=ttk.Treeview(settings,columns=('kind','inputs','output'),show='tree headings',height=3,selectmode='browse')
         self.rules_tree.heading('#0',text='Module')
         self.rules_tree.heading('kind',text='类型')
@@ -890,7 +891,7 @@ class ClockTreeApp(tk.Tk):
         self._filling=True
         self.hierarchy_var.set(self.layers[index-1].get('hierarchy',''))
         self._filling=False
-        self.layer_title.configure(text='L{} · RTL 层次范围'.format(index))
+        self.layer_title.configure(text='L{} · RTL 父层路径'.format(index))
         for i,button in enumerate(self.layer_buttons,1):
             button.configure(style='LayerActive.TButton' if i==index else 'Layer.TButton')
         self.refresh_rules()

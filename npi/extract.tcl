@@ -56,6 +56,29 @@ proc ct_scope_match {path scope} {
     set scope [string trimright $scope ./]
     return [expr {$scope eq "" || $path eq $scope || [string first "$scope." $path] == 0 || [string first "$scope\[" $path] == 0}]
 }
+proc ct_find_direct_instances {root module result} {
+    # npiInternalScope returns immediate scopes, including module-array elements.
+    # Do not descend into returned modules or generate blocks and do not use the
+    # recursive L1 find wrapper followed by a path-depth filter.
+    upvar 1 $result matches
+    set matches {}
+    set visited 0
+    set iterator [npi_iterate -type npiInternalScope -refHandle $root]
+    if {$iterator eq ""} {return 0}
+    while {[set child [npi_scan -iterator $iterator]] ne ""} {
+        incr visited
+        if {[npi_get_str -property npiType -object $child] eq "npiModule" &&
+            [npi_get_str -property npiDefName -object $child] eq $module} {
+            lappend matches $child
+        } else {
+            npi_release_handle -object $child
+        }
+    }
+    return $visited
+}
+proc ct_release_instances {handles} {
+    foreach handle $handles {npi_release_handle -object $handle}
+}
 proc ct_inside_trace_scope {hdl} {
     global ct_trace_scope
     if {$ct_trace_scope eq ""} {return 1}
@@ -433,7 +456,8 @@ proc ct_main {} {
     }
     if {[tell $ct_stream] == 0} {
         ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
-            verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] raw_protocol 2 module_checkpoint_protocol 1]
+            verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] \
+            instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1]
         flush $ct_stream
         ct_save_checkpoint import 0 0
     }
@@ -497,15 +521,19 @@ proc ct_main {} {
         }
         lassign $query scope module
         ct_worker_status enumerate "$scope / $module"
-        set scope_found [expr {[npi_handle_by_name -name $scope -scope ""] ne ""}]
+        set root_handle [npi_handle_by_name -name $scope -scope ""]
+        set scope_found [expr {$root_handle ne ""}]
         set handles {}
         if {$scope_found} {
-            puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules]"
+            puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules] mode=direct_children"
             flush stdout
-            ct_journal item_begin modules [ct_object query_index $query_count scope [ct_js $scope] module [ct_js $module]] "native instance query"
-            ::npi_L1::npi_find_inst_with_def_wildcard $scope $module handles
+            ct_journal item_begin modules [ct_object query_index $query_count scope [ct_js $scope] module [ct_js $module] \
+                search_mode [ct_js direct_children]] "native instance query"
+            set visited [ct_find_direct_instances $root_handle $module handles]
+            npi_release_handle -object $root_handle
             ct_journal item_end modules [ct_object query_index $query_count scope [ct_js $scope] module [ct_js $module] candidates [llength $handles]] "native query returned"
             ct_emit [ct_object event [ct_js scoped_query] query_index $query_count scope [ct_js $scope] module [ct_js $module] \
+                search_mode [ct_js direct_children] recursive false visited_children $visited \
                 rules [llength $rules] candidates [llength $handles] resumed_rules [expr {max(0,$ct_resume_completed_modules-$module_cursor)}]]
         }
         set rule_index 0
@@ -529,7 +557,6 @@ proc ct_main {} {
         } else {
           foreach hdl $handles {
             set path [npi_get_str -property npiFullName -object $hdl]
-            if {![ct_scope_match $path $scope]} {continue}
             if {$ct_trace_scope ne "" && ![ct_scope_match $path $ct_trace_scope]} {error "NPI returned target outside port trace root: $path"}
             incr matched
             if {[dict exists $ct_instances $path]} {
@@ -544,12 +571,13 @@ proc ct_main {} {
         }
         if {$scope_found && !$matched} {
             set status missing_module
-            ct_emit [ct_object event [ct_js diagnostic] code [ct_js missing_module] module [ct_js $module] hierarchy [ct_js $scope] layer $layer]
+            ct_emit [ct_object event [ct_js diagnostic] code [ct_js missing_module] module [ct_js $module] hierarchy [ct_js $scope] \
+                search_mode [ct_js direct_children] message [ct_js "No matching direct child module; nested instances are not searched"] layer $layer]
         }
         puts "CT7_ENUM layer=$layer module=$module instances=$matched"
         flush stdout
         set committed_queries [expr {$rule_index == [llength $rules] ? $query_count : $query_count-1}]
-        if {$rule_index == [llength $rules]} {unset handles}
+        if {$rule_index == [llength $rules]} {ct_release_instances $handles; unset handles}
         if {[ct_commit_module $committed_queries $query_count $rule_index $layer $scope $module $matched \
                 [expr {[dict size $ct_instances]-$before}] $status]} {return}
         }

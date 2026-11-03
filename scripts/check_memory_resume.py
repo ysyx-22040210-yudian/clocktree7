@@ -137,6 +137,7 @@ def main():
     extraction = importlib.import_module('clocktree.extract')
     actual_runner = extraction.run_verdi
     report = {'actual_rss_monitor': actual_rss(out / 'actual-rss'), 'npi': []}
+    direct_soc=False
     for mode, relative in [('clock', 'module/clock-bounded/config.json'), ('reset', 'generate/reset-bounded/config.json')]:
         config = ROOT / 'validation/low-memory/scoped' / relative
         baseline = extraction.extract(config, out / (mode + '-baseline'))
@@ -145,7 +146,9 @@ def main():
             def run(command, work, environment, raw, log_path, output, cfg):
                 script = Path(work) / 'clocktree-extract.tcl'
                 code = script.read_text(encoding='utf-8')
-                code = code.replace('if {[catch {ct_main} message]}', HOOK + (SOFT_HOOK if kind == 'soft' else HARD_HOOK) + '\nif {[catch {ct_main} message]}')
+                hook=SOFT_HOOK if kind=='soft' else HARD_HOOK
+                if direct_soc:hook=hook.replace('query_count}] == 2','query_count}] == 1')
+                code = code.replace('if {[catch {ct_main} message]}', HOOK + hook + '\nif {[catch {ct_main} message]}')
                 script.write_text(code, encoding='utf-8')
                 actual_peak = [0]
                 def sample(pid):
@@ -183,16 +186,22 @@ def main():
                 'instances': len(result['nodes']), 'edges': len(result['edges']), 'trace_ids_unique': True,
                 'both_direction_evidence_equal': True, 'actual_60_gib_allocation': False, 'samples': injection_samples})
     if args.soc:
+        from check_direct_instances import direct_soc_config
+        cfg,source,expected=direct_soc_config(out)
+        baseline=extraction.extract(source,out/'openc910-direct-baseline')
+        assert baseline['summary']['connectivity_complete'] and {n['id'] for n in baseline['nodes']}==expected
+        direct_soc=True
         kind, injection_samples = 'hard', []
         extraction.run_verdi = run
         try:
-            soc = extraction.extract(ROOT / 'validation/configs/openc910_ordered7_kdb.json', out / 'openc910-hard')
+            soc = extraction.extract(source, out / 'openc910-hard')
         finally:
             extraction.run_verdi = actual_runner
-        same_graph(read_graph(ROOT / 'validation/runs/openc910-ordered7-01/clocktree.json'), soc)
+        same_graph(baseline, soc)
         guard = soc['metadata']['memory_protection']
-        assert guard['restart_count'] == 2 and len(soc['nodes']) == 6984 and len(soc['edges']) == 6983
-        report['soc'] = {'pass': True, 'instances':6984, 'edges':6983, 'terminals':6959, 'restarts':2,
+        assert guard['restart_count'] == 2 and len(soc['nodes']) == len(expected)
+        report['soc'] = {'pass': True, 'instances':len(expected), 'edges':len(soc['edges']), 'scope':cfg['trace_scope'],
+                         'full_chip':False,'restarts':2,
                          'full_graph_and_dual_evidence_equal':True, 'actual_60_gib_allocation':False, 'samples':injection_samples}
     # A real threshold below the controller's own RSS must stop, not loop.
     blocked = out / 'baseline-too-large'

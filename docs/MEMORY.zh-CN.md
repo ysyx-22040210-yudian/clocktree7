@@ -80,6 +80,20 @@ CentOS 7.9、Python 3.6.8、Tk 8.5.13、SQLite 3.7.17、Verdi O-2018.09-SP2：
 
 内存保护检查分开执行：真实子进程分配 128 MiB，在 0.12 GiB 阈值下触发两次实际 RSS 重启；真实 Verdi 时钟和复位提取在确定位置注入 55/61 GiB 读数，分别验证正常轮换及强制回退，恢复后的实例、连线和双向证据一致。注入验证没有实际分配 60 GiB，尚未获得商业芯片在 64G 任务额度下的实测结论。
 
+自定义阈值另使用**真实 Verdi 进程内存增长**验收：只在测试工作区的 Tcl 中申请非零字符串，生产 `/proc` 采样、阈值判断、重启及恢复代码保持原样，没有修改或注入 RSS 读数。时钟和复位小型 RTL 各检查正常轮换及强制重启，并检查 CLI 覆盖配置值：
+
+| 自定义阈值 | 观测到的触发 RSS | 结果 |
+| --- | --- | --- |
+| 0.5 GiB | 约 0.475 GiB | 时钟、复位均触发两次正常轮换，继续完成。 |
+| 0.375 GiB | 约 0.437–0.438 GiB | 时钟、复位均触发两次强制重启，撤回未提交记录后完成。 |
+| 配置 0.5，CLI 覆盖为 0.625 GiB | 约 0.687 GiB | 实际使用 0.625，触发两次强制重启后完成。 |
+
+五组结果的全部实例、连线、边界和双向路径与不中断运行的对照一致，实例/trace ID 无重复，旧 Verdi 均已退出。阈值低于基线时验证连续三次失败即停止，不生成完整结果。GUI 还验证了显示真实的“两次重启”，将阈值改为 0.42 后保存配置并在新进程重开恢复。
+
+![自定义 0.375 GiB 阈值，真实 RSS 超限并重启两次后的结果](images/real-threshold-retries.png)
+
+强制重启样例刻意一次申请超过阈值的内存，因此观测值高于设定值；这是每秒采样触发的保护，并非操作系统强制内存配额。该检查使用小型 RTL 与受控实际分配，不等同于商业芯片的自然内存负载。
+
 源码中可复现：
 
 ```bash
@@ -87,6 +101,7 @@ python3 scripts/check_scoped_trace.py --out validation/low-memory/scoped
 python3 scripts/check_memory_resume.py --soc
 python3 scripts/check_memory_gui.py
 python3 scripts/check_indexed_gui.py
+python3 scripts/check_real_memory_threshold.py --gui
 ```
 
 后三类 GUI 检查须在图形会话中运行。`profile_low_memory.py` 支持分别运行旧版后处理、索引后处理和两种结果打开基准，测量各自独立进程的 RSS。完整原始记录保存在本机 `validation/`，不随源码包分发。

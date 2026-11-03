@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：1.6 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：1.6.1 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -1237,4 +1237,8 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 <h3 id="253">25.3 配置、限制和故障处理</h3>
 <p>保存配置会包含顶层 <code>"memory_limit_gib": 60</code>，缺少该字段时默认也是 60。CLI 可以追加 <code>--memory-limit-gib 60</code>，或使用 0 关闭。</p>
 <p>如果导入 elab、恢复已选端口或单个 NPI 查询本身就超过阈值，重启不能使该操作变小，需要缩小层次、拆分查询或增加内存。应保持同次任务的 RTL/elab 输入不变。采样无法保证抢在所有瞬时峰值或调度器 OOM 之前；60 GiB 也不一定等于集群“60G”的单位。</p>
-<p>自动续跑针对同一控制进程内的 Verdi 轮换。如果整个任务被杀，重新在当前目录发起提取仍创建新任务并归档旧证据。完整机制、文件含义、实测边界及验收命令见 <a href="MEMORY.zh-CN.md">内存优化与重启续跑</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>自动续跑针对同一控制进程内的 Verdi 轮换。如果整个任务被杀，重新在当前目录发起提取仍创建新任务并归档旧证据。完整机制、文件含义、实测边界及验收命令见 <a href="MEMORY.zh-CN.md">内存优化与重启续跑</a>。</p>
+<h3 id="254">25.4 自定义阈值的实际验证</h3>
+<p>60 GiB 是默认值，输入框可修改。虚拟机已使用 0.375、0.5、0.625 GiB 等小阈值，让真实 Verdi 进程实际申请内存并触发重启，没有替换 RSS 读数。时钟和复位小型 RTL 的五组检查均在重启两次后完成，实例、连线和双向证据与不中断运行一致。</p>
+<p>下图为阈值 0.375 GiB、观测峰值约 0.438 GiB、重启两次的真实界面。GUI 修改为 0.42 GiB 后保存配置、关闭并重开，仍恢复该自定义值及已完成结果。完整表格及复现命令见 <a href="MEMORY.zh-CN.md#实测与复现">自定义阈值实测</a>。</p>
+<p><a class="figure" href="images/real-threshold-retries.png" target="_blank"><img alt="自定义阈值与真实重启结果" src="images/real-threshold-retries.png" /></a></p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

@@ -11,9 +11,12 @@
 - 真实 Verdi 的时钟、复位分别在模块枚举和端口追踪阶段注入 55/61 GiB 读数，验证软轮换和强制终止回退；各经历两次重启后，完整实例/边集合、双向路径及边界证据与不中断提取一致，实例及 trace ID 没有重复，原始证据仅一个最终完成标志。
 - OpenC910 全量 Verdi 在枚举和追踪各注入一次强制重启，最终 **6,984 实例 / 6,983 边 / 6,959 末端，13,968/13,968 追踪**，完整拓扑和全部双向路径与原始结果一致。测试没有实际分配 60 GiB；商业芯片 64G 额度的结果仍需目标设备实测。
 - 低于基线的真实阈值验证：同一断点连续 3 次无法推进即停止，不生成完整结果；普通 EDA 错误不会被误当内存重试。GUI 阈值、读数、配置保存与关闭重开，以及取消时同时结束 CLI 与 Verdi 的两个进程组均通过。
+- 自定义阈值的真实 Verdi RSS 检查：测试只在工作区 Tcl 中实际申请内存，不改写生产采样器。时钟、复位各在 0.5 GiB 下于约 0.475 GiB 正常轮换两次，在 0.375 GiB 下于约 0.437–0.438 GiB 强制重启两次；配置为 0.5、CLI 覆盖 0.625 的第五组于约 0.687 GiB 触发两次重启。五组均完成，所有实例、连线、边界、双向路径与对照一致，trace ID 不重复且旧工作进程退出。GUI 将自定义值改为 0.42 后保存、新进程恢复，并显示真实的两次重启。该项是小型 RTL 的受控实际内存增长测试，不是 60 GiB 分配或商业负载测试。
 - 当前 Windows Python 检查 **97 通过，跳过 1 项 Linux 符号链接检查**。VM 保持 Python 3.6.8、Tk 8.5.13、SQLite 3.7.17 和 Verdi O-2018.09-SP2，生产依赖仍为 Python 标准库和系统 EDA。
 
 原始记录：本机 `validation/low-memory/profiles/`、`validation/low-memory/gui/`、`validation/low-memory/gui-final/`、`validation/memory-resume/full-acceptance/acceptance.json` 与 `validation/memory-resume/gui-final/acceptance.json`。复现脚本为 `profile_low_memory.py`、`check_indexed_gui.py`、`check_memory_resume.py --soc`、`check_memory_gui.py`。设置和行为详见 [内存优化与重启续跑](MEMORY.zh-CN.md)。
+
+自定义阈值真实 RSS 的复现脚本为 `scripts/check_real_memory_threshold.py --gui`；五组报告、每次内存审计、原始证据、GUI 保存重开记录在本机 `validation/real-memory-threshold/run02/`。
 
 ## 实际提取结果
 

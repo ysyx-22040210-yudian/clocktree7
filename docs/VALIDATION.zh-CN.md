@@ -2,6 +2,19 @@
 
 更新日期：2026-11-04。数据来自本地实际保存的 Verdi NPI 结果和 Tk 界面验收；以下为可随源码分享的摘要。完整原始记录保留在本机 `validation/`，不随仓库上传。
 
+## 运行节点与异常退出定位
+
+- 原生 Tk 显示准备、导入、查找、追踪、拓扑、索引、结果、显示 8 个节点，以及当前 module/范围/实例/端口/方向和最近断点。真实窗口验证蓝色运行状态、完成状态、节点点击筛选及中断后的诊断入口。
+- 真实 Verdi 的时钟 13/13、复位 11/11 端口追踪均有成对开始/结束日志；6/4 和 5/3 实例/连接、边界及全部双向证据与对照一致。
+- 在导入、范围内原生 module 查询、逐端口追踪时分别杀死 Verdi 进程组，3 项均定位为相应阶段及 `SIGKILL`；查询包含 module/范围，追踪包含实例/pin/方向/trace ID。部分结果不会被记录为后端正常完成。
+- 在查找、追踪、拓扑、索引和 JSON 写出时杀死整个控制进程，5 项均从持久记录识别 `interrupted`，后处理不会误用已经结束的 Verdi 追踪阶段。不会仅凭退出信号推断 OOM。
+- 在真实 Tk 布局和绘图阶段分别杀死 GUI，均保留具体阶段；新进程重开后仍可通过 `previous_gui_issue` 查到上次位置。界面逐端口实时显示、日志源切换、节点快照、完整结果显示和诊断入口通过。
+- 后端每次运行有独立日志及根目录副本；同目录重跑保留历史，配置失败也写阶段日志。CLI `diagnose` 只读记录，不依赖 EDA。Linux 使用进程启动身份防止 PID 复用误判，Windows 只查询进程句柄。
+- OpenC910 真实 NPI 回归仍为 **6,984 实例 / 6,983 连线 / 13,968 次追踪**，全部双向证据与对照一致。逐 module 断点、共享查询中的 3 次续跑、阈值为 0，以及实际 RSS 小阈值的 5 组重启检查再次通过。
+- 当前 Windows Python 检查 **111 通过，1 项 Linux 符号链接检查跳过**。一次全量检查遇到本机 Conda Tcl 的暂时性 `init.tcl` 读取失败；单项及随后全量重跑通过。VM 的原生 Tk 检查未出现该问题。
+
+复现：`scripts/check_runtime_stages.py`，图形项追加 `--gui-only`。本机记录在 `validation/runtime-stages/acceptance/acceptance.json` 和 `gui-acceptance.json`。中断为测试进程/临时 Tcl 包装注入；没有向生产提取添加超时或暂停逻辑。本项未在商业芯片上复现真实 64G OOM。
+
 ## 内存优化与 Verdi 重启续跑
 
 - 删除非必要全芯片统计，按相同查询根＋module 复用查找；回收队列项、共享路径前缀、逐终点写入，Python 逐事件处理，SQLite 保存证据与结果索引，完整 JSON 流式导出。
@@ -14,7 +27,7 @@
 - 自定义阈值的真实 Verdi RSS 检查：测试只在工作区 Tcl 中实际申请内存，不改写生产采样器。时钟、复位各在 0.5 GiB 下于约 0.475 GiB 正常轮换两次，在 0.375 GiB 下于约 0.437–0.438 GiB 强制重启两次；配置为 0.5、CLI 覆盖 0.625 的第五组于约 0.687 GiB 触发两次重启。五组均完成，所有实例、连线、边界、双向路径与对照一致，trace ID 不重复且旧工作进程退出。GUI 将自定义值改为 0.42 后保存、新进程恢复，并显示真实的两次重启。该项是小型 RTL 的受控实际内存增长测试，不是 60 GiB 分配或商业负载测试。
 - 每条 module 规则结束后独立保存快照并强制额外 RSS 检查：真实时钟 5 条、复位 2 条规则分别对应 5 / 2 次检查，日志确认下一条查找在前一条检查确认之后执行。4 条重复规则共用一个 NPI 查询时，在规则 1/2/3 后连续重启 3 次，查询组数仍为 0、实例数仍为 1，但规则游标正确推进；最终保存全部 8 条规则断点，图和双向证据与对照一致。快照中的原始数据/实例清单偏移均落在完整记录边界。
 - 零匹配、无效层次保存失败状态并保持结果不完整；阈值为 0 时仍保存每条断点。OpenC910 保存 3 条 module 规则断点，6,984 实例 / 6,983 连线和全部双向证据一致。实际 RSS 的五组小阈值测试再次通过，GUI 显示逐 module 提交数量，保存重开、取消两个进程组通过。
-- 当前 Windows Python 检查 **101 通过，跳过 1 项 Linux 符号链接检查**。VM 保持 Python 3.6.8、Tk 8.5.13、SQLite 3.7.17 和 Verdi O-2018.09-SP2，生产依赖仍为 Python 标准库和系统 EDA。
+- 加入阶段记录前的 Windows Python 检查为 **101 通过，跳过 1 项 Linux 符号链接检查**。VM 保持 Python 3.6.8、Tk 8.5.13、SQLite 3.7.17 和 Verdi O-2018.09-SP2，生产依赖仍为 Python 标准库和系统 EDA。
 
 原始记录：本机 `validation/low-memory/profiles/`、`validation/low-memory/gui/`、`validation/low-memory/gui-final/`、`validation/memory-resume/full-acceptance/acceptance.json` 与 `validation/memory-resume/gui-final/acceptance.json`。复现脚本为 `profile_low_memory.py`、`check_indexed_gui.py`、`check_memory_resume.py --soc`、`check_memory_gui.py`。设置和行为详见 [内存优化与重启续跑](MEMORY.zh-CN.md)。
 

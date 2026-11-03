@@ -20,6 +20,7 @@ from tkinter import ttk, filedialog, messagebox, font as tkfont
 
 from .config import load_config, validate_config
 from .paths import default_runs_dir
+from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule
@@ -28,6 +29,8 @@ from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_por
 from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
 from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
 from .indexed_view import IndexedGraphView
+from .runtime import RunJournal, read_json as runtime_json, diagnose, diagnose_gui, tail_text, stage_node, bind_gui, alive, LABELS
+from .stageview import StageView
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -136,7 +139,17 @@ class RuleDialog(tk.Toplevel):
 
 class ClockTreeApp(tk.Tk):
     def __init__(self, runs=None, result=None, config=None, remember=True, session_dir=None):
-        super().__init__(className='ClockTree7')
+        gui_base=Path(session_dir) if session_dir else user_state_root()/'gui-logs'
+        self.gui_journal=RunJournal(gui_base/('ui_'+uuid.uuid4().hex),prefix='gui')
+        latest=gui_base/'latest.json'
+        old=runtime_json(latest)
+        if old:write_json(gui_base/'previous.json',old)
+        write_json(latest,self.gui_journal.paths())
+        self.gui_journal.emit('begin','display','初始化 Tk 界面')
+        try:super().__init__(className='ClockTree7')
+        except BaseException as error:
+            self.gui_journal.fail(error)
+            raise
         self.title('ClockTree7  |  RTL 时钟树 / 复位树架构分析')
         icon=ROOT/'docs/clocktree7.gif'
         if icon.is_file():
@@ -173,6 +186,13 @@ class ClockTreeApp(tk.Tk):
         self._closing = False
         self._filling = False
         self._log_mtime = None
+        self._runtime_directory=None
+        self._runtime_state={}
+        self._runtime_stamp=None
+        self._log_filter=None
+        self._log_token=0
+        self._log_diagnosis=False
+        self._journal_rendering=False
         self._base_config = {}
         self._active_tree_type = 'clock'
         self._workspaces = {}
@@ -193,6 +213,9 @@ class ClockTreeApp(tk.Tk):
         self.analysis_var = tk.StringVar(value='时钟树')
         self.diagram_name = tk.StringVar(value='时钟树架构图')
         self._build()
+        self.diagram.runtime_journal=self.gui_journal
+        self.gui_journal.emit('end','display','Tk 工作台已初始化')
+        self.gui_journal.emit('finished','display','等待设计或历史恢复')
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.bind('<Control-o>', lambda e:self.open_config())
         self.bind('<Control-s>', lambda e:self.save_config())
@@ -428,6 +451,8 @@ class ClockTreeApp(tk.Tk):
         title.pack(fill='x')
         ttk.Label(title,textvariable=self.diagram_name,style='Title.TLabel').pack(side='left')
         ttk.Label(title,textvariable=self.view_label,style='Muted.TLabel').pack(side='right')
+        self.stage_view=StageView(self.center,self.family,self.show_stage_log)
+        self.stage_view.pack(fill='x')
         stats=ttk.Frame(self.center,padding=(10,4,10,12),style='White.TFrame')
         self.stats_frame=stats
         stats.pack(fill='x')
@@ -502,6 +527,15 @@ class ClockTreeApp(tk.Tk):
         self.log_toggle.pack(fill='x')
         self.log_frame=ttk.Frame(self.center,style='White.TFrame')
         self.log_visible=False
+        logbar=ttk.Frame(self.log_frame,style='White.TFrame',padding=(10,3))
+        logbar.pack(fill='x')
+        self.log_source=tk.StringVar(value='阶段日志')
+        choices=ttk.Combobox(logbar,textvariable=self.log_source,values=['阶段日志','Verdi 日志','CLI 日志','GUI 日志'],state='readonly',width=12)
+        choices.pack(side='left')
+        choices.bind('<<ComboboxSelected>>',lambda event:self.show_stage_log(None))
+        ttk.Button(logbar,text='阶段诊断',command=self.show_run_diagnosis).pack(side='left',padx=7)
+        self.log_path_label=ttk.Label(logbar,text='',style='Muted.TLabel')
+        self.log_path_label.pack(side='left',fill='x',expand=True)
         self.log_text=tk.Text(self.log_frame,height=6,font=(self.mono,8),bg='#f6f8fc',fg='#647792',relief='flat',wrap='word',padx=13,pady=8,state='disabled')
         scrollbar=ttk.Scrollbar(self.log_frame,command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
@@ -624,6 +658,8 @@ class ClockTreeApp(tk.Tk):
 
     def _load_previous_session(self,config_path=None,result_path=None):
         def worker():
+            self.gui_journal.emit('begin','session','恢复历史配置与结果索引',{'runs':str(self.runs),
+                'manifest':str(self._session_store.manifest)})
             try:
                 state=self._session_store.load()
             except Exception as error:
@@ -644,6 +680,7 @@ class ClockTreeApp(tk.Tk):
                     state.update(active=mode,origin='explicit')
             except Exception as error:
                 state['warnings'].append('启动指定文件未能加载：'+str(error))
+            self.gui_journal.emit('end','session','历史工作区读取完成')
             self.events.put(('session_loaded',state))
         threading.Thread(target=worker,daemon=True).start()
 
@@ -705,6 +742,7 @@ class ClockTreeApp(tk.Tk):
 
     def _finish_close(self):
         if not self._close_save_started:
+            self.gui_journal.emit('begin','session','保存退出前的历史配置与结果')
             self._save_session_now()
             self._close_save_started=True
         writer=self._session_writer
@@ -1078,9 +1116,13 @@ class ClockTreeApp(tk.Tk):
     def load_result(self,path):
         if self.busy:return
         path=Path(path).resolve()
+        self._runtime_directory=path.parent
+        self._runtime_stamp=None
+        bind_gui(path.parent,self.gui_journal)
         self._set_busy('load')
         self._badge('正在载入架构图','busy')
         self.set_status('读取提取结果：{}'.format(path))
+        self.gui_journal.emit('begin','load','打开结果与索引',{'result':str(path)})
         def worker():
             try:
                 graph=read_graph(path)
@@ -1089,11 +1131,23 @@ class ClockTreeApp(tk.Tk):
                 mode=tree_type(graph['config'])
                 if not isinstance(mode,str) or mode not in TREE_PROFILES or graph.get('tree_type',mode)!=mode:
                     raise ValueError('结果中的 tree_type 必须与配置一致，并为 clock 或 reset。')
+                self.gui_journal.emit('end','load','结果与索引读取完成',{'result':str(path)})
                 self.events.put(('loaded',graph,path,None))
-            except Exception as error:self.events.put(('error','结果打开失败',str(error)))
+            except Exception as error:
+                self.gui_journal.fail(error)
+                self.events.put(('error','结果打开失败',str(error)))
         threading.Thread(target=worker,daemon=True).start()
 
     def show_graph(self,graph,path=None,graph_token=None):
+        runtime=graph.get('metadata',{}).get('runtime',{})
+        if runtime.get('journal_directory') and Path(runtime['journal_directory']).is_dir():
+            self._runtime_directory=Path(runtime['journal_directory'])
+            self._runtime_stamp=None
+        elif path:
+            self._runtime_directory=Path(path).parent
+            self._runtime_stamp=None
+        if path:bind_gui(Path(path).parent,self.gui_journal)
+        self.diagram.runtime_context={'result':str(path) if path else None,'backend_run_id':runtime.get('run_id')}
         self.set_config(graph['config'])
         self.graph=graph
         self.graph_file=Path(path) if path else None
@@ -1152,12 +1206,18 @@ class ClockTreeApp(tk.Tk):
             self.show_error('无法开始提取',error)
             return
         self.job_dir=directory
+        bind_gui(directory,self.gui_journal)
+        self._runtime_directory=directory
+        self._runtime_state={}
+        self._runtime_stamp=None
         self._log_mtime=None
         self.cancel_event.clear()
         self._set_busy('extract')
         self._badge('正在解析 elab · 提取全网','busy')
         self.set_status('正在执行 NPI，界面可继续缩放和查看已有架构图。')
         self.show_log(True)
+        self.log_source.set('阶段日志')
+        self._log_filter=None
         self._replace_text(self.log_text,'启动真实 Verdi NPI 提取：{}\n'.format(identifier))
         command=[sys.executable,'-m','clocktree','extract','--config',str(path),'--out',str(directory)]
         write_json(directory/'gui-job.json',{'state':'running','command':command,'workspace':str(ROOT)})
@@ -1173,12 +1233,17 @@ class ClockTreeApp(tk.Tk):
                 self.process=None
                 if self.cancel_event.is_set():self.events.put(('cancelled',directory))
                 elif code in (0,2) and result_path.is_file():
-                    self.events.put(('loaded',read_graph(result_path),result_path,directory))
+                    self.gui_journal.emit('begin','load','读取新生成结果',{'result':str(result_path)})
+                    graph=read_graph(result_path)
+                    self.gui_journal.emit('end','load','新结果索引已打开',{'result':str(result_path)})
+                    self.events.put(('loaded',graph,result_path,directory))
                 else:
-                    detail=(directory/'cli.log').read_text(encoding='utf-8',errors='replace')[-6000:]
+                    location=diagnose(directory)
+                    detail='最后阶段：{}\n{}\n'.format(location.get('label','尚未进入后端'),location.get('context',{}))+tail_text(directory/'cli.log',6000)
                     self.events.put(('error','提取失败',detail or '请查看运行目录中的 verdi.log。'))
             except Exception as error:
                 self.process=None
+                if self.gui_journal.state().get('stage')=='load':self.gui_journal.fail(error)
                 self.events.put(('error','提取失败',str(error)))
         threading.Thread(target=worker,daemon=True).start()
 
@@ -1232,6 +1297,11 @@ class ClockTreeApp(tk.Tk):
                     self._badge('提取已取消','warn')
                     self.set_status('当前任务已取消，运行目录和原始日志已保留。')
                     self.refresh_runs()
+                elif kind=='stage_log':
+                    if item[3]==self._log_token:
+                        self._replace_text(self.log_text,item[1])
+                        self.log_text.see('end')
+                        self.log_path_label.configure(text=item[2])
         except queue.Empty:pass
         if self.job_kind=='extract' and self.job_dir:
             memory_file=self.job_dir/'memory.json'
@@ -1245,27 +1315,30 @@ class ClockTreeApp(tk.Tk):
                     module=memory.get('last_checkpoint',{}).get('last_module')
                     if module:self.memory_status.set(self.memory_status.get()+'\n断点 {} · L{} {}'.format(module['index'],module['layer'],module['module'][-30:]))
             except (OSError,ValueError,KeyError):pass
-            log=self.job_dir/'verdi.log'
-            if log.is_file():
-                stamp=(log.stat().st_mtime,log.stat().st_size)
+            # Progress is independent of the user's selected log source.
+            value=tail_text(self.job_dir/'verdi.log',16000)
+            progress=re.findall(r'CT7_TRACE (\d+)/(\d+)',value)
+            if progress:
+                done,total=map(int,progress[-1])
+                self.progress.stop()
+                self.progress.configure(mode='determinate',value=100*done/max(1,total))
+                self._badge('正在追踪端口 · {:,} / {:,}'.format(done,total),'busy')
+            else:
+                modules=re.findall(r'CT7_MODULE_CHECKPOINT index=(\d+)/(\d+)',value)
+                if modules:
+                    done,total=map(int,modules[-1])
+                    self._badge('模块查找已提交断点 · {} / {}'.format(done,total),'busy')
+        self._update_runtime_view()
+        if self.log_visible and self._log_filter is None and not self._log_diagnosis:
+            log=self._selected_log()
+            try:
+                stamp=(str(log),log.stat().st_mtime,log.stat().st_size)
                 if stamp!=self._log_mtime:
                     self._log_mtime=stamp
-                    with log.open('rb') as stream:
-                        stream.seek(max(0,log.stat().st_size-16000))
-                        value=stream.read().decode('utf-8','replace')
-                    self._replace_text(self.log_text,value)
+                    self._replace_text(self.log_text,tail_text(log))
                     self.log_text.see('end')
-                    progress=re.findall(r'CT7_TRACE (\d+)/(\d+)',value)
-                    if progress:
-                        done,total=map(int,progress[-1])
-                        self.progress.stop()
-                        self.progress.configure(mode='determinate',value=100*done/max(1,total))
-                        self._badge('正在追踪端口 · {:,} / {:,}'.format(done,total),'busy')
-                    else:
-                        modules=re.findall(r'CT7_MODULE_CHECKPOINT index=(\d+)/(\d+)',value)
-                        if modules:
-                            done,total=map(int,modules[-1])
-                            self._badge('模块查找已提交断点 · {} / {}'.format(done,total),'busy')
+                    self.log_path_label.configure(text=str(log))
+            except OSError:pass
         if self._closing and (not self.busy or self.job_kind=='session_save'):
             self._finish_close()
             if self._destroying:return
@@ -1287,6 +1360,12 @@ class ClockTreeApp(tk.Tk):
                     status={'cancelled':'已取消','failed':'失败','running':'运行中'}.get(job.get('state'),'—')
                     count='—'
                 else:continue
+                runtime=runtime_json(directory/'run-status.json',{})
+                current=runtime.get('state')
+                if current in ('running','restarting') and alive(runtime.get('owner')) is False:current='interrupted'
+                if current in ('running','restarting','failed','interrupted','cancelled'):
+                    status={'running':'运行中','restarting':'重启中','failed':'失败','interrupted':'中断','cancelled':'已取消'}[current]
+                    status+=' · '+LABELS.get(runtime.get('stage'),'阶段日志')
                 self.runs_tree.insert('','end',iid=directory.name,text=directory.name,values=(count,status))
             except (OSError,ValueError,KeyError):continue
 
@@ -1295,12 +1374,15 @@ class ClockTreeApp(tk.Tk):
         if not selection:return
         directory=self.runs/selection[0]
         result=directory/result_filename({'tree_type':self._active_tree_type})
-        if result.is_file():self.load_result(result)
+        runtime=runtime_json(directory/'run-status.json',{})
+        interrupted=runtime.get('state') in ('failed','cancelled','interrupted') or (
+            runtime.get('state') in ('running','restarting') and alive(runtime.get('owner')) is False)
+        if result.is_file() and not interrupted:self.load_result(result)
         else:
-            path=directory/'verdi.log'
-            if path.is_file():
-                self._replace_text(self.log_text,path.read_text(encoding='utf-8',errors='replace')[-16000:])
-                self.show_log(True)
+            self._runtime_directory=directory
+            self._runtime_stamp=None
+            self._update_runtime_view()
+            self.show_run_diagnosis()
             self.set_status('该记录未生成完整结果：{}'.format(directory))
 
     def refresh_nodes(self):
@@ -1498,6 +1580,89 @@ class ClockTreeApp(tk.Tk):
         else:self.log_frame.pack_forget()
         self.log_toggle.configure(text='任务日志与诊断  '+('▾' if visible else '▴'))
 
+    def _update_runtime_view(self):
+        directory=self._runtime_directory
+        files=([directory/'run-status.json'] if directory else [])+[self.gui_journal.status_file]
+        stamp=[]
+        for path in files:
+            try:stamp.append((str(path),path.stat().st_mtime,path.stat().st_size))
+            except OSError:stamp.append((str(path),None))
+        # One idle redraw per second also notices an owner killed without a final write.
+        stamp.append(int(time.monotonic()))
+        if stamp==self._runtime_stamp:return
+        self._runtime_stamp=stamp
+        state=runtime_json(directory/'run-status.json',{}) if directory else {}
+        if state.get('state') in ('running','restarting') and alive(state.get('owner')) is False:
+            report=diagnose(directory)
+            state.update(stage=report.get('stage'),context=report.get('context',{}))
+            state['state']='interrupted'
+            for key,value in list(state.setdefault('steps',{}).items()):
+                if value=='running':state['steps'][key]='pending'
+            state.setdefault('steps',{})[stage_node(state.get('stage'))]='interrupted'
+        self._runtime_state=state
+        self.stage_view.update_state(state,self.gui_journal.state())
+
+    def _selected_log(self):
+        source=self.log_source.get()
+        if source=='GUI 日志' or (not self._runtime_directory and source=='阶段日志'):
+            return self.gui_journal.log_file
+        directory=self._runtime_directory or self.job_dir or self.runs
+        if source=='阶段日志':return directory/'run.log'
+        output=directory.parent.parent if directory.parent.name=='.clocktree-runs' else directory
+        return output/('verdi.log' if source=='Verdi 日志' else 'cli.log')
+
+    def show_stage_log(self,stage=None):
+        self.show_log(True)
+        self._log_filter=stage
+        self._log_diagnosis=False
+        self._log_token+=1
+        token=self._log_token
+        if stage:self.log_source.set('GUI 日志' if stage=='display' else '阶段日志')
+        log=self._selected_log()
+        self._log_mtime=None
+        if not stage:
+            self._replace_text(self.log_text,tail_text(log) or '尚无日志：'+str(log))
+            self.log_text.see('end')
+            self.log_path_label.configure(text=str(log))
+            return
+        self._replace_text(self.log_text,'正在读取 {} 阶段记录…'.format(LABELS.get(stage,stage)))
+        def worker():
+            from collections import deque
+            lines=deque(maxlen=160)
+            events=log.with_name(log.stem+'-events.jsonl')
+            try:
+                with events.open(encoding='utf-8') as stream:
+                    for line in stream:
+                        if token!=self._log_token:return
+                        try:event=json.loads(line)
+                        except ValueError:continue
+                        if stage_node(event.get('stage'))==stage:
+                            lines.append('{} [{}] {} {} {}'.format(event.get('timestamp',event.get('time_ms','')),
+                                event.get('kind',''),LABELS.get(event.get('stage'),event.get('stage')),
+                                event.get('detail',''),json.dumps(event.get('context',{}),ensure_ascii=False)))
+            except OSError:pass
+            self.events.put(('stage_log','\n'.join(lines) or '该阶段尚无记录。',str(events)+' · 最近 160 条（快照）',token))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def show_run_diagnosis(self):
+        self.show_log(True)
+        self._log_token+=1
+        self._log_diagnosis=True
+        self._log_filter=None
+        report=diagnose(self._runtime_directory) if self._runtime_directory else {}
+        report['current_gui']=diagnose_gui(self.gui_journal.directory)
+        previous=runtime_json(self.gui_journal.directory.parent/'previous.json',{})
+        if previous.get('journal_directory'):
+            issue=diagnose_gui(previous['journal_directory'])
+            if issue.get('state') in ('interrupted','failed'):report['previous_gui_issue']=issue
+        lines=['阶段诊断 · 最后进入 / 完成 / 断点 / 进程退出信息',
+               '后端：{} · {}'.format(report.get('label','尚未运行'),report.get('state','—')),
+               '当前对象：'+json.dumps(report.get('context',{}),ensure_ascii=False),
+               '日志缺少正常结束标志可定位中断位置；SIGKILL 或闪退本身不能证明 OOM。','',
+               json.dumps(report,ensure_ascii=False,indent=2)]
+        self._replace_text(self.log_text,'\n'.join(lines))
+        self.log_path_label.configure(text=str(self._runtime_directory or self.gui_journal.directory))
+
     def toggle_log(self):
         self.show_log(not self.log_visible)
 
@@ -1544,11 +1709,17 @@ class ClockTreeApp(tk.Tk):
         if self._session_writer:
             if not self._close_save_started:self._save_session_now()
             self._session_writer.close()
+        self.gui_journal.emit('end','session','历史配置与结果保存流程结束')
+        self.gui_journal.emit('finished','display','GUI 正常关闭')
         for timer in self.tk.splitlist(self.tk.call('after','info')):
             # Native ttk timers contain Tcl command lists on Tk 8.5, which
             # Python 3.6's after_cancel cannot delete as Python callbacks.
             self.tk.call('after','cancel',timer)
         super().destroy()
+
+    def report_callback_exception(self,exc,value,tb):
+        self.gui_journal.fail(value)
+        super().report_callback_exception(exc,value,tb)
 
 
 def run_gui(runs=None,result=None,config=None,remember=True):

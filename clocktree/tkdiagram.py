@@ -64,6 +64,9 @@ class ClockDiagram(tk.Frame):
         self.selected, self.highlights = None, set()
         self.rendered_nodes, self.rendered_wires = {}, {}
         self._font_cache = {}
+        self.runtime_journal=None
+        self.runtime_context={}
+        self._record_first_paint=False
         self.visible_nodes = 0
         self._pending, self._drag = None, None
         self.canvas = tk.Canvas(self, bg='#101b2e', highlightthickness=0, borderwidth=0, cursor='arrow')
@@ -93,11 +96,16 @@ class ClockDiagram(tk.Frame):
         self.tree_type = tree_type(graph.get('config', graph))
         from .storage import IndexedGraph
         from .indexed_view import IndexedGraphView
-        self.model = IndexedGraphView(graph) if isinstance(graph, IndexedGraph) else GraphView(graph)
+        self._stage('begin','layout','建立架构视图模型')
+        try:self.model = IndexedGraphView(graph) if isinstance(graph, IndexedGraph) else GraphView(graph)
+        except BaseException as error:
+            if self.runtime_journal:self.runtime_journal.fail(error)
+            raise
         self.mode = 'hierarchy' if len(graph['nodes']) > 400 else 'instances'
         self.component, self.scope, self.depth = None, '', 5
         self.selected, self.highlights = None, set()
-        self.rebuild()
+        self.rebuild(record=False)
+        self._stage('end','layout','视图模型和初始布局已建立')
 
     def clear(self, mode='clock'):
         self.tree_type=mode
@@ -109,10 +117,20 @@ class ClockDiagram(tk.Frame):
         self.minimap.delete('all')
         self.schedule()
 
-    def rebuild(self, fit=True):
+    def _stage(self,kind,stage,detail,**context):
+        if self.runtime_journal:
+            self.runtime_journal.emit(kind,stage,detail,dict(self.runtime_context,**context))
+
+    def rebuild(self, fit=True, record=True):
         if not self.model:
             return
-        self.model.project(self.mode, self.component, self.scope, self.depth)
+        if record:self._stage('begin','layout','计算架构布局',mode=self.mode,scope=self.scope)
+        try:self.model.project(self.mode, self.component, self.scope, self.depth)
+        except BaseException as error:
+            if self.runtime_journal:self.runtime_journal.fail(error)
+            raise
+        if record:self._stage('end','layout','架构布局已完成',boxes=len(self.model.nodes))
+        self._record_first_paint=True
         self.mode = getattr(self.model, 'effective_mode', self.mode)
         if fit:
             self.fit()
@@ -178,7 +196,13 @@ class ClockDiagram(tk.Frame):
         self.mode, self.component, self.scope = 'instances', None, ''
         from .indexed_view import DETAIL_LIMIT
         if hasattr(self.model, 'project_focus') and len(self.model.original) > DETAIL_LIMIT:
-            self.model.project_focus(node)
+            self._stage('begin','layout','定位实例并读取局部连接',instance=node['id'])
+            try:self.model.project_focus(node)
+            except BaseException as error:
+                if self.runtime_journal:self.runtime_journal.fail(error)
+                raise
+            self._stage('end','layout','实例局部布局已完成',instance=node['id'])
+            self._record_first_paint=True
             self.schedule()
         else:
             self.rebuild(fit=False)
@@ -217,6 +241,18 @@ class ClockDiagram(tk.Frame):
         return x*self.scale+self.ox, y*self.scale+self.oy
 
     def paint(self):
+        record=self._record_first_paint
+        self._record_first_paint=False
+        if record:self._stage('begin','canvas','绘制新的架构视图',boxes=len(self.model.nodes))
+        try:self._paint()
+        except BaseException as error:
+            if self.runtime_journal:self.runtime_journal.fail(error)
+            raise
+        if record:
+            self._stage('end','canvas','架构视图绘制完成',visible_nodes=self.visible_nodes)
+            self._stage('finished','display','架构图已显示')
+
+    def _paint(self):
         self._pending = None
         c = self.canvas
         c.delete('all')

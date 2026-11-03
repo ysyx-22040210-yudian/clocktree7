@@ -16,6 +16,7 @@ from collections import OrderedDict
 
 from .config import tcl_string
 from .storage import write_graph
+from .runtime import RunJournal, WorkerEvents, process_identity
 
 
 GIB = 1024 ** 3
@@ -164,6 +165,8 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
               sampler=None, pause=None, popen=None, monitored=None):
     """Launch fresh workers; completed enumeration/trace batches survive rotation."""
     work, raw, log_path, output = map(Path, (work, raw, log_path, output))
+    record_stages=(output/'run-status.json').exists()
+    journal=RunJournal.attach(output)
     limit_gib = float(config.get('memory_limit_gib', DEFAULT_MEMORY_LIMIT_GIB))
     monitored = sys.platform.startswith('linux') if monitored is None else monitored
     enabled = monitored and limit_gib > 0
@@ -209,7 +212,11 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                         path.unlink()
                 context = attempt_dir / 'resume.tcl'
                 _context(context, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled)
-                worker_environment = dict(environment, CT7_RESUME=str(context))
+                worker_events=attempt_dir/'worker-events.jsonl'
+                reader=WorkerEvents(worker_events)
+                worker_environment = dict(environment, CT7_RESUME=str(context), CT7_WORKER_EVENTS=str(worker_events))
+                journal.emit('begin','worker','启动新的 Verdi 进程',{'completed_modules':checkpoint['completed_modules'],
+                    'completed_traces':checkpoint['completed_traces']},attempt=attempt,worker_events=str(worker_events),checkpoint=checkpoint)
                 report.update(state='running', last_checkpoint=checkpoint, current_rss_gib=None)
                 write_graph(report_path, report)
                 log.write('CT7_WORKER_BEGIN attempt={} queries={} traces={} modules={}\n'.format(attempt, checkpoint['completed_queries'], checkpoint['completed_traces'], checkpoint['completed_modules']))
@@ -219,12 +226,19 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                     kwargs['start_new_session'] = True
                 process = popen(command, **kwargs)
                 report['worker_pid'] = getattr(process, 'pid', None)
+                worker_identity=process_identity(process.pid) if getattr(process,'pid',None) else {}
+                journal.emit('progress','worker','Verdi 已启动',attempt=attempt,worker=worker_identity,
+                             worker_events=str(worker_events),durable=False)
                 memory_hit, soft_requested, rotation_rss = False, False, None
-                if not enabled:
+                if not enabled and not (record_stages and monitored):
                     code = process.wait()
                 else:
                     next_sample, serviced_module = 0., 0
                     while process.poll() is None:
+                        reader.drain(journal,attempt,worker_identity)
+                        if not enabled:
+                            pause(.1)
+                            continue
                         try:
                             pending_module = int(module_request.read_text(encoding='ascii').strip())
                         except (OSError, ValueError):
@@ -254,6 +268,8 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                                      'rss_gib': round(used, 3), 'limit_gib': limit_gib,
                                      'action': 'hard_stop' if used >= limit_gib else ('rotate' if soft_requested or control.exists() or used >= limit_gib*.9 else 'continue')}
                             report['last_module_check'] = check
+                            journal.emit('checkpoint','modules','module 断点与实时内存检查',
+                                         context=check,attempt=attempt,checkpoint=committed)
                             with (output / 'module-memory-checks.jsonl').open('a', encoding='utf-8') as audit:
                                 audit.write(json.dumps(check, ensure_ascii=False) + '\n')
                             log.write('CT7_MODULE_MEMORY_CHECK index={} rss_gib={:.3f} limit_gib={:.3f} action={}\n'.format(
@@ -284,16 +300,24 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                         pause(.1)
                     else:
                         code = process.wait()
+                reader.drain(journal,attempt,worker_identity,all_records=True)
                 process = None
                 checkpoint = read_checkpoint(checkpoint_path, signature, raw, targets, config)
                 try:
                     worker_status = json.loads(status.read_text(encoding='utf-8'))
                 except (OSError, ValueError):
                     worker_status = {}
+                last_stage=(reader.last or {}).get('stage') or journal.state().get('stage','worker')
+                last_context=(reader.last or {}).get('context',{})
+                journal.emit('worker_exit',last_stage,'Verdi 进程已退出',last_context,
+                             attempt=attempt,returncode=code,worker=worker_identity,checkpoint=checkpoint)
                 if checkpoint['stage'] == 'complete':
                     code = 0 if memory_hit else code
                     break
                 if not memory_hit and worker_status.get('stage') != 'rotating':
+                    journal.emit('failed',last_stage,'Verdi 在完整结束标志之前退出',last_context,
+                                 attempt=attempt,returncode=code,worker=worker_identity,checkpoint=checkpoint,
+                                 exit_signal=signal.Signals(-code).name if code<0 and -code in signal.Signals._value2member_map_ else None)
                     break  # an ordinary EDA failure is never a memory restart
                 key = tuple(checkpoint[k] for k in ('completed_queries', 'completed_modules', 'completed_traces', 'instances'))
                 stalls = stalls+1 if key == last_key else 1
@@ -318,6 +342,8 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                         'completed evidence is retained in {}. No modules were skipped.'.format(stalls, worker_status.get('stage', checkpoint['stage']),
                             checkpoint['completed_queries'], checkpoint['completed_traces'], work))
                 report['restart_count'] += 1
+                journal.emit('restart',last_stage,'内存保护轮换 Verdi',last_context,attempt=attempt,
+                             reason=reason,returncode=code,checkpoint=checkpoint,controlled_memory_restart=True)
                 log.write('CT7_MEMORY_RESTART next_attempt={} queries={} traces={}\n'.format(
                     attempt+1, checkpoint['completed_queries'], checkpoint['completed_traces']))
                 log.flush()
@@ -325,9 +351,11 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                           last_checkpoint=checkpoint, exit_code=code, current_rss_gib=None)
             write_graph(report_path, report)
             return code, attempt_dir, report
-    except BaseException:
+    except BaseException as error:
         if process is not None:
             _stop_worker(process)
+        if 'reader' in locals():reader.drain(journal,report['attempts'],locals().get('worker_identity',{}),all_records=True)
+        journal.fail(error,cancelled=isinstance(error,(KeyboardInterrupt,SystemExit)))
         if report.get('state') not in ('blocked', 'finished', 'failed'):
             report['state'] = 'interrupted'
             write_graph(report_path, report)

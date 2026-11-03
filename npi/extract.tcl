@@ -109,6 +109,25 @@ proc ct_result {status path args} {
     if {$path eq ""} {set path 0}
     return [ct_object status [ct_js $status] path_id $path {*}$args]
 }
+proc ct_journal {kind stage {context "{}"} {detail ""}} {
+    global env ct_journal_stream ct_journal_sequence ct_journal_stage ct_journal_context
+    if {![info exists env(CT7_WORKER_EVENTS)]} {return}
+    if {$context eq ""} {set context {{}}}
+    if {![info exists ct_journal_stream]} {
+        set ct_journal_stream [open $env(CT7_WORKER_EVENTS) a]
+        fconfigure $ct_journal_stream -encoding utf-8 -translation lf
+        set ct_journal_sequence 0
+    }
+    incr ct_journal_sequence
+    set ct_journal_stage $stage
+    set ct_journal_context $context
+    set record [ct_object time_ms [clock milliseconds] sequence $ct_journal_sequence pid [pid] \
+        source [ct_js verdi] kind [ct_js $kind] stage [ct_js $stage] detail [ct_js $detail] context $context]
+    puts $ct_journal_stream $record
+    flush $ct_journal_stream
+    puts "CT7_STAGE $record"
+    flush stdout
+}
 proc ct_terminal {result} {
     global ct_trace_id ct_result_count
     ct_emit [ct_object event [ct_js trace_result] trace_id $ct_trace_id result $result]
@@ -117,6 +136,8 @@ proc ct_terminal {result} {
 proc ct_walk {seed direction owner pin trace_id} {
     global ct_selected ct_instances ct_max_steps ct_owner_paths ct_top ct_trace_scope ct_trace_id ct_result_count ct_stream
     set ct_trace_id $trace_id
+    set trace_context [ct_object trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    ct_journal item_begin trace $trace_context "port trace begin"
     set ct_result_count 0
     ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
     # Dictionary FIFO: remove each entry as soon as it is processed. Entries
@@ -223,6 +244,7 @@ proc ct_walk {seed direction owner pin trace_id} {
     if {!$ct_result_count} {ct_terminal [ct_result error 0 message [ct_js "No terminal or target found; possible connectivity cycle"]]}
     ct_emit [ct_object event [ct_js trace_end] trace_id $trace_id result_count $ct_result_count path_steps $path_count]
     flush $ct_stream
+    ct_journal item_end trace $trace_context "port trace complete"
     return $ct_result_count
 }
 proc ct_atomic_json {path record {backup 0}} {
@@ -289,6 +311,7 @@ proc ct_commit_module {queries query rule layer scope module matched added statu
         new_instances $added status [ct_js $status]]
     ct_emit [ct_object event [ct_js module_checkpoint] checkpoint $ct_last_module]
     ct_save_checkpoint enumerate $queries 0
+    ct_journal checkpoint modules $ct_last_module "module checkpoint committed"
     puts "CT7_MODULE_CHECKPOINT index=$ct_completed_modules/$ct_total_modules query=$query rule=$rule layer=$layer module=$module scope=$scope matched=$matched status=$status"
     flush stdout
     ct_worker_status module_checkpoint "module $ct_completed_modules/$ct_total_modules L$layer $scope / $module"
@@ -312,6 +335,9 @@ proc ct_maybe_rotate {stage queries traces} {
 }
 proc ct_register_instance {path module layer inputs output kind source emit} {
     global ct_instances ct_selected ct_owner_paths ct_pins_to_trace ct_pin_count ct_context ct_target_stream
+    set register_stage [expr {$emit ? "modules" : "restore"}]
+    set register_context [ct_object instance [ct_js $path] module [ct_js $module] layer $layer]
+    ct_journal item_begin $register_stage $register_context "bind instance ports"
     dict set ct_instances $path $layer
     if {$emit} {
         ct_emit [ct_object event [ct_js instance] path [ct_js $path] module [ct_js $module] layer $layer \
@@ -346,6 +372,7 @@ proc ct_register_instance {path module layer inputs output kind source emit} {
         dict set ct_pins_to_trace $ct_pin_count [list $p $direction $path $pin]
         incr ct_pin_count
     }
+    ct_journal item_end $register_stage $register_context "instance ports bound"
 }
 proc ct_restore_targets {} {
     global ct_target_file ct_resume_instances ct_instances
@@ -370,6 +397,7 @@ proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
     global ct_resume_completed_modules ct_resume_last_module ct_completed_modules ct_last_module ct_saved_module ct_total_modules
+    ct_journal begin worker {} "read worker configuration"
     source $env(CT7_CONFIG)
     set ct_context [info exists env(CT7_RESUME)]
     if {$ct_context} {
@@ -410,6 +438,8 @@ proc ct_main {} {
         ct_save_checkpoint import 0 0
     }
     ct_worker_status import
+    ct_journal end worker {} "worker configuration ready"
+    ct_journal begin import [ct_object top [ct_js $ct_top]] "import elab / RTL"
     source $env(VERDI_HOME)/share/NPI/L1/TCL/npi_L1.tcl
     schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on
     puts "CT7_IMPORT_BEGIN"
@@ -434,9 +464,12 @@ proc ct_main {} {
         ct_emit [ct_object event [ct_js diagnostic] code [ct_js scope_not_found] hierarchy [ct_js $ct_trace_scope]]
         error "Port trace root was not elaborated: $ct_trace_scope"
     }
+    ct_journal end import [ct_object top [ct_js $ct_top]] "elaboration imported and validated"
     if {$ct_context} {
         ct_worker_status restore_targets
+        ct_journal begin restore [ct_object instances $ct_resume_instances modules $ct_resume_completed_modules traces $ct_resume_completed_traces] "restore committed targets"
         ct_restore_targets
+        ct_journal end restore [ct_object instances [dict size $ct_instances]] "committed target handles restored"
     }
     puts "CT7_RESUME queries=$ct_resume_completed_queries traces=$ct_resume_completed_traces instances=[dict size $ct_instances] modules=$ct_resume_completed_modules"
     flush stdout
@@ -452,6 +485,7 @@ proc ct_main {} {
     # module queries. This preserves strict hierarchy bounds and conflicts.
     set query_count 0
     set module_cursor 0
+    ct_journal begin modules [ct_object completed_modules $ct_completed_modules total_modules $ct_total_modules] "enumerate configured module rules"
     dict for {query rules} $query_groups {
         incr query_count
         set group_end [expr {$module_cursor + [llength $rules]}]
@@ -468,7 +502,9 @@ proc ct_main {} {
         if {$scope_found} {
             puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules]"
             flush stdout
+            ct_journal item_begin modules [ct_object query_index $query_count scope [ct_js $scope] module [ct_js $module]] "native instance query"
             ::npi_L1::npi_find_inst_with_def_wildcard $scope $module handles
+            ct_journal item_end modules [ct_object query_index $query_count scope [ct_js $scope] module [ct_js $module] candidates [llength $handles]] "native query returned"
             ct_emit [ct_object event [ct_js scoped_query] query_index $query_count scope [ct_js $scope] module [ct_js $module] \
                 rules [llength $rules] candidates [llength $handles] resumed_rules [expr {max(0,$ct_resume_completed_modules-$module_cursor)}]]
         }
@@ -482,6 +518,8 @@ proc ct_main {} {
             continue
         }
         lassign $rule layer scope module inputs output kind
+        ct_journal item_begin modules [ct_object index $module_cursor query_index $query_count rule_in_query $rule_index \
+            layer $layer scope [ct_js $scope] module [ct_js $module]] "apply module rule"
         set matched 0
         set before [dict size $ct_instances]
         set status ok
@@ -517,12 +555,14 @@ proc ct_main {} {
         }
     }
     if {$ct_completed_modules != $ct_total_modules} {error "Module checkpoint count does not cover all configured rules"}
+    ct_journal end modules [ct_object completed_modules $ct_completed_modules instances [dict size $ct_instances]] "all module rules committed"
     unset query_groups ct_rules
     ct_save_checkpoint trace $query_count $ct_resume_completed_traces
     set count $ct_resume_completed_traces
     if {$count > $ct_pin_count} {error "Checkpoint trace count exceeds restored ports"}
     for {set index 0} {$index < $count} {incr index} {dict unset ct_pins_to_trace $index}
     ct_worker_status trace "$count / $ct_pin_count"
+    ct_journal begin trace [ct_object completed_traces $count total_traces $ct_pin_count] "trace all selected ports"
     while {$count < $ct_pin_count} {
         lassign [dict get $ct_pins_to_trace $count] p direction owner pin
         dict unset ct_pins_to_trace $count
@@ -538,11 +578,13 @@ proc ct_main {} {
     ct_emit [ct_object event [ct_js complete] instances [dict size $ct_instances] pin_traces $count module_rules $ct_completed_modules]
     ct_save_checkpoint complete $query_count $count
     ct_worker_status complete
+    ct_journal end trace [ct_object completed_traces $count total_traces $ct_pin_count] "all selected ports traced"
     ct_close_streams
     puts "CT7_COMPLETE instances=[dict size $ct_instances] traces=$count"
 }
 if {[catch {ct_main} message]} {
     puts stderr "CT7_FATAL: $message\n$::errorInfo"
+    catch {ct_journal failed $ct_journal_stage [ct_object operation $ct_journal_context error [ct_js [string range $message 0 4095]]] "Verdi extraction error"}
     if {[info exists ct_stream]} {
         catch {ct_emit [ct_object event [ct_js diagnostic] code [ct_js fatal] message [ct_js $message]]}
         catch {close $ct_stream}

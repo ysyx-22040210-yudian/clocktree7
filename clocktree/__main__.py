@@ -28,7 +28,33 @@ def main():
     doctor.add_argument('--out', help='Report/self-test directory; a new subdirectory is created for each run')
     doctor.add_argument('--json', action='store_true', help='Print the machine-readable report')
     doctor.add_argument('--viewer-only', action='store_true', help='Check result browsing without requiring EDA (Windows/Linux)')
+    diagnosis=commands.add_parser('diagnose',help='Inspect durable stages after an interrupted run; does not launch EDA')
+    where=diagnosis.add_mutually_exclusive_group(required=True)
+    where.add_argument('--run',help='Output directory or .clocktree-runs/<run-id>')
+    where.add_argument('--gui-latest',action='store_true',help='Inspect this user\'s latest and previous GUI sessions')
+    diagnosis.add_argument('--json',action='store_true')
     args = parser.parse_args()
+    if args.command=='diagnose':
+        from .runtime import diagnose, diagnose_gui, read_json
+        from .paths import user_state_root
+        if args.run:report=diagnose(args.run)
+        else:
+            base=user_state_root()/'gui-logs'
+            latest=read_json(base/'latest.json',{})
+            report=diagnose_gui(latest['journal_directory']) if latest else {'available':False}
+            previous=read_json(base/'previous.json',{})
+            if previous:report['previous_gui']=diagnose_gui(previous['journal_directory'])
+        if args.json:print(json.dumps(report,ensure_ascii=False,indent=2))
+        else:
+            print('State: {} | Last stage: {} ({})'.format(report.get('state','unavailable'),report.get('label',''),report.get('stage','')))
+            print('Current item: '+json.dumps(report.get('context',{}),ensure_ascii=False))
+            print('Last completed: '+json.dumps(report.get('last_completed',{}),ensure_ascii=False))
+            print('Checkpoint: '+json.dumps(report.get('checkpoint',{}),ensure_ascii=False))
+            print('Logs: '+json.dumps(report.get('logs',report.get('log')),ensure_ascii=False))
+            if report.get('last_failure'):print('Failure: '+json.dumps(report['last_failure'],ensure_ascii=False))
+            if report.get('previous_gui'):print('Previous GUI: '+json.dumps(report['previous_gui'],ensure_ascii=False))
+            print('An unfinished stage identifies where execution stopped; it does not prove OOM.')
+        return 0 if report.get('available') else 1
     if args.command == "extract":
         try:
             graph = extract(args.config, args.out, args.memory_limit_gib)

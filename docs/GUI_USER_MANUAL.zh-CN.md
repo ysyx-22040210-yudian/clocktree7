@@ -1,6 +1,6 @@
 # ClockTree7 时钟树 / 复位树 GUI 操作手册
 
-**文档版本：1.7 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版**
+**文档版本：1.8 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版**
 
 本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。
 
@@ -39,6 +39,7 @@
 23. [限定实例查找与端口追踪范围](#bounded-tracing)
 24. [大图内存优化、结果索引与分页](#disk-index)
 25. [监测内存、自动重启 Verdi 并续跑](#memory-restart)
+26. [运行阶段节点、日志与闪退定位](#runtime-stages)
 
 <a id="scope"></a>
 ## 1. 用途、术语与结果范围
@@ -976,3 +977,81 @@ bash clocktree.sh doctor --self-test --gui
 查看任务工作区的 `checkpoint.json`：`completed_modules` 是已完成规则数，`last_module` 记录最后模块。各独立快照保存在同目录 `module-checkpoints/00000001.json` 等文件；`memory.json` 给出该目录路径。任务根目录的 `module-memory-checks.jsonl` 保存每次额外内存检查，日志可搜索 `CT7_MODULE_CHECKPOINT`、`CT7_MODULE_MEMORY_CHECK`、`CT7_MODULE_SKIP`。
 
 重试恢复已提交前缀并跳过完成的规则，从未完成规则继续；当前查询组还没结束时，可能重新获取该组候选句柄。零匹配或不存在的层次会保存相应失败状态和诊断，断点本身不代表检查通过。将阈值设为 0 后，逐 module 断点仍然保存。
+
+<a id="runtime-stages"></a>
+## 26. 运行阶段节点、日志与闪退定位
+
+### 26.1 在界面查看运行到哪里
+
+架构图上方新增“运行定位”流程条：**准备 → 导入 → 查找 → 追踪 → 拓扑 → 索引 → 结果 → 显示**。绿色勾表示该节点已完成，蓝色表示运行中，灰色表示尚未进入，红色表示失败，黄色表示中断。内存保护轮换时显示重启状态和第几次 Verdi；重新导入、恢复句柄的状态会继续更新。
+
+| 节点 | 实际操作与定位信息 |
+| --- | --- |
+| 准备 | 读取/校验配置、自动寻找 Verdi、准备本次工作目录。 |
+| 导入 | 启动 Verdi、读取 elab 或 RTL、校验顶层/追踪范围；重启后恢复已选实例及端口句柄。 |
+| 查找 | 范围内原生 module 查询、逐实例绑定关注端口、逐规则提交断点。显示 module、层次或具体实例。 |
+| 追踪 | 各关注输入追驱动、各关注输出追负载。显示完整实例、端口、`driver/load` 方向和 trace ID。 |
+| 拓扑 | 逐事件读原始证据并生成完整关注网络、边界和诊断。 |
+| 索引 | 提交 SQLite 结果及连接证据索引。 |
+| 结果 | 流式写出完整 JSON、索引指针和摘要。 |
+| 显示 | GUI 恢复历史、读取结果、建立视图模型、计算布局、绘制画布。日志进一步区分 `session/load/layout/canvas`。 |
+
+流程条下方同时显示最近提交的 module/追踪断点数。大任务在一个节点运行很久并不表示超时；工具仍不设置提取运行超时。实时流程在后台约每 0.1 秒读取进展，快操作可能在界面上一闪而过；持久日志保留阶段切换和每个关注端口的开始/结束记录。
+
+![全部阶段完成后的原生 Tk 窗口](images/runtime-stages-complete.png)
+
+![逐端口追踪时的实际阶段、实例和端口](images/runtime-stages-running.png)
+
+图中的当前端口为 `scope_top.domain.u_mux.a`，方向为 `driver`。运行中若已有上一次结果，仍可查看该结果图；当前提取状态由流程条和任务状态显示。新结果生成后自动加载。
+
+### 26.2 点击节点、切换日志和打开诊断
+
+1. 单击流程条中的节点，底部展开该阶段最近 160 条记录的快照。读取在后台进行，按行扫描，内存只保留有限条数。
+2. 在“任务日志与诊断”的下拉框选择 **阶段日志 / Verdi 日志 / CLI 日志 / GUI 日志**。完整源文件路径显示在旁边；普通日志实时显示文件末尾，不把全部大日志加载到 GUI 内存。
+3. 单击 **阶段诊断**，查看最后阶段、当前对象、最近完成阶段、最后提交断点、退出信号，以及对应日志路径。诊断是点击时的快照。
+4. 在“运行记录”双击失败/中断的任务，可直接打开其诊断；部分结果如需查看，可通过“打开结果”单独选择对应 JSON。
+5. GUI 自身异常退出后，重新打开并进入“阶段诊断”，其中 `previous_gui_issue` 保留上次 GUI 的失败/中断位置。
+
+![实际中断后的阶段诊断入口](images/runtime-stages-interrupted.png)
+
+### 26.3 闪退后查哪些文件
+
+阶段的开始记录写在重操作之前；主阶段日志和状态文件同步落盘，状态文件原子替换。Verdi 的逐实例/逐端口日志立即刷新到独立文件，控制进程来不及转发时仍可诊断。
+
+| 文件 | 用途 |
+| --- | --- |
+| 任务目录 `run.log` | 人可直接阅读的阶段日志：时间、开始/结束/失败、当前 module/实例/端口。 |
+| `run-events.jsonl` | 逐行 JSON 事件，便于脚本检索与统计。控制进程合并频繁的子操作状态；逐端口完整记录见 worker 日志。 |
+| `run-status.json` | 当前阶段、最后进入/完成阶段、进程身份、第几次 Verdi、最近断点和失败信息的快照。 |
+| `.clocktree-runs/<run-id>/run.*`、`run-events.jsonl`、`run-status.json` | 本次任务的独立阶段记录；根目录上述三个文件是当前运行的副本。后续同目录重跑不会覆盖此处的旧记录。 |
+| 工作区 `attempt-0001/worker-events.jsonl` 等 | 各次 Verdi 的导入、原生查找、实例端口绑定和每个 trace 开始/结束；每次重启使用新的 attempt 目录。完整位置见诊断的 `logs.worker`。 |
+| `verdi.log` / `cli.log` | Verdi 原始输出、`CT7_STAGE` 标记及 Python 标准输出/异常栈；`cli.log` 由 GUI 启动任务时生成。 |
+| `memory.json`、`memory-restarts.jsonl`、`module-memory-checks.jsonl` | RSS、受控重启原因、逐 module 内存检查；结合阶段日志判别内存保护与普通异常。 |
+| `gui-log-location.json`、`gui-log-location.previous.json` | GUI 日志位置；重开不会覆盖上一次 GUI 通道。只读导入结果可能没有这两个指针，可用下述 GUI 诊断命令。 |
+
+GUI 日志保存在当前用户状态目录：Linux 默认 `~/.local/state/clocktree7/gui-logs/`（可由 `XDG_STATE_HOME` 改变），Windows 默认 `%LOCALAPPDATA%\clocktree7\gui-logs\`。每次打开 GUI 创建独立 `ui_<id>/gui.log`、`gui-events.jsonl`、`gui-status.json`，`latest.json` 和 `previous.json` 指向最近两次。配置/结果的自动恢复继续沿用原机制。
+
+同目录重新提取时，旧阶段副本与旧提取证据一起归档到 `.clocktree-history/`；本次独立目录继续保留。若 Verdi 的旧版路径限制要求另设临时工作区，`runtime-location.json` 和诊断输出给出真实工作目录。
+
+### 26.4 无需 GUI 或 EDA 的诊断命令
+
+在工具目录运行，`--run` 指向出问题的任务目录：
+
+```bash
+python3 -m clocktree diagnose --run /project/clocktree-run
+python3 -m clocktree diagnose --run /project/clocktree-run --json
+python3 -m clocktree diagnose --run /project/clocktree-run/.clocktree-runs/<run-id> --json
+python3 -m clocktree diagnose --gui-latest --json
+```
+
+Windows 使用 `python`。最后一个命令同时给出本机当前用户最近 GUI 和前一次 GUI 的日志位置。诊断只读日志，不启动 Verdi，也不重新提取。
+
+判断方法：最后一条 `BEGIN/ITEM_BEGIN` 之后没有相应完成记录，说明停在该操作附近；例如 `stage=modules`、`detail=native instance query`、`module=clk_gate`、`scope=soc_top.u_crg` 表示范围内的该定义查找尚未返回。`stage=trace` 会带实例、pin、方向及 trace ID。`stage=layout/canvas` 则是 GUI 处理阶段。
+
+诊断会检查本机进程身份；控制进程已消失且未记录正常结束时显示 `interrupted`。其他主机生成的日志不能据此确认其进程存活；仍可读取最后阶段。**退出信号 `SIGKILL`、无完成标志或最后 RSS 都不能单独证明 OOM**，根因还需结合 dsub/调度器或系统 OOM 记录。内存保护的主动轮换会另外记录 `RESTART` 及原因。
+
+### 26.5 本次验证
+
+VM 实际 Verdi 完成时钟 13/13、复位 11/11 关注端口追踪，完整图和双向证据与对照一致。测试在导入、原生 module 查询、逐端口追踪时分别杀死真实 Verdi；在查找、追踪、拓扑、索引和写结果时杀死整个控制进程；还在真实 Tk 布局与画布绘制时杀死 GUI。日志均定位到注入中断的阶段，追踪包含实例、端口和方向，重开 GUI 保留前次位置。
+
+测试暂停器只存在于独立验收进程/临时 Tcl 工作区，生产代码不包含暂停开关。复现：`python3 scripts/check_runtime_stages.py --out validation/runtime-stages/acceptance`；有图形显示时再加 `--gui-only` 验证实时界面、节点筛选、GUI 闪退及重开。该测试验证日志定位机制，不代表已在商业芯片上复现 64G 内存故障。

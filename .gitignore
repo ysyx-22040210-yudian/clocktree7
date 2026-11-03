@@ -27,4 +27,10 @@ desktop.ini
 /summary.json
 /config.json
 /rules.tcl
+/run-status.json
+/run-events.jsonl
+gui-log-location*.json
+/memory.json
+/memory-restarts.jsonl
+/module-memory-checks.jsonl
 /verdiLog/

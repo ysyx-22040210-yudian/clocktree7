@@ -16,6 +16,7 @@ from .environment import resolve_verdi
 from .profiles import result_filename
 from .storage import new_store, index_graph, write_graph, publish_index, index_pointer
 from .memory import run_verdi
+from .runtime import RunJournal
 
 
 RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json', 'memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl')
@@ -39,12 +40,12 @@ def vendor_work_dir(preferred):
     return Path(tempfile.mkdtemp(prefix='clocktree7-', dir=str(base)))
 
 
-def prepare_output(out):
+def prepare_output(out, identifier=None, work=None):
     """Retain previous evidence and use fresh Verdi scratch space on each run."""
-    identifier = time.strftime('%Y%m%d_%H%M%S_') + uuid.uuid4().hex
+    identifier = identifier or time.strftime('%Y%m%d_%H%M%S_') + uuid.uuid4().hex
     if any((out / name).is_file() for name in ('raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json')):
         history = out / '.clocktree-history' / identifier
-        history.mkdir(parents=True)
+        history.mkdir(parents=True, exist_ok=True)
         for name in RESULT_FILES:
             source = out / name
             if source.is_file():
@@ -76,22 +77,44 @@ def prepare_output(out):
         source = out / name
         if source.is_file():
             source.unlink()
-    work = out / '.clocktree-runs' / identifier
-    work.mkdir(parents=True)
+    work = Path(work) if work is not None else out / '.clocktree-runs' / identifier
+    work.mkdir(parents=True,exist_ok=True)
     return work
 
 
 def extract(config_path, output_dir, memory_limit_gib=None):
+    journal=RunJournal.start(output_dir)
+    try:
+        graph=_extract(config_path,output_dir,memory_limit_gib,journal)
+        failure=journal.state().get('last_failure') or {}
+        if graph.get('metadata',{}).get('verdi_exit_code'):
+            journal.emit('failed',failure.get('stage','worker'),'Verdi 异常退出；已保留可用的部分结果',
+                         context=failure.get('context',{}),returncode=graph['metadata']['verdi_exit_code'],
+                         exit_signal=failure.get('exit_signal'),partial_result=True)
+        else:
+            journal.emit('finished' if graph['summary']['connectivity_complete'] else 'attention','export',
+                         '后端提取结束' if graph['summary']['connectivity_complete'] else '结果已写出，存在未解析或诊断',
+                         context={'instances':graph['summary']['instances'],'edges':graph['summary']['edges']})
+        return graph
+    except BaseException as error:
+        journal.fail(error,cancelled=isinstance(error,(KeyboardInterrupt,SystemExit)))
+        raise
+
+
+def _extract(config_path, output_dir, memory_limit_gib, journal):
+    journal.emit('progress','config','读取并校验配置',{'config_file':str(Path(config_path).resolve())})
     config = load_config(config_path)
     if memory_limit_gib is not None:
         config['memory_limit_gib'] = memory_limit_gib
         validate_config(config)
     environment = os.environ.copy()
     executable, verdi_home = resolve_verdi(config['design'], environment)
+    journal.emit('end','config','配置与 Verdi 环境检查完成',{'tree_type':config.get('tree_type','clock'),
+                 'top':config['design']['top'],'verdi_executable':executable})
     environment['VERDI_HOME'] = verdi_home
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    recorded_work = prepare_output(out)
+    recorded_work = prepare_output(out,identifier=journal.directory.name,work=journal.directory)
     work = vendor_work_dir(recorded_work)
     if work != recorded_work:
         (recorded_work / 'runtime-location.json').write_text(json.dumps({'working_directory': str(work)}), encoding='utf-8')
@@ -121,6 +144,7 @@ def extract(config_path, output_dir, memory_limit_gib=None):
     if not (out / "raw.jsonl").exists():
         raise RuntimeError("Verdi produced no raw evidence; inspect " + str(out / "verdi.log"))
     print('CT7_BUILD_BEGIN', flush=True)
+    journal.emit('begin','topology','逐事件构建完整拓扑',{'raw':str(out/'raw.jsonl')})
     store = new_store(out)
     graph = build_graph(read_events(out / "raw.jsonl"), config, evidence_store=store)
     compiler_log = final_work / "verdiLog" / "compiler.log"
@@ -143,19 +167,25 @@ def extract(config_path, output_dir, memory_limit_gib=None):
                               "verdi_executable": executable, "verdi_home": verdi_home})
     graph['metadata'].update(python_version=platform.python_version(), platform=sys.platform)
     graph['metadata']['memory_protection'] = memory_report
+    graph['metadata']['runtime'] = journal.paths()
     if exit_code:
         graph["summary"]["connectivity_complete"] = False
         graph["diagnostics"].append({"code": "verdi_exit", "exit_code": exit_code})
     graph["summary"]["diagnostics"] = len(graph["diagnostics"])
     graph['metadata']['storage'] = 'sqlite-index / shared-paths / raw-protocol-2'
+    journal.emit('end','topology','拓扑构建与诊断完成',{'instances':len(graph['nodes']),'edges':len(graph['edges'])})
     print('CT7_INDEX_BEGIN', flush=True)
+    journal.emit('begin','index','写入磁盘索引',{'database':str(store.path)})
     indexed = index_graph(graph, store)
     del graph
+    journal.emit('end','index','磁盘索引已提交')
     print('CT7_JSON_BEGIN', flush=True)
+    journal.emit('begin','export','流式写出结果 JSON',{'result':str(out/result_filename(config))})
     write_graph(out / result_filename(config), indexed)
     publish_index(out / result_filename(config), indexed)
     graph = indexed
     (out / "summary.json").write_text(json.dumps(graph["summary"], indent=2), encoding="utf-8")
     store.close()
+    journal.emit('end','export','结果、索引和摘要已写出',{'result':str(out/result_filename(config))})
     print('CT7_RESULT_READY', flush=True)
     return graph

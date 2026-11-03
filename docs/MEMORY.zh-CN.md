@@ -118,3 +118,9 @@ python3 scripts/check_module_checkpoints.py --soc
 包含 `--gui` 的检查及 `check_memory_gui.py`、`check_indexed_gui.py` 须在图形会话中运行。`profile_low_memory.py` 支持分别运行旧版后处理、索引后处理和两种结果打开基准，测量各自独立进程的 RSS。完整原始记录保存在本机 `validation/`，不随源码包分发。
 
 逐 module 验收：时钟保存 5 个、复位保存 2 个独立断点，每个断点对应一次额外 RSS 检查；4 条共用查询的规则在组内连续重启 3 次后完成全部 8 条规则，已完成规则没有重复写入，拓扑和双向证据一致。零匹配及无效层次保存失败状态且不误报完整；关闭监测仍保存断点。OpenC910 全量提取保存 3 条 module 规则断点并完成 6,984 实例 / 6,983 边，完整路径证据一致。
+
+## 闪退前的执行位置
+
+GUI 新增 8 个运行节点和“阶段诊断”；任务目录的 `run.log`、`run-events.jsonl`、`run-status.json` 保存开始/结束/失败及当前对象，每次运行还有独立日志目录。各次 Verdi 的 `worker-events.jsonl` 在原生查询和每个关注端口追踪前立即刷新记录。即使控制进程来不及转发就被杀，仍可查到实例、端口和方向；拓扑、索引、结果写出及 GUI 布局/绘图也分别记录。
+
+无需 EDA：`python3 -m clocktree diagnose --run <任务目录> --json`；GUI 自身闪退可用 `python3 -m clocktree diagnose --gui-latest --json`。完整文件路径和操作见 [GUI 手册第 26 章](GUI_USER_MANUAL.zh-CN.md#runtime-stages)。受控内存轮换有 `RESTART` 及对应 RSS；没有结束标志或 `SIGKILL` 本身只说明中断位置，不能据此断言 OOM。

@@ -33,6 +33,7 @@ function setConfig(config) {
   $('empty').querySelector('h1').textContent='从 RTL 连接恢复完整'+info.network;
   if(!graph)$('component').innerHTML='<option value="all">全部'+info.network+'</option>';
   const design=config.design || {}; savedDesign={...design}; $('top').value=design.top || '';
+  $('traceScope').value=config.trace_scope||'';
   $('designMode').value=design.elab?'elab':'filelist'; $('designPath').value=design.elab || design.filelist || '';
   $('layers').replaceChildren();
   for(let i=1;i<=(config.layers?.length || 2);i++) {
@@ -50,6 +51,7 @@ function setConfig(config) {
 function getConfig() {
   const info=profiles[activeTree];
   const config={tree_type:activeTree,design:{...(savedDesign.verdi_home?{verdi_home:savedDesign.verdi_home}:{}),top:$('top').value.trim(),[$('designMode').value]:$('designPath').value.trim()},layers:[]};
+  if($('traceScope').value.trim())config.trace_scope=$('traceScope').value.trim();
   [...$('layers').children].forEach((layer,i)=>config.layers.push({index:i+1,hierarchy:layer.querySelector('.hierarchy').value.trim(),modules:[...layer.querySelectorAll('.rule')].map(r=>({module:r.querySelector('.module').value.trim(),[info.inputs]:r.querySelector('.inputs').value.split(',').map(s=>s.trim()).filter(Boolean),[info.output]:r.querySelector('.output').value.trim(),...(r.querySelector('.kind').value?{kind:r.querySelector('.kind').value}:{})}))}));
   return config;
 }
@@ -181,7 +183,7 @@ function showGraph(result) {
   setConfig(result.config);graph=result;nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';
   const s=result.summary,values=[s.instances,s.edges,s.roots,s.terminals,s.components,s.unresolved];
   [...$('stats').children].forEach((n,i)=>n.querySelector('b').textContent=values[i].toLocaleString());
-  $('state').textContent=!s.connectivity_complete?'含未解析项 / 诊断':s.topology_valid===false?'连接已解析 · 存在结构异常':'全量连接已解析';$('state').className='state '+(s.connectivity_complete&&s.topology_valid!==false?'pass':'warn');
+  $('state').textContent=!s.connectivity_complete?'含未解析项 / 诊断':s.topology_valid===false?'连接已解析 · 存在结构异常':result.config.trace_scope?`范围内连接已解析 · ${s.scope_boundaries||0} 处边界`:'全量连接已解析';$('state').className='state '+(s.connectivity_complete&&s.topology_valid!==false?'pass':'warn');
   $('component').innerHTML='<option value="all">全部'+profiles[activeTree].network+'</option>'+result.components.map(c=>`<option value="${c.id}">分量 ${c.id+1} · ${c.nodes.length} 实例</option>`).join('');
   $('logTitle').textContent=`提取日志与诊断 · ${s.diagnostics} 项诊断 · ${s.unresolved} 个未解析断点`;
   $('log').textContent=JSON.stringify({summary:s,metadata:result.metadata,diagnostics:result.diagnostics},null,2);

@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：1.4 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：1.5 · 更新日期：2026-11-03 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -40,6 +40,7 @@
 <li><a href="#reset-tree">复位树分支：MUX、RSY_SYNC 与独立工作区</a></li>
 <li><a href="#auto-restore">启动自动恢复上次配置和结果</a></li>
 <li><a href="#portable-deployment">迁移到其他 EDA 设备</a></li>
+<li><a href="#bounded-tracing">限定实例查找与端口追踪范围</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -1125,4 +1126,88 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 <p>正常使用通过 <code>bash launch.sh</code> 启动。Linux 可以执行 <code>python3 scripts/install_desktop.py --desktop</code>，生成指向当前安装位置的快捷方式；安装路径改变后重新生成。Windows 使用 <code>launch_gui.cmd</code>，并可用 <code>clocktree.cmd doctor --viewer-only --gui</code> 检查浏览功能。</p>
 <p>真实提取需要 Linux 上有效的 Verdi/NPI 和许可；工具不再使用当前虚拟机写死的安装目录或许可证服务器。用户可以通过 <code>CLOCKTREE_EDA_SETUP</code> 指定站点 Bash 环境入口，通过 <code>CLOCKTREE_PYTHON</code> 选择解释器。共享只读安装会把运行记录放到用户目录，也可用 <code>CLOCKTREE_RUNS</code> / <code>--runs</code> 自定义。</p>
 <p>已有结果 JSON 可直接在其他设备浏览；重新提取前需改为目标设备可访问的 elab/filelist。<code>design.base_dir</code> 可让设计入口相对配置文件解析，filelist 内部的 RTL、include 和库路径仍应由原工程流程正确生成。不同设备的 GUI 自动恢复缓存分别保存；跨设备接续工程应手动导出并导入配置和结果。</p>
-<p>离线包校验、无图形服务器、用户环境入口、UTF-8 locale、旧 Verdi 路径限制和故障定位的完整步骤见 <a href="PORTABILITY.zh-CN.md">其他 EDA 设备部署与验收</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>离线包校验、无图形服务器、用户环境入口、UTF-8 locale、旧 Verdi 路径限制和故障定位的完整步骤见 <a href="PORTABILITY.zh-CN.md">其他 EDA 设备部署与验收</a>。</p>
+<p><a id="bounded-tracing"></a></p>
+<h2 id="23_1">23. 限定实例查找与端口追踪范围</h2>
+<h3 id="231">23.1 两种范围分别填写</h3>
+<table>
+<thead>
+<tr>
+<th>配置项</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>设计顶层</td>
+<td>当前导入的 RTL / elab 设计顶层，用于检查设计是否加载成功。</td>
+</tr>
+<tr>
+<td>端口追踪根层次</td>
+<td>左侧设计入口下方的新输入框。填写后，端口追踪只在该精确层次和其子层次内进行。应包含本次全部关注结构及其完整连接路径。</td>
+</tr>
+<tr>
+<td>每层 RTL 层次范围</td>
+<td>该传播层内 module 实例的查找范围，直接交给 NPI 查询。不是端口追踪边界。</td>
+</tr>
+</tbody>
+</table>
+<p>例如端口追踪根层次填 <code>soc_top.u_crg</code>，L1 查找 <code>soc_top.u_crg.u_source</code>，L2 查找 <code>soc_top.u_crg.u_domain</code>。两个范围之间的端口、net 和 assign 都必须位于 <code>soc_top.u_crg</code> 内；选择共同父层为根可以保留其中所有子层次之间的连接。</p>
+<ol>
+<li>在 <strong>端口追踪根层次</strong> 输入实际路径。</li>
+<li>为各层填写该根内部的实例搜索路径和 module/端口规则。实例搜索路径留空时，使用端口追踪根层次。</li>
+<li>若某个非空规则范围位于根外，开始提取前即报配置错误；调整为包含所有目标和连线的共同根，或调整规则。</li>
+<li>点击 <strong>开始提取</strong>。结果完成状态显示 <strong>范围内连接已解析 · N 处边界</strong>。</li>
+</ol>
+<p><a class="figure" href="images/scoped-clock.png" target="_blank"><img alt="独立的端口追踪根层次与范围内时钟树" src="images/scoped-clock.png" /></a></p>
+<h3 id="232">23.2 边界与分支末端</h3>
+<p>端口追踪遇到根层次的输入/输出接口，或下一对象离开根层次，就记录 <code>scope_boundary</code> 并停止该方向，不继续追出范围后再返回。</p>
+<table>
+<thead>
+<tr>
+<th>图中状态</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>范围入口</td>
+<td>驱动在本次追踪范围之外，保留范围内的入口端口作为来源，不推断外部源身份。入口可以位于后续传播层。</td>
+</tr>
+<tr>
+<td>范围出口</td>
+<td>输出继续越过追踪根边界。紫色标记和器件文字单独提示，不计入“分支末端”。</td>
+</tr>
+<tr>
+<td>分支末端</td>
+<td>在本次关注结构中没有已选下游，且没有未解析输出或被根范围截断的输出。</td>
+</tr>
+</tbody>
+</table>
+<p>同一节点可以既有范围内下游，也有范围出口。边界表示明确的分析范围，不是连通错误；绿色状态仅表示<strong>配置范围内</strong>的连接与结构检查通过，不表示范围外网络已经验证。未知逻辑、缺失端口、缺失反向证据等仍会报诊断，不能用范围边界掩盖。</p>
+<p>如果两个内部节点只能经过根外的缓冲/连线才能相连，严格模式不会把它们画成直接相连；应扩大追踪根层次以包含那条完整路径。</p>
+<h3 id="233">23.3 时钟、复位与历史配置</h3>
+<p>时钟树与复位树分别保存追踪根层次。切换、保存配置、导出结果和关闭重开均保留各自的字段；结果节点的范围入口/出口标记也随 JSON 和 SVG 保留。</p>
+<p><a class="figure" href="images/scoped-reset.png" target="_blank"><img alt="复位树的独立追踪根层次与范围边界" src="images/scoped-reset.png" /></a></p>
+<p>旧配置没有该字段，或输入框留空时，端口追踪保持原有行为。实例查询仍会使用每层已有的层次路径；某层路径也留空时，其实例查找根为设计顶层。不存在的非空层次会报错，不自动退回全芯片查询。</p>
+<p>支持根实例本身及其后代，支持 <code>soc_top.g[0].domain</code> 这类数组 generate 路径；使用精确层次，不填写 <code>*</code> / <code>?</code>。例如 <code>u_crg</code> 不包含同级的 <code>u_crg_extra</code>。</p>
+<h3 id="234-json">23.4 JSON 配置示例</h3>
+<p><code>trace_scope</code> 位于配置顶层，独立于各层的 <code>hierarchy</code>：</p>
+<pre><code class="language-json">{
+  &quot;tree_type&quot;: &quot;clock&quot;,
+  &quot;trace_scope&quot;: &quot;soc_top.u_crg&quot;,
+  &quot;design&quot;: {&quot;top&quot;: &quot;soc_top&quot;, &quot;elab&quot;: &quot;/project/build/simv.daidir/kdb.elab++&quot;},
+  &quot;layers&quot;: [
+    {&quot;index&quot;: 1, &quot;hierarchy&quot;: &quot;soc_top.u_crg.u_source&quot;, &quot;modules&quot;: [
+      {&quot;module&quot;: &quot;clk_mux&quot;, &quot;kind&quot;: &quot;mux&quot;, &quot;clock_inputs&quot;: [&quot;clk0_i&quot;, &quot;clk1_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
+    ]},
+    {&quot;index&quot;: 2, &quot;hierarchy&quot;: &quot;soc_top.u_crg.u_domain&quot;, &quot;modules&quot;: [
+      {&quot;module&quot;: &quot;clk_gate&quot;, &quot;kind&quot;: &quot;gate&quot;, &quot;clock_inputs&quot;: [&quot;clk_i&quot;], &quot;clock_output&quot;: &quot;clk_o&quot;}
+    ]}
+  ]
+}
+</code></pre>
+<p>复位配置使用相同的 <code>trace_scope</code>，模块与端口继续使用 MUX / RSY_SYNC 及 <code>reset_inputs/reset_output</code>。</p>
+<h3 id="235">23.5 内存收益与运行记录</h3>
+<p>本模式消除了额外的全芯片实例统计，减少范围外候选句柄及端口追踪；完整 KDB 仍由 Verdi 导入，因此不能仅凭范围变小承诺总内存降到某一固定数值。大芯片仍应核对作业实际限额和峰值。</p>
+<p>日志新增 <code>CT7_IMPORT_BEGIN/END</code> 和各规则的 <code>CT7_ENUM_BEGIN</code>，帮助区分导入、查找及追踪阶段。结果 <code>metadata.scoped_queries</code> 记录实际查询范围与候选数；<code>summary.trace_scope</code>、<code>scope_limited</code>、<code>scope_boundaries</code>、<code>scope_output_instances</code> 记录范围语义。未引入提取超时，仍支持当前目录重复运行。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

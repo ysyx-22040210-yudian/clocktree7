@@ -19,6 +19,7 @@
 - 自动从 `verdi` 命令定位安装目录，无需每次填写；提取运行时间不设上限。
 - 使用目标设备的 EDA 与许可环境；提供离线包、设备自检、真实时钟/复位 golden 验收及本机快捷方式生成。公共只读安装支持用户目录保存记录。
 - 同一当前目录可反复运行，旧证据自动归档，每次使用独立 Verdi 工作目录。
+- 实例查询直接限定在每层规则的 RTL 路径内；可独立填写“端口追踪根层次”，严格追踪该层次及子层次，范围出口单独标记。
 - 完整静态结构图，保留多源、全部扇出、汇合、孤立结构及异常。
 - 驱动/负载双向 NPI 证据；缺失端口、未知逻辑、逆序层、环路、多驱动等诊断。
 - 大图层次概览、逐层展开、全量搜索、缩放平移、全图导航和路径高亮。
@@ -99,6 +100,14 @@ bash launch.sh
 
 ## 时钟树规则与模型
 
+### 实例搜索范围与端口追踪根层次
+
+GUI 的 **端口追踪根层次** 对应配置顶层字段 `trace_scope`。例如填写 `soc_top.u_crg`，端口追踪只在该层次及其子层次内进行；各层非空实例搜索路径必须位于该根层次内，留空则使用这个根。跨出根层次的路径记录为 `scope_boundary`，不再追出范围后返回；范围出口不计为真实分支末端，界面显示“范围内连接已解析”。
+
+每层的 `hierarchy` 直接传入 NPI 范围查询，不再全芯片查同名模块后过滤，也不再为统计数量额外枚举全芯片。不存在的路径会报诊断，不回退全芯片。未填写 `trace_scope` 的旧配置保持原有端口追踪行为。时钟/复位各自保存追踪根层次，关闭重开自动恢复。
+
+这能减少实例查找和范围外追踪的额外开销，不能保证减少 Verdi 导入完整 KDB 的基础内存。范围内全部所选实例和连接仍然保留。步骤、边界含义与 JSON 示例见 [操作手册第 23 章](docs/GUI_USER_MANUAL.zh-CN.md#bounded-tracing)。
+
 | 用户类型 | `kind` | 关注输入 | 关注输出 | 图形 |
 | --- | --- | --- | --- | --- |
 | 选择器 | `mux` | 一个或多个 | 唯一一个 | 蓝色多输入梯形，标注 N:1 |
@@ -147,7 +156,8 @@ python3 -m clocktree extract --config validation/fixtures/reset-tree/config.json
 
 已完成七层/generate/三类器件样例全集 golden 比对、4096 实例压力样例，以及 PULP SoC、OpenC910 配置关注网络的完整 KDB 提取。OpenTitan 通过的是 `clkmgr` 子系统，整芯片旧编译器兼容问题单独记录。
 
-- Python 检查：70 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- Python 检查：75 项通过，Windows 跳过 1 项 Linux 符号链接专项检查。
+- 严格范围：普通/数组 generate 路径、根实例自身、generate 根、常量输入、空规则范围、无效根、越界后返回路径均已真实 NPI 验证；范围内完整连接核对及 Tk/JSON/SVG/独立工作区重开通过。
 - 迁移：离线包解压到独立的中文/空格路径，以普通用户、只读安装、独立环境完成两类真实 NPI golden 及 Tk 验收；Windows 结果浏览诊断通过。版本和实际限制见部署/验证手册。
 - 自动恢复：VM 中以独立进程关闭重开，验证两种模式草稿、器件外观修改、源文件移动、结果缺失处理、旧历史迁移和 6,984 实例大图；恢复过程不启动 EDA。
 - 新增 VM 两级/十级四类器件全网 golden 核对、20 级增删控件、同目录连续重跑与失败后恢复验证。
@@ -167,6 +177,8 @@ source scripts/eda_env.sh
 python3 scripts/check_flexible_gui.py --extract
 python3 scripts/check_reset_gui.py --extract
 python3 scripts/check_session_gui.py
+python3 scripts/check_scoped_trace.py
+python3 scripts/check_scoped_gui.py
 ```
 
 GUI 验收脚本需测试用 Pillow 和系统 X11 工具；浏览器验收脚本需 Playwright。这些不是产品 GUI 运行依赖。

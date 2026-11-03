@@ -4,6 +4,7 @@ import hashlib
 import json
 from .devices import resolve_kind
 from .profiles import profile, tree_type
+from .config import hierarchy_contains
 
 
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type"}
@@ -15,11 +16,15 @@ def build_graph(events, config):
     traces = []
     diagnostics = []
     metadata = {}
+    trace_scope = config.get('trace_scope', '').strip().rstrip('./')
     completed = False
     for item in events:
         kind = item.get("event")
         if kind == "instance":
             key = item["path"]
+            if trace_scope and not hierarchy_contains(key, trace_scope):
+                diagnostics.append({'code': 'target_outside_trace_scope', 'instance': key, 'scope': trace_scope})
+                continue
             if key in nodes and nodes[key]["layer"] != item["layer"]:
                 diagnostics.append({"code": "layer_conflict", "instance": key, "layers": [nodes[key]["layer"], item["layer"]]})
                 continue
@@ -30,6 +35,8 @@ def build_graph(events, config):
             diagnostics.append(item)
         elif kind == "metadata":
             metadata.update(item)
+        elif kind == 'scoped_query':
+            metadata.setdefault('scoped_queries', []).append({k: v for k, v in item.items() if k != 'event'})
         elif kind == "complete":
             completed = True
             metadata["npi_counts"] = item
@@ -88,7 +95,7 @@ def build_graph(events, config):
     source_neighbours = defaultdict(set)
     for boundary in boundaries:
         is_source_boundary = boundary["status"] == "input_boundary" or (
-            boundary["status"] == "unselected_port_boundary" and boundary.get("pin_direction") == "npiNlOutput")
+            boundary["status"] == "unselected_port_boundary" and boundary.get("pin_direction") == "npiNlOutput") or boundary['status'] == 'scope_boundary'
         if boundary["direction"] == "driver" and is_source_boundary:
             name = boundary.get("endpoint", "")
             if not name:
@@ -150,14 +157,18 @@ def build_graph(events, config):
         diagnostics.append({"code": "cycle_or_cycle_downstream", "instances": sorted(n for n in nodes if degree[n])})
     unresolved = [b for b in boundaries if b["status"] in UNRESOLVED]
     unresolved_outputs = {b["instance"] for b in unresolved if b["direction"] == "load"}
+    scope_outputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'load'}
+    scope_inputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'driver'}
     for node in nodes.values():
         node["component"] = component_id[node["id"]]
         node["root"] = not incoming[node["id"]]
-        node["terminal"] = not outgoing[node["id"]] and node["id"] not in unresolved_outputs and (node["id"], node["output"], "load") in trace_keys
+        node["terminal"] = not outgoing[node["id"]] and node["id"] not in (unresolved_outputs | scope_outputs) and (node["id"], node["output"], "load") in trace_keys
+        node['scope_input_boundary'] = node['id'] in scope_inputs
+        node['scope_output_boundary'] = node['id'] in scope_outputs
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
-        if node["root"] and node["layer"] != 1:
+        if node["root"] and node["layer"] != 1 and not node['scope_input_boundary']:
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
-    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation"}
+    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope'}
     coverage_ok = completed and not missing and not unresolved and not any(d["code"] in fatal_codes for d in diagnostics)
     topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
     return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,
@@ -171,6 +182,9 @@ def build_graph(events, config):
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
                         "expected_pin_traces": len(expected_traces), "observed_pin_traces": len(trace_keys),
                         "unresolved": len(unresolved), "diagnostics": len(diagnostics),
+                        'trace_scope': trace_scope, 'scope_limited': bool(trace_scope),
+                        'scope_boundaries': sum(b['status'] == 'scope_boundary' for b in boundaries),
+                        'scope_output_instances': len(scope_outputs),
                         "extraction_finished": completed, "connectivity_complete": coverage_ok,
                         "topology_valid": not any(d["code"] in topology_errors for d in diagnostics)}}
 

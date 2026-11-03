@@ -36,6 +36,11 @@ def expanded_path(value):
     return Path(os.path.expandvars(str(value))).expanduser()
 
 
+def hierarchy_contains(path, root):
+    root = root.rstrip('./')
+    return not root or path == root or path.startswith(root + '.') or path.startswith(root + '[')
+
+
 def validate_config(config, allow_incomplete=False):
     if not isinstance(config, dict):
         raise ValueError("Configuration must be an object")
@@ -77,6 +82,17 @@ def validate_config(config, allow_incomplete=False):
         raise ValueError("design.elab or design.filelist is required")
     if not allow_incomplete and not design.get("top"):
         raise ValueError("design.top is required")
+    trace_scope = config.get('trace_scope', '')
+    if not isinstance(trace_scope, str):
+        raise ValueError('trace_scope must be an exact RTL hierarchy string')
+    trace_scope = trace_scope.strip().rstrip('./')
+    if trace_scope and not allow_incomplete:
+        if '*' in trace_scope or '?' in trace_scope or not hierarchy_contains(trace_scope, design['top']):
+            raise ValueError('trace_scope must be an exact hierarchy at or below design.top')
+        for layer in layers:
+            scope = layer['hierarchy'].strip().rstrip('./')
+            if layer.get('modules') and scope and not hierarchy_contains(scope, trace_scope):
+                raise ValueError('L{} hierarchy must be inside trace_scope {}; leave it blank to use that root'.format(layer['index'], trace_scope))
     return config
 
 
@@ -86,7 +102,8 @@ def tcl_string(value):
 
 
 def write_tcl_config(config, path, output):
-    lines = ["set ct_rules {}", 'set ct_tree_type ' + tcl_string(tree_type(config))]
+    lines = ["set ct_rules {}", 'set ct_tree_type ' + tcl_string(tree_type(config)),
+             'set ct_trace_scope ' + tcl_string(config.get('trace_scope', '').strip().rstrip('./'))]
     for layer in config["layers"]:
         for rule in layer.get("modules", []):
             pins, output_pin = rule_ports(rule, tree_type(config))

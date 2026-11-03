@@ -5,7 +5,7 @@
 <main>
 <aside class="config"><div class="section-title"><h2>设计与传播规则</h2><span>默认两级，可自由添加层级</span></div>
 <label>分析功能<select id="treeType"><option value="clock">时钟树</option><option value="reset">复位树</option></select></label>
-<label>设计顶层<input id="top" placeholder="soc_top"></label><div class="hint">自动根据服务端的 verdi 命令定位安装目录；提取时间不设上限。</div>
+<label>设计顶层<input id="top" placeholder="soc_top"></label><label>端口追踪根层次<input id="traceScope" placeholder="如 soc_top.u_crg；留空保留原有追踪方式"></label><div class="hint">填写根层次后仅追踪其自身及子层次，越界记录为范围边界。自动定位 Verdi；提取时间不设上限。</div>
 <label>设计入口<select id="designMode"><option value="elab">已有 elab / KDB</option><option value="filelist">RTL 文件列表（建立 elab）</option></select><input id="designPath" placeholder="/path/simv.daidir/kdb.elab++"></label>
 <div class="hint">每层填 RTL 范围、module 名和关注端口。同层串接、跳层及任意层结束均由真实连接确定。</div><div id="layers"></div><button id="addLayer">＋ 添加层级</button><button id="removeLayer">删除最后一级</button>
 <button id="run" class="primary">解析 elab · 重建全部时钟树</button><details><summary>配置 JSON</summary><textarea id="configJson" rows="12"></textarea><button id="applyJson">应用 JSON</button></details>

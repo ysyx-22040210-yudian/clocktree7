@@ -44,7 +44,7 @@ class GraphView:
                     groups[key] = {'id': key, 'path': prefix, 'layer': node['layer'], 'component': node['component'],
                                    'aggregate': True, 'members': [], 'module_counts': Counter(), 'kind_counts': Counter(), 'internal_edges': 0,
                                    'inputs': ['输入'], 'output': '输出', 'root_count': 0, 'terminal_count': 0,
-                                   'has_unresolved_output': False}
+                                   'has_unresolved_output': False, 'scope_input_boundary': False, 'scope_output_boundary': False}
                 group = groups[key]
                 group['members'].append(node['id'])
                 group['module_counts'][node['module']] += 1
@@ -52,6 +52,8 @@ class GraphView:
                 group['root_count'] += bool(node.get('root'))
                 group['terminal_count'] += bool(node.get('terminal'))
                 group['has_unresolved_output'] |= bool(node.get('has_unresolved_output'))
+                group['scope_input_boundary'] |= bool(node.get('scope_input_boundary'))
+                group['scope_output_boundary'] |= bool(node.get('scope_output_boundary'))
                 owners[node['id']] = group
             self.nodes = {}
             for group in groups.values():

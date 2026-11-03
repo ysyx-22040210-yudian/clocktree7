@@ -43,14 +43,30 @@ proc ct_state {hdl} {
         [npi_nl_get -property npiNlLeft -object $hdl] [npi_nl_get -property npiNlRight -object $hdl]]
 }
 proc ct_evidence {hdl} {
+    global ct_trace_scope
     set net ""
     catch {set net [npi_nl_handle -type npiNlNet -refHandle $hdl]}
+    set net_name [ct_prop $net npiNlFullName]
+    if {$ct_trace_scope ne "" && ![ct_scope_match $net_name $ct_trace_scope]} {set net_name ""}
     return [ct_object type [ct_js [ct_prop $hdl npiNlType]] \
-        name [ct_js [ct_prop $hdl npiNlFullName]] net [ct_js [ct_prop $net npiNlFullName]]]
+        name [ct_js [ct_prop $hdl npiNlFullName]] net [ct_js $net_name]]
 }
 proc ct_scope_match {path scope} {
     set scope [string trimright $scope ./]
     return [expr {$scope eq "" || $path eq $scope || [string first "$scope." $path] == 0 || [string first "$scope\[" $path] == 0}]
+}
+proc ct_inside_trace_scope {hdl} {
+    global ct_trace_scope
+    if {$ct_trace_scope eq ""} {return 1}
+    set name [ct_prop $hdl npiNlFullName]
+    if {$name ne ""} {return [ct_scope_match $name $ct_trace_scope]}
+    set owner [ct_prop [ct_inst $hdl] npiNlFullName]
+    return [expr {$owner ne "" && [ct_scope_match $owner $ct_trace_scope]}]
+}
+proc ct_scope_boundary {path endpoint direction} {
+    global ct_trace_scope
+    return [ct_result scope_boundary $path scope [ct_js $ct_trace_scope] endpoint [ct_js $endpoint] \
+        boundary_role [ct_js [expr {$direction eq "load" ? "output" : "input"}]]]
 }
 proc ct_pin {path pin} {
     set base $pin
@@ -92,23 +108,40 @@ proc ct_result {status path args} {
     return [ct_object status [ct_js $status] path [ct_array $path] {*}$args]
 }
 proc ct_walk {seed direction owner pin} {
-    global ct_selected ct_instances ct_max_steps ct_owner_paths ct_top
-    set queue [list [list $seed {} 1]]
+    global ct_selected ct_instances ct_max_steps ct_owner_paths ct_top ct_trace_scope
+    set queue [list [list $seed {} 1 "$owner.$pin"]]
     set cursor 0
     set seen [dict create]
     set results {}
     while {$cursor < [llength $queue]} {
-        lassign [lindex $queue $cursor] hdl path is_seed
+        lassign [lindex $queue $cursor] hdl path is_seed last_inside
         incr cursor
         if {$ct_max_steps > 0 && $cursor > $ct_max_steps} {
             lappend results [ct_result trace_limit $path]
             break
+        }
+        if {![ct_inside_trace_scope $hdl]} {
+            lappend results [ct_scope_boundary $path $last_inside $direction]
+            continue
         }
         set state [ct_state $hdl]
         if {[dict exists $seen $state]} {continue}
         dict set seen $state 1
         lappend path [ct_evidence $hdl]
         set type [ct_prop $hdl npiNlType]
+        set current_name [ct_prop $hdl npiNlFullName]
+        if {$current_name ne ""} {set last_inside $current_name}
+        # Root interface ports are the strict boundary, including selected
+        # roots. Never cross into the parent and then re-enter elsewhere.
+        if {$ct_trace_scope ne "" && [string match *Port $type] &&
+                [ct_prop [ct_inst $hdl] npiNlFullName] eq $ct_trace_scope} {
+            set port_direction [ct_prop $hdl npiNlDirection]
+            if {($direction eq "driver" && $port_direction eq "npiNlInput") ||
+                    ($direction eq "load" && $port_direction eq "npiNlOutput")} {
+                lappend results [ct_scope_boundary $path $last_inside $direction]
+                continue
+            }
+        }
         if {!$is_seed} {
             set key [ct_key $hdl]
             if {$key ne "" && [dict exists $ct_selected $key]} {
@@ -161,28 +194,38 @@ proc ct_walk {seed direction owner pin} {
                 set status [expr {$direction eq "load" ? "output_boundary" : "input_boundary"}]
             }
             if {[string match *Net $type] && [npi_nl_get -property npiNlIsLiteral -object $hdl]} {set status constant}
+            if {$direction eq "driver"} {
+                set attached_net ""
+                catch {set attached_net [npi_nl_handle -type npiNlNet -refHandle $hdl]}
+                if {$attached_net ne "" && [npi_nl_get -property npiNlIsLiteral -object $attached_net]} {set status constant}
+            }
             lappend results [ct_result $status $path endpoint [ct_js [ct_prop $hdl npiNlFullName]]]
         }
-        foreach target $next {lappend queue [list $target $path 0]}
+        foreach target $next {lappend queue [list $target $path 0 $last_inside]}
     }
     if {![llength $results]} {lappend results [ct_result error {} message [ct_js "No terminal or target found; possible connectivity cycle"]]}
     return $results
 }
 proc ct_main {} {
-    global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type
+    global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope
     source $env(CT7_CONFIG)
     if {![info exists ct_tree_type]} {set ct_tree_type clock}
+    if {![info exists ct_trace_scope]} {set ct_trace_scope ""}
     set ct_stream [open $ct_output w]
     fconfigure $ct_stream -encoding utf-8
     ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
-        verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type]]
+        verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope]]
     source $env(VERDI_HOME)/share/NPI/L1/TCL/npi_L1.tcl
     schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on
+    puts "CT7_IMPORT_BEGIN"
+    flush stdout
     if {[info exists ct_elab] && $ct_elab ne ""} {
         debImport -elab $ct_elab
     } else {
         debImport -sv -f $ct_filelist -top $ct_top
     }
+    puts "CT7_IMPORT_END"
+    flush stdout
     if {[file exists verdiLog/compiler.log]} {
         set log_file [open verdiLog/compiler.log r]
         set log_text [read $log_file]
@@ -192,22 +235,33 @@ proc ct_main {} {
     }
     set top_hdl [npi_handle_by_name -name $ct_top -scope ""]
     if {$top_hdl eq ""} {error "Requested top was not elaborated: $ct_top"}
-    set design_handles {}
-    ::npi_L1::npi_find_inst_wildcard "" * design_handles
-    ct_emit [ct_object event [ct_js metadata] design_instances [llength $design_handles]]
-    puts "CT7_DESIGN instances=[llength $design_handles]"
+    if {$ct_trace_scope ne "" && [npi_handle_by_name -name $ct_trace_scope -scope ""] eq ""} {
+        ct_emit [ct_object event [ct_js diagnostic] code [ct_js scope_not_found] hierarchy [ct_js $ct_trace_scope]]
+        error "Port trace root was not elaborated: $ct_trace_scope"
+    }
     set ct_selected [dict create]
     set ct_instances [dict create]
     set ct_owner_paths [dict create]
     set pins_to_trace {}
     foreach rule $ct_rules {
         lassign $rule layer scope module inputs output kind
+        set scope [string trimright [string trim $scope] ./]
+        if {$scope eq ""} {set scope [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]}
+        if {$ct_trace_scope ne "" && ![ct_scope_match $scope $ct_trace_scope]} {error "Instance search scope is outside port trace root: $scope"}
+        if {[npi_handle_by_name -name $scope -scope ""] eq ""} {
+            ct_emit [ct_object event [ct_js diagnostic] code [ct_js scope_not_found] hierarchy [ct_js $scope] layer $layer]
+            continue
+        }
         set handles {}
-        ::npi_L1::npi_find_inst_with_def_wildcard "" $module handles
+        puts "CT7_ENUM_BEGIN layer=$layer scope=$scope module=$module"
+        flush stdout
+        ::npi_L1::npi_find_inst_with_def_wildcard $scope $module handles
+        ct_emit [ct_object event [ct_js scoped_query] layer $layer scope [ct_js $scope] module [ct_js $module] candidates [llength $handles]]
         set matched 0
         foreach hdl $handles {
             set path [npi_get_str -property npiFullName -object $hdl]
             if {![ct_scope_match $path $scope]} {continue}
+            if {$ct_trace_scope ne "" && ![ct_scope_match $path $ct_trace_scope]} {error "NPI returned target outside port trace root: $path"}
             incr matched
             if {[dict exists $ct_instances $path]} {
                 if {[dict get $ct_instances $path] != $layer} {
@@ -225,6 +279,11 @@ proc ct_main {} {
                 catch {set p [ct_pin $path $pin]}
                 set status ""
                 if {$p eq ""} {set status missing_pin} elseif {[npi_nl_get -property npiNlSize -object $p] != 1} {set status width_requires_bit}
+                if {$p ne "" && ![ct_inside_trace_scope $p]} {
+                    set status error
+                    ct_emit [ct_object event [ct_js diagnostic] code [ct_js pin_validation] instance [ct_js $path] pin [ct_js $pin] \
+                        message [ct_js "Resolved seed port is outside the configured trace root"]]
+                }
                 if {$status ne ""} {
                     ct_emit [ct_object event [ct_js trace] instance [ct_js $path] pin [ct_js $pin] direction [ct_js $direction] \
                         results [ct_array [list [ct_result $status {}]]]]
@@ -244,6 +303,7 @@ proc ct_main {} {
         }
         puts "CT7_ENUM layer=$layer module=$module instances=$matched"
         flush stdout
+        unset handles
     }
     set count 0
     foreach item $pins_to_trace {

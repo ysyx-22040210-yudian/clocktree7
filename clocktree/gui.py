@@ -318,6 +318,7 @@ class ClockTreeApp(tk.Tk):
         self.top_var=tk.StringVar()
         self.mode_var=tk.StringVar(value='已有 elab / KDB')
         self.path_var=tk.StringVar()
+        self.trace_scope_var=tk.StringVar()
         self.hierarchy_var=tk.StringVar()
         top_label=ttk.Frame(settings,style='White.TFrame')
         top_label.pack(fill='x')
@@ -330,6 +331,10 @@ class ClockTreeApp(tk.Tk):
         pathrow.pack(fill='x')
         ttk.Entry(pathrow,textvariable=self.path_var).pack(side='left',fill='x',expand=True)
         ttk.Button(pathrow,text='…',width=2,command=self.browse_design).pack(side='right',padx=(4,0))
+        ttk.Label(settings,text='端口追踪根层次',style='Small.TLabel').pack(anchor='w',pady=(12,0))
+        self.trace_scope_entry=ttk.Entry(settings,textvariable=self.trace_scope_var)
+        self.trace_scope_entry.pack(fill='x',pady=(5,4))
+        ttk.Label(settings,text='填写后仅追踪该层次及其子层次\n留空保留原有顶层追踪方式',style='Muted.TLabel').pack(anchor='w')
         ttk.Separator(settings).pack(fill='x',pady=15)
         rule_heading=ttk.Frame(settings,style='White.TFrame')
         rule_heading.pack(fill='x')
@@ -374,7 +379,7 @@ class ClockTreeApp(tk.Tk):
         self.bind('<MouseWheel>',self._config_wheel,add='+')
         self.bind('<Button-4>',self._config_wheel,add='+')
         self.bind('<Button-5>',self._config_wheel,add='+')
-        for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var]:
+        for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var,self.trace_scope_var]:
             variable.trace('w',self.mark_dirty)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
         self.runs_tree.heading('#0',text='运行记录')
@@ -908,6 +913,7 @@ class ClockTreeApp(tk.Tk):
         use_elab=bool(design.get('elab')) or ('elab' in design and not design.get('filelist'))
         self.mode_var.set('已有 elab / KDB' if use_elab else 'RTL 文件列表')
         self.path_var.set(design.get('elab',design.get('filelist','')))
+        self.trace_scope_var.set(config.get('trace_scope',''))
         self.layers=copy.deepcopy(config.get('layers',[]))
         if not self.layers:
             self.layers=[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]
@@ -929,6 +935,9 @@ class ClockTreeApp(tk.Tk):
         design['elab' if self.mode_var.get()=='已有 elab / KDB' else 'filelist']=self.path_var.get().strip()
         data['layers']=copy.deepcopy(self.layers)
         data['tree_type']=self._active_tree_type
+        scope=self.trace_scope_var.get().strip().rstrip('./')
+        if scope:data['trace_scope']=scope
+        else:data.pop('trace_scope',None)
         data.pop('timeout_seconds',None)
         return validate_config(data) if validate else data
 
@@ -1057,7 +1066,8 @@ class ClockTreeApp(tk.Tk):
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
         summary=graph['summary']
-        if summary['connectivity_complete'] and summary.get('topology_valid',True):self._badge('全量连接已解析','pass')
+        if summary['connectivity_complete'] and summary.get('topology_valid',True):
+            self._badge('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析','pass')
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
         else:self._badge('存在未解析断点 / 诊断','warn')
         self.component_ids=[None]+[c['id'] for c in graph['components']]
@@ -1073,6 +1083,8 @@ class ClockTreeApp(tk.Tk):
         self.expand_button.configure(state='disabled')
         self.inspector_tabs.select(0)
         self._properties('全网提取概况', [('设计顶层',graph['config']['design'].get('top','')),
+            ('端口追踪范围',graph['config'].get('trace_scope') or '设计顶层（兼容模式）'),
+            ('范围出口','{} 个实例；出口不计为分支末端'.format(summary.get('scope_output_instances',0))),
             ('覆盖规模','{:,} 个结构 · {:,} 条端口连线'.format(summary['instances'],summary['edges'])),
             ('器件类型',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in Counter(n.get('kind') for n in self.diagram.model.original.values()).items())),
             ('分支末端','  /  '.join('L{}: {}'.format(k,v) for k,v in sorted(summary.get('terminal_layers',{}).items()))),
@@ -1306,7 +1318,7 @@ class ClockTreeApp(tk.Tk):
             boundaries=[b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
             fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'),self._active_tree_type)),('传播层次','L{}'.format(node['layer'])),
                     ('关注输入','\n'.join(node['inputs'])),('关注输出',node['output']),
-                    ('结构状态',' / '.join(x for value,x in [(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
+                    ('结构状态',' / '.join(x for value,x in [(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]
             title=node['module']
             edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]

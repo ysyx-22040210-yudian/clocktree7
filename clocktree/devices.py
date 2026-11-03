@@ -202,6 +202,13 @@ def symbol_parts(node, width, height, selected=False):
     for px, py in inputs+[output]:
         add('circle', x=px, y=py, r=3, fill='#14253a', stroke=color, width=1.3)
     status_x = width-12
+    scope_labels = [label for value, label in [(node.get('scope_input_boundary'), '范围入口'),
+                                              (node.get('scope_output_boundary'), '范围出口')] if value]
+    if scope_labels and not aggregate:
+        text(11, height-10, ' / '.join(scope_labels), size=8, fill='#c1a6ff', max_width=width-55)
+    if scope_labels:
+        add('rect',x=status_x-3,y=height-12,w=6,h=6,radius=0,fill='#b99af2',stroke='',width=0)
+        status_x -= 11
     for state, fill in [(node.get('root'),'#4ad4ab'),(node.get('terminal'),'#eeb75e'),(node.get('has_unresolved_output'),'#f0827d')]:
         if state:
             add('circle',x=status_x,y=height-9,r=2.6,fill=fill,stroke='',width=0)

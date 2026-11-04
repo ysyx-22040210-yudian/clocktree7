@@ -13,6 +13,7 @@ from clocktree.gui import ClockTreeApp, write_json
 from clocktree.storage import IndexedGraph
 from clocktree.indexed_view import IndexedGraphView, OVERVIEW_LIMIT
 from clocktree.session import read_graph
+from clocktree.viewmodel import GraphView
 from check_flexible_gui import pump, capture, compare
 from make_flexible_fixture import generate as generate_clock
 from make_reset_fixture import generate as generate_reset
@@ -58,7 +59,7 @@ endmodule
 
 def check_horizontal(app):
     view = app.diagram.model
-    assert isinstance(view, IndexedGraphView)
+    assert isinstance(view, GraphView)
     same = [edge for edge in view.edges if edge['layer_delta'] == 0]
     assert same
     for edge in same:
@@ -116,7 +117,7 @@ def main():
                 app.load_result(out / (name + '.json'))
                 pump(app, lambda: not app.busy)
                 assert not errors, errors
-            assert isinstance(app.graph, IndexedGraph)
+            if args.extract:assert isinstance(app.graph, IndexedGraph)
             checks[name] = check_horizontal(app)
             app.show_log(False)
             app.diagram.fit()

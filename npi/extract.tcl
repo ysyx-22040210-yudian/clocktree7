@@ -79,6 +79,55 @@ proc ct_find_direct_instances {root module result} {
 proc ct_release_instances {handles} {
     foreach handle $handles {npi_release_handle -object $handle}
 }
+proc ct_port_connections {instance pins} {
+    # Language-model high connections preserve the instantiation expression,
+    # unlike traced/canonical net names. Inspect only ports on this instance;
+    # never enumerate descendants or retain language handles between instances.
+    set wanted [dict create]
+    set result [dict create]
+    foreach pin $pins {
+        set base $pin
+        regexp {^(.*)\[([0-9]+)\]$} $pin -> base bit
+        dict lappend wanted $base $pin
+        dict set result $pin [ct_object status [ct_js unavailable] reason [ct_js port_not_found]]
+    }
+    set iterator [npi_iterate -type npiPort -refHandle $instance]
+    if {$iterator ne ""} {
+        while {[set port [npi_scan -iterator $iterator]] ne ""} {
+            set connection ""
+            set name [npi_get_str -property npiName -object $port]
+            if {[dict exists $wanted $name]} {
+                set code [catch {
+                    set connection [npi_handle -type npiHighConn -refHandle $port]
+                    if {$connection eq ""} {
+                        set status unconnected
+                        set expression ""
+                        set full_name ""
+                    } else {
+                        set expression [::npi_L1::npi_expr_decompile $connection]
+                        set full_name [npi_get_str -property npiFullName -object $connection]
+                        set status [expr {$expression eq "" ? "unavailable" : "connected"}]
+                    }
+                    foreach pin [dict get $wanted $name] {
+                        # A configured vector bit still refers to this formal
+                        # port's whole high connection. Do not guess bit mapping.
+                        set coverage [expr {$pin eq $name ? "port" : "whole_port"}]
+                        dict set result $pin [ct_object status [ct_js $status] expression [ct_js $expression] \
+                            full_name [ct_js $full_name] formal_port [ct_js $name] coverage [ct_js $coverage] source [ct_js npiHighConn]]
+                    }
+                } message]
+                if {$code} {
+                    foreach pin [dict get $wanted $name] {
+                        dict set result $pin [ct_object status [ct_js unavailable] reason [ct_js $message] source [ct_js npiHighConn]]
+                    }
+                }
+            }
+            if {$connection ne ""} {npi_release_handle -object $connection}
+            npi_release_handle -object $port
+        }
+    }
+    return [ct_object {*}$result]
+}
 proc ct_inside_trace_scope {hdl} {
     global ct_trace_scope
     if {$ct_trace_scope eq ""} {return 1}
@@ -356,15 +405,26 @@ proc ct_maybe_rotate {stage queries traces} {
     flush stdout
     return 1
 }
-proc ct_register_instance {path module layer inputs output kind source emit} {
+proc ct_register_instance {path module layer inputs output kind source emit {language_handle ""}} {
     global ct_instances ct_selected ct_owner_paths ct_pins_to_trace ct_pin_count ct_context ct_target_stream
     set register_stage [expr {$emit ? "modules" : "restore"}]
     set register_context [ct_object instance [ct_js $path] module [ct_js $module] layer $layer]
     ct_journal item_begin $register_stage $register_context "bind instance ports"
     dict set ct_instances $path $layer
     if {$emit} {
+        set connection_fields {}
+        if {$language_handle ne ""} {
+            if {[catch {ct_port_connections $language_handle [concat $inputs [list $output]]} connections]} {
+                set connections {}
+                foreach pin [concat $inputs [list $output]] {
+                    lappend connections $pin [ct_object status [ct_js unavailable] reason [ct_js connection_query_failed]]
+                }
+                set connections [ct_object {*}$connections]
+            }
+            set connection_fields [list port_connections $connections]
+        }
         ct_emit [ct_object event [ct_js instance] path [ct_js $path] module [ct_js $module] layer $layer \
-            inputs [ct_strings $inputs] output [ct_js $output] kind [ct_js $kind] source [ct_js $source]]
+            inputs [ct_strings $inputs] output [ct_js $output] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
         if {$ct_context} {puts $ct_target_stream [list ct_target $path $module $layer $inputs $output $kind $source]}
     }
     foreach pin [concat $inputs [list $output]] {
@@ -457,7 +517,7 @@ proc ct_main {} {
     if {[tell $ct_stream] == 0} {
         ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
             verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] \
-            instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1]
+            instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1 port_connection_protocol 1]
         flush $ct_stream
         ct_save_checkpoint import 0 0
     }
@@ -566,7 +626,7 @@ proc ct_main {} {
                 }
                 continue
             }
-            ct_register_instance $path $module $layer $inputs $output $kind [::npi_L1::npi_ut_get_hdl_info $hdl] 1
+            ct_register_instance $path $module $layer $inputs $output $kind [::npi_L1::npi_ut_get_hdl_info $hdl] 1 $hdl
           }
         }
         if {$scope_found && !$matched} {

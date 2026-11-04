@@ -71,6 +71,11 @@ def inspect(directory,graph,config,enabled=True):
     return [json.loads(path.read_text())['last_module'] for path in snapshots]
 
 
+def same_connections(before, after):
+    expected = {node['id']: node['port_connections'] for node in before['nodes']}
+    assert expected == {node['id']: node['port_connections'] for node in after['nodes']}
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--out',default=str(ROOT/'validation/module-checkpoints'))
@@ -111,6 +116,7 @@ def main():
     finally:extraction.run_verdi=runner
     modules=inspect(directory,graph,config)
     same_graph(baseline['clock'],graph)
+    same_connections(baseline['clock'],graph)
     guard=graph['metadata']['memory_protection']
     assert guard['restart_count']==3 and guard['attempts']==4
     assert [event['checkpoint']['completed_modules'] for event in guard['restarts']]==[1,2,3]
@@ -118,7 +124,7 @@ def main():
     assert [module['new_instances'] for module in modules[:4]]==[1,0,0,0]
     assert all('CT7_MODULE_SKIP index={}'.format(i) in (directory/'verdi.log').read_text() for i in (1,2,3))
     report['cases'].append({'case':'within_shared_query','pass':True,'module_checkpoints':len(modules),'restarts':3,
-        'completed_rules_skipped':True,'full_graph_and_dual_evidence_equal':True})
+        'completed_rules_skipped':True,'full_graph_and_dual_evidence_equal':True,'port_connections_equal':True})
     # An empty result and a nonexistent scope are both committed as handled
     # rules with explicit failures; neither can certify complete connectivity.
     config=copy.deepcopy(configs['clock'])
@@ -137,6 +143,7 @@ def main():
     graph=extraction.extract(source,directory)
     modules=inspect(directory,graph,configs['clock'],enabled=False)
     same_graph(baseline['clock'],graph)
+    same_connections(baseline['clock'],graph)
     report['cases'].append({'case':'memory_disabled','pass':True,'module_checkpoints':len(modules),'memory_checks':0})
     if args.soc:
         from check_direct_instances import direct_soc_config

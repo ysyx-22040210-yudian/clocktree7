@@ -45,7 +45,7 @@ def test_scope_and_component_never_hide_other_networks_in_canonical_result():
 def test_svg_exports_all_nodes_and_real_edges_in_current_scope():
     view=GraphView(example()).project()
     xml=ET.fromstring(view.svg())
-    assert len(xml.findall('.//{http://www.w3.org/2000/svg}title'))==5
+    assert len(xml.findall('./{http://www.w3.org/2000/svg}g/{http://www.w3.org/2000/svg}title'))==5
     assert len(xml.findall('.//{http://www.w3.org/2000/svg}polyline'))==3
 
 

@@ -69,7 +69,9 @@
     "elapsed_seconds": 1.914,
     "verdi_exit_code": 0,
     "recorded_example": true,
-    "note": "Recorded VM NPI result. Machine execution paths removed; connectivity and NPI evidence retained."
+    "note": "Recorded VM NPI result. Machine execution paths removed; connectivity and NPI evidence retained.",
+    "port_connection_protocol": 1,
+    "port_connection_verification": "Real Verdi high connections verified against the same fixture on 2026-11-04"
   },
   "nodes": [
     {
@@ -89,7 +91,33 @@
       "component": 0,
       "root": true,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "a": {
+          "status": "connected",
+          "expression": "clk_a",
+          "full_name": "flex_top.clk_a",
+          "formal_port": "a",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "b": {
+          "status": "connected",
+          "expression": "clk_b",
+          "full_name": "flex_top.clk_b",
+          "formal_port": "b",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_mux0",
+          "full_name": "flex_top.s_mux0",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -108,7 +136,33 @@
       "component": 1,
       "root": true,
       "terminal": true,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "a": {
+          "status": "connected",
+          "expression": "clk_c",
+          "full_name": "flex_top.clk_c",
+          "formal_port": "a",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "b": {
+          "status": "connected",
+          "expression": "clk_c",
+          "full_name": "flex_top.clk_c",
+          "formal_port": "b",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_mux1",
+          "full_name": "flex_top.s_mux1",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -126,7 +180,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_occ0",
+          "full_name": "flex_top.s_occ0",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_div0",
+          "full_name": "flex_top.s_div0",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -144,7 +216,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_occ1",
+          "full_name": "flex_top.s_occ1",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_div1",
+          "full_name": "flex_top.s_div1",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -162,7 +252,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_div1",
+          "full_name": "flex_top.s_div1",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_div2",
+          "full_name": "flex_top.s_div2",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -180,7 +288,25 @@
       "component": 0,
       "root": false,
       "terminal": true,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_mux0",
+          "full_name": "flex_top.s_mux0",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_early",
+          "full_name": "flex_top.s_early",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -198,7 +324,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_mux0",
+          "full_name": "flex_top.s_mux0",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_gate0",
+          "full_name": "flex_top.s_gate0",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -216,7 +360,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_gate0",
+          "full_name": "flex_top.s_gate0",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_gate1",
+          "full_name": "flex_top.s_gate1",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -234,7 +396,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_div0",
+          "full_name": "flex_top.s_div0",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_gate2",
+          "full_name": "flex_top.s_gate2",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -252,7 +432,25 @@
       "component": 0,
       "root": false,
       "terminal": true,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_div1",
+          "full_name": "flex_top.s_div1",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_gate3",
+          "full_name": "flex_top.s_gate3",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -270,7 +468,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_gate1",
+          "full_name": "flex_top.s_gate1",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_occ0",
+          "full_name": "flex_top.s_occ0",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -288,7 +504,25 @@
       "component": 0,
       "root": false,
       "terminal": false,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_gate2",
+          "full_name": "flex_top.s_gate2",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_occ1",
+          "full_name": "flex_top.s_occ1",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     },
     {
       "event": "instance",
@@ -306,7 +540,25 @@
       "component": 0,
       "root": false,
       "terminal": true,
-      "has_unresolved_output": false
+      "has_unresolved_output": false,
+      "port_connections": {
+        "i": {
+          "status": "connected",
+          "expression": "s_div2",
+          "full_name": "flex_top.s_div2",
+          "formal_port": "i",
+          "coverage": "port",
+          "source": "npiHighConn"
+        },
+        "o": {
+          "status": "connected",
+          "expression": "s_occ2",
+          "full_name": "flex_top.s_occ2",
+          "formal_port": "o",
+          "coverage": "port",
+          "source": "npiHighConn"
+        }
+      }
     }
   ],
   "edges": [

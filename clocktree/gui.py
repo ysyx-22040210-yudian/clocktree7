@@ -23,7 +23,7 @@ from .paths import default_runs_dir
 from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
-from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule
+from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule, connection_details
 from .viewmodel import GraphView
 from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
 from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
@@ -1557,6 +1557,9 @@ class ClockTreeApp(tk.Tk):
             boundaries=self.graph.boundaries_for(node['id']) if isinstance(self.graph,IndexedGraph) else [b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
             fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'),self._active_tree_type)),('传播层次','L{}'.format(node['layer'])),
                     ('关注输入','\n'.join(node['inputs'])),('关注输出',node['output']),
+                    ('输入口例化连接',connection_details(node,node['inputs'])),
+                    ('输出口例化连接',connection_details(node,[node['output']])),
+                    ('连接名来源','NPI 例化端口 npiHighConn；表达式由 elab 还原' if 'port_connections' in node else '该历史结果未采集例化连接名；使用新版重新提取后显示'),
                     ('结构状态',' / '.join(x for value,x in [(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]
             title=node['module']
@@ -1620,6 +1623,9 @@ class ClockTreeApp(tk.Tk):
     def _edge_evidence(self,edge):
         lines=['实际端口连接','═'*24,'来源实例',edge['source'],'输出口  '+edge['source_pin'],'',
                '目标实例',edge['target'],'输入口  '+edge['target_pin'],'','层差  {}'.format(edge['layer_delta'])]
+        for endpoint,pin_key,label in [('source','source_pin','来源端例化连接'),('target','target_pin','目标端例化连接')]:
+            node=self.diagram.model.original[edge[endpoint]]
+            lines+=['',label,connection_details(node,[edge[pin_key]])]
         for direction,label in [('load','输出 → 全部负载'),('driver','输入 ← 实际驱动')]:
             lines+=['','─'*24,label,'']
             evidence=edge.get('evidence',{}).get(direction,[])

@@ -76,25 +76,48 @@ def typed_nodes(graph):
 def node_height(node):
     if node.get('aggregate'):
         return 144
-    if node.get('kind') in DEVICE_TYPES:
-        return max(136, 80 + 24 * len(node['inputs']))
-    return max(82, 50 + len(node['inputs']) * 18)
+    return max(152, 88 + 32 * len(node['inputs']))
 
 
 def port_offsets(node, width, height):
     """The sole source of pin anchors for symbols and all routed edges."""
     if node.get('aggregate'):
         return [(0, 110)], (width, 110)
-    if node.get('kind') in DEVICE_TYPES:
-        count = len(node['inputs'])
-        middle = (50 + height - 18) / 2
-        ys = [middle] if count == 1 else [60 + i * (height - 88) / (count - 1) for i in range(count)]
-        return [(0, y) for y in ys], (width, middle)
-    return [(0, 54 + i * 18) for i in range(len(node['inputs']))], (width, height / 2)
+    count = len(node['inputs'])
+    middle = (50 + height - 18) / 2
+    ys = [middle] if count == 1 else [60 + i * (height - 88) / (count - 1) for i in range(count)]
+    return [(0, y) for y in ys], (width, middle)
 
 
 def _short(text, limit):
     return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def connection_label(node, pin):
+    """Instantiation expression only; never substitute a traced net or driver."""
+    connection = node.get('port_connections', {}).get(pin)
+    if not connection:
+        return '未采集'
+    if connection.get('status') == 'unconnected':
+        return '未连接'
+    if connection.get('status') != 'connected' or not connection.get('expression'):
+        return '未取得'
+    prefix = '整口: ' if connection.get('coverage') == 'whole_port' else ''
+    return prefix + connection['expression']
+
+
+def connection_details(node, pins):
+    lines = []
+    for pin in pins:
+        connection = node.get('port_connections', {}).get(pin, {})
+        lines.append('{} = {}'.format(pin, connection_label(node, pin)))
+        if connection.get('full_name'):
+            lines.append('  完整信号：' + connection['full_name'])
+        if connection.get('coverage') == 'whole_port':
+            lines.append('  .{} 的整体连接；关注 {}，未推断逐位映射'.format(connection['formal_port'], pin))
+        if connection.get('reason'):
+            lines.append('  原因：' + connection['reason'])
+    return '\n'.join(lines)
 
 
 def symbol_parts(node, width, height, selected=False):
@@ -113,8 +136,8 @@ def symbol_parts(node, width, height, selected=False):
         parts.append(dict(op=op, **kwargs))
     def line(points, fill=color, stroke_width=1.5, **kwargs):
         add('polyline', points=points, fill=fill, width=stroke_width, **kwargs)
-    def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None):
-        add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width)
+    def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None, tooltip=None):
+        add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width, tooltip=tooltip)
     add('rect', x=0, y=0, w=width, h=height, radius=8,
         fill='#1b3350' if selected else '#17283e', stroke='#78bdff' if selected else '#2e445f',
         width=2 if selected else 1, dash=aggregate)
@@ -142,6 +165,7 @@ def symbol_parts(node, width, height, selected=False):
         text(width-22, 110, '输出', size=9, anchor='e')
     elif kind in DEVICE_TYPES:
         text(width-11, 16, info['short'], size=9, fill=color, bold=True, anchor='e')
+        symbol_begin = len(parts)
         cy = output[1]
         if kind == 'mux':
             add('polygon', points=[(78, 50), (166, 63), (166, height-31), (78, height-18)],
@@ -189,16 +213,27 @@ def symbol_parts(node, width, height, selected=False):
             pulse.append((160,cy+16))
             line(pulse, stroke_width=1.3)
             input_end, output_start = left, right
+        shift = (width - 242) / 2
+        for part in parts[symbol_begin:]:
+            if 'x' in part:part['x'] += shift
+            if 'points' in part:part['points'] = [(x + shift, y) for x, y in part['points']]
+        input_end, output_start = input_end + shift, output_start + shift
         for pin, (px, py) in zip(node['inputs'], inputs):
             line([(px, py), (input_end, py)])
-            text(7, py-9, _short(pin,14), size=9, fill='#b5cbe5', max_width=input_end-12)
+            detail = '{} · {}'.format(path, connection_details(node, [pin]))
+            text(7, py-11, pin, size=11, fill='#b5cbe5', max_width=input_end-12, tooltip=detail)
+            text(7, py+11, connection_label(node,pin), size=11, fill='#9fcfc3', max_width=input_end-12, tooltip=detail)
         line([(output_start, cy), output])
-        text(width-7, cy-10, _short(node['output'],14), size=9, fill='#b5cbe5', anchor='e', max_width=width-output_start-10)
+        detail = '{} · {}'.format(path, connection_details(node, [node['output']]))
+        text(width-7, cy-11, node['output'], size=11, fill='#b5cbe5', anchor='e', max_width=width-output_start-10, tooltip=detail)
+        text(width-7, cy+11, connection_label(node,node['output']), size=11, fill='#9fcfc3', anchor='e', max_width=width-output_start-10, tooltip=detail)
     else:
         text(width-10,16,'待分类',size=9,fill='#8097b6',anchor='e')
         for pin, (px,py) in zip(node['inputs'],inputs):
-            text(10,py,pin,size=9,max_width=width/2-12)
-        text(width-10,output[1]+14,node['output'],size=9,anchor='e',max_width=width/2-12)
+            text(10,py-7,pin,size=9,max_width=width/2-12)
+            text(10,py+7,connection_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
+        text(width-10,output[1]-7,node['output'],size=9,anchor='e',max_width=width/2-12)
+        text(width-10,output[1]+7,connection_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
     for px, py in inputs+[output]:
         add('circle', x=px, y=py, r=3, fill='#14253a', stroke=color, width=1.3)
     status_x = width-12
@@ -236,8 +271,9 @@ def symbol_svg(parts):
         op = p['op']
         if op == 'text':
             anchor = {'w':'start','e':'end','center':'middle'}[p['anchor']]
-            lines.append('<text x="{}" y="{}" fill={} font-size="{}" font-weight="{}" text-anchor="{}" dominant-baseline="middle" font-family="Microsoft YaHei,WenQuanYi Micro Hei,sans-serif">{}</text>'.format(
-                p['x'],p['y'],quoteattr(p['fill']),p['size'],'bold' if p['bold'] else 'normal',anchor,escape(display_text(p))))
+            tooltip = '<title>{}</title>'.format(escape(p['tooltip'])) if p.get('tooltip') else ''
+            lines.append('<text x="{}" y="{}" fill={} font-size="{}" font-weight="{}" text-anchor="{}" dominant-baseline="middle" font-family="Microsoft YaHei,WenQuanYi Micro Hei,sans-serif">{}{}</text>'.format(
+                p['x'],p['y'],quoteattr(p['fill']),p['size'],'bold' if p['bold'] else 'normal',anchor,escape(display_text(p)),tooltip))
         elif op == 'rect':
             lines.append('<rect x="{}" y="{}" width="{}" height="{}" rx="{}" fill={} stroke={} stroke-width="{}"{}/>'.format(
                 p['x'],p['y'],p['w'],p['h'],p['radius'],quoteattr(p['fill']),quoteattr(p['stroke']),p['width'],

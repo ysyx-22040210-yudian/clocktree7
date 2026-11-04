@@ -2,6 +2,17 @@
 
 更新日期：2026-11-04。数据来自本地实际保存的 Verdi NPI 结果和 Tk 界面验收；以下为可随源码分享的摘要。完整原始记录保留在本机 `validation/`，不随仓库上传。
 
+## 实例端口的实际 RTL 连接名
+
+- Windows 全量 Python 检查 **133 通过，1 项 Linux 符号链接检查跳过**。新增检查高层连接与驱动网络的区别、句柄释放、JSON/Tcl/XML 特殊字符、未连接/不可用/旧结果状态、向量位的整口标注，以及实例字段经过索引、JSON 和历史快照后保持。首次全量运行遇到本机 Conda Tcl 的暂时性 `init.tcl` 读取错误；该单项及随后全量重跑通过，未修改用户 Tcl 环境。
+- VM 实际 Verdi O-2018.09-SP2：专用 RTL 的 **8 实例 / 16 关注端口**逐项核对，覆盖别名、总线位选、常量、空端口、表达式、位置连接、`.*`、generate、长名称和向量整口拼接。名称来自 `npiHighConn`，未用追踪的规范网络名替代。此 fixture 包含组合表达式等追踪诊断，验收的是连接名准确性，不把它标成完整时钟树通过。
+- 原生 Tk 8.5.13 实测端口两行文字、完整属性、悬停状态栏及 SVG 提示；时钟 **6/5、13/11** 与复位 **12/12** 实例/连线结果均通过原有 golden 和横向布局检查。缩放、导航、定位、聚合展开、连线证据读取无回调异常。随附两级时钟/复位示例各补入 28 个经过实际提取的端口连接记录。
+- 逐 module 断点回归：同一查询组内连续 **3 次 Verdi 轮换**，所有 `port_connections` 与不中断对照逐实例完全一致，原始节点、连接、边界和双向证据也一致；关闭内存监测后的结果相同。
+- 跨进程恢复：第 1 条 module 断点后杀死提取控制进程，再用新进程恢复；**42 实例 / 41 连线 / 85 个端口连接记录**均与不中断对照一致，旧 Verdi 进程已结束，未提交尾部撤回。记录为 `validation/port-signals/recovery/acceptance.json`。
+- OpenC910 **已有 KDB 的直接父层子网**重新提取：22 实例的 **44 个关注端口**均为 `connected`，例如 `clk_in = forever_cpuclk`、`clk_out = ras_entry0_upd_clk`。这不是全芯片重新提取或商业芯片内存验收。
+
+复现：启用 Verdi 后运行 `python3 scripts/check_port_connections.py --out validation/port-signals/acceptance`，有图形显示时在同目录追加 `--gui`；断点回归为 `scripts/check_module_checkpoints.py --out validation/port-signals/checkpoints --soc`。`--soc` 需要本机已有的 OpenC910 KDB。原始记录保留于 `validation/port-signals/`，操作和字段边界见手册 [9.5 节](GUI_USER_MANUAL.zh-CN.md#port-signals)。
+
 ## 同层连线优先横向排列
 
 - Windows 全量 Python 检查 **126 通过，1 项 Linux 符号链接检查跳过**。新增布局用例覆盖同层单链、扇出汇合、跳级与空层、独立网络、同层跨列绕线、环路/自环/逆序边、SQLite 索引与聚合投影、SVG 层级宽度，以及 1,600 器件长链；不使用递归布局，不删除节点或连接。

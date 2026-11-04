@@ -5,8 +5,8 @@ from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbo
 from .profiles import tree_type
 
 
-NODE_WIDTH = 242
-COLUMN_STEP = 302
+NODE_WIDTH = 382
+COLUMN_STEP = 442
 
 
 def horizontal_ranks(nodes, edges):

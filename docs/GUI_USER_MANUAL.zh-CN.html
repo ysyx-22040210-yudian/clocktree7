@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：2.1 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：2.2 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -483,6 +483,50 @@ L7  fixture_top.l7
 <li>实例明细、层次概览、展开后的局部图和当前范围 SVG 共用该布局。聚合框中的内部器件需展开后才能看到；复位树的 MUX、RSY_SYNC 同样适用。</li>
 </ul>
 <p>横向排列只调整图形位置和走线，不改变用户配置的层数、实际 RTL 路径、提取出的连线、端口及 NPI 证据。</p>
+<p><a id="port-signals"></a></p>
+<h3 id="95">9.5 端口旁的实际例化连接信号</h3>
+<p>新版提取的每个实例，在所有关注输入和唯一关注输出旁显示两行文字：<strong>上行为模块端口名，下行为该实例连接的信号或表达式</strong>。例如 RTL 中 <code>gate u_gate(.i(source), .o(gated));</code> 对应输入侧 <code>i</code> / <code>source</code>，输出侧 <code>o</code> / <code>gated</code>。用户仍只填写 module 和端口名，连接名由工具自动取得。同一定义的不同实例分别采集，不会共用一个连接名。</p>
+<p><a class="figure" href="images/horizontal-clock.png" target="_blank"><img alt="实际 Tk 图：端口名下方显示 source、gated、test_clk、divided 等例化连接信号" src="images/horizontal-clock.png" /></a></p>
+<ol>
+<li>使用新版完成一次提取，或打开含有端口连接名的结果。随附的两级时钟、复位示例已更新。</li>
+<li>点 <strong>专注画布</strong> 或放大图形，查看端口名下方的绿色连接文字。长名称在图内省略显示。</li>
+<li>将鼠标移到端口或连接文字上，底部状态栏显示完整内容；点击器件，在右侧 <strong>属性</strong> 中下滚到 <strong>输入口例化连接 / 输出口例化连接</strong>，可查看和复制完整表达式及可用的完整信号路径。</li>
+<li>点击连线，<strong>连线证据</strong> 同时列出来源端、目标端各自的例化连接以及原有双向追踪证据。经过层次边界或别名时，两端的局部名称可能不同。</li>
+<li>导出 JSON 保存原始字段；SVG 中的端口文字带完整提示，缩略文本不丢失原名。历史自动恢复及断点续跑均保留字段。</li>
+</ol>
+<p><a class="figure" href="images/port-signal-details.png" target="_blank"><img alt="长名称在图中省略，属性面板和悬停状态栏保留完整连接" src="images/port-signal-details.png" /></a></p>
+<p>数据来自该实例语言模型端口的 <code>npiHighConn</code>，并用 NPI 还原连接表达式。例如 <code>.i(alias_clk)</code> 显示 <code>alias_clk</code>，不会沿 assign 追到源头后改名；<code>.i(clk_bus[3])</code> 显示位选，常量或组合表达式也会保留。表达式与 elab 等价，括号、空格和常量进制写法可能被 NPI 规范化，不保证逐字复制源代码。</p>
+<table>
+<thead>
+<tr>
+<th>显示</th>
+<th>含义与操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>clk_bus[3]</code>、<code>alias_clk</code> 等</td>
+<td>已取得该实例的实际高层连接</td>
+</tr>
+<tr>
+<td>未连接</td>
+<td>NPI 确认该端口没有高层连接，例如 <code>.o()</code></td>
+</tr>
+<tr>
+<td>未取得</td>
+<td>本次数据库/接口未能返回连接；属性中保留可用原因，不猜测信号名</td>
+</tr>
+<tr>
+<td>未采集</td>
+<td>旧结果没有该信息；重新提取后补齐，仅重新打开不会生成缺失数据</td>
+</tr>
+<tr>
+<td><code>整口: …</code></td>
+<td>用户关注 <code>i[0]</code> 等向量端口的一位，但保存的是 <code>.i(...)</code> 的整体连接；属性明确说明，未把拼接/切片整体表达式误当作某一位的信号名</td>
+</tr>
+</tbody>
+</table>
+<p>这项标注只覆盖用户配置的关注端口，复位树同样适用。聚合框代表多个实例，需展开后查看各自连接。标注不参与连通性判断；已有的未解析逻辑或诊断不会因为显示了名称而消失。提取实现升级后，旧中断任务仍受原有版本一致性校验约束，应使用原版本续跑，或用新版重新提取。</p>
 <p><a id="large-design"></a></p>
 <h2 id="10">10. 大规模设计：层次概览、展开与定位</h2>
 <p>超过 400 个实例时，默认使用 <strong>RTL 层次概览</strong>。它按实际 RTL 路径、传播层和网络分组，避免把数千个器件一次铺成难以阅读的长图。</p>

@@ -22,6 +22,7 @@ def rounded(canvas, x, y, w, h, radius=8, **kwargs):
 def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cache=None):
     """Use exactly the same symbol primitives and port anchors as SVG export."""
     font_cache = font_cache if font_cache is not None else {}
+    tooltips = {}
     for p in symbol_parts(node,w,h,selected):
         op=p['op']
         if op=='rect':
@@ -39,7 +40,8 @@ def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cac
                 if metric.measure(text)>maximum:
                     while text and metric.measure(text+'…')>maximum:text=text[:-1]
                     text+='…'
-            canvas.create_text(x+p['x']*scale,y+p['y']*scale,text=text,fill=p['fill'],font=font,anchor=p['anchor'],tags=tags)
+            item = canvas.create_text(x+p['x']*scale,y+p['y']*scale,text=text,fill=p['fill'],font=font,anchor=p['anchor'],tags=tags)
+            if p.get('tooltip'):tooltips[item] = p['tooltip']
         elif op in ('polygon','polyline'):
             points=[v for xx,yy in p['points'] for v in (x+xx*scale,y+yy*scale)]
             if op=='polygon':
@@ -50,6 +52,7 @@ def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cac
             xx,yy=x+p['x']*scale,y+p['y']*scale
             r=max(1.5,p['r']*scale)
             canvas.create_oval(xx-r,yy-r,xx+r,yy+r,fill=p['fill'],outline=p['stroke'],width=p['width'],tags=tags)
+    return tooltips
 
 
 class ClockDiagram(tk.Frame):
@@ -63,6 +66,7 @@ class ClockDiagram(tk.Frame):
         self.scale, self.ox, self.oy = 1., 0., 0.
         self.selected, self.highlights = None, set()
         self.rendered_nodes, self.rendered_wires = {}, {}
+        self.port_tooltips = {}
         self._font_cache = {}
         self.runtime_journal=None
         self.runtime_context={}
@@ -114,6 +118,7 @@ class ClockDiagram(tk.Frame):
         self.scale,self.ox,self.oy=1.,0.,0.
         self.mode,self.component,self.scope,self.depth='instances',None,'',5
         self.rendered_nodes,self.rendered_wires={},{}
+        self.port_tooltips={}
         self.minimap.delete('all')
         self.schedule()
 
@@ -257,6 +262,7 @@ class ClockDiagram(tk.Frame):
         c = self.canvas
         c.delete('all')
         self.rendered_nodes, self.rendered_wires = {}, {}
+        self.port_tooltips = {}
         cw, ch = c.winfo_width(), c.winfo_height()
         if not self.model:
             c.create_text(cw/2, ch/2-24, text='RTL RESET ARCHITECTURE' if self.tree_type=='reset' else 'RTL CLOCK ARCHITECTURE', fill='#8ea9ce', font=(self.family, 18, 'bold'))
@@ -308,7 +314,7 @@ class ClockDiagram(tk.Frame):
             if scale < .22:
                 c.create_rectangle(px, py, px+max(2,pw), py+max(1.5,ph), fill=color, outline='', tags=tags)
                 continue
-            draw_device(c,node,px,py,w,h,scale,self.family,selected,tags,self._font_cache)
+            self.port_tooltips.update(draw_device(c,node,px,py,w,h,scale,self.family,selected,tags,self._font_cache))
         self.visible_nodes = visible
         # Fixed layer headers remain readable while panning and zooming.
         c.create_rectangle(0, 0, cw, 44, fill='#17263e', outline='')
@@ -399,7 +405,8 @@ class ClockDiagram(tk.Frame):
         if hit:
             if hit[0]=='node':
                 node=hit[1]
-                self.on_hover(node.get('path', node['id']))
+                label=next((self.port_tooltips[item] for item in reversed(self.canvas.find_overlapping(event.x-2,event.y-2,event.x+2,event.y+2)) if item in self.port_tooltips),None)
+                self.on_hover(label.replace('\n',' · ') if label else node.get('path', node['id']))
             else:
                 self.on_hover('实际连接 · 点击查看驱动 / 负载双向证据')
 

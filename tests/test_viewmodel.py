@@ -26,7 +26,7 @@ def test_aggregation_keeps_all_real_instances_edges_and_source_data():
     assert data==saved
     view.project(mode='instances')
     assert len(view.nodes)==5 and len(view.edges)==3
-    assert view.positions['top.gates.u0'][1]<view.positions['top.gates.u1'][1]
+    assert view.positions['top.gates.u0'][0]<view.positions['top.gates.u1'][0]
 
 
 def test_scope_and_component_never_hide_other_networks_in_canonical_result():

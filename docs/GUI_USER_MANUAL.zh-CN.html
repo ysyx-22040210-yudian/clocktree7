@@ -10,12 +10,12 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：2.0 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：2.1 · 更新日期：2026-11-04 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
 <p><a class="figure" href="images/default-two-layers.png" target="_blank"><img alt="没有历史记录时的两级空白配置" src="images/default-two-layers.png" /></a></p>
-<p><a class="figure" href="images/gui-overview.png" target="_blank"><img alt="ClockTree7 主界面" src="images/gui-overview.png" /></a></p>
+<p><a class="figure" href="images/horizontal-workbench.png" target="_blank"><img alt="ClockTree7 主界面：同层连接横向展开" src="images/horizontal-workbench.png" /></a></p>
 <h2 id="_1">目录</h2>
 <ol>
 <li><a href="#scope">用途、术语与结果范围</a></li>
@@ -424,7 +424,7 @@ L7  fixture_top.l7
 <h2 id="9">9. 阅读完整时钟树架构图</h2>
 <h3 id="91">9.1 层、节点与连线</h3>
 <ul>
-<li>L1–LN 是传播分栏，N 为当前配置的层数，空层保留为空。</li>
+<li>L1–LN 是传播层级区域，N 为当前配置的层数，空层保留为空；同层串接时，一个层级区域可包含多列器件。</li>
 <li>每个真实器件节点对应一个实际例化，显示实例短名、module 以及关注端口。</li>
 <li>线条箭头方向为 <strong>输出口 → 输入口</strong>。</li>
 <li>一个输出可分到多个下游输入，选择器可以有多条上游输入。</li>
@@ -471,6 +471,18 @@ L7  fixture_top.l7
 <h3 id="93">9.3 查看全部独立网络</h3>
 <p>网络下拉框默认为 <strong>全部时钟网络</strong>。可以切到某一个网络，核查局部结构，再切回全部。切换网络只影响当前显示范围，完整数据保留。</p>
 <p>多个根通过选择器汇合时，它们会属于同一个连通网络；多个根由同一外部时钟源驱动时，也会关联到同一个网络。不能把网络数量直接当作时钟源数量。</p>
+<p><a id="horizontal-layout"></a></p>
+<h3 id="94">9.4 同层连接自动横向排列</h3>
+<p>打开已有结果或完成新的提取后，同一逻辑层内的串接器件会优先按 <strong>输出 → 输入</strong> 从左向右排列。无需新增配置或重新提取数据库。比如 L2 中的 <code>Gate → OCC → DIV</code> 会横向展开为三列，仍全部属于 L2；L3 自动移到右侧。标题中的“同层展开”表示该层包含多列器件，不表示增加了传播层级。</p>
+<p><a class="figure" href="images/horizontal-clock.png" target="_blank"><img alt="VM 中真实 Verdi 提取后的同层横向排列：L2 的 Gate、OCC、DIV 串接，另一个 Gate 为旁支" src="images/horizontal-clock.png" /></a></p>
+<ul>
+<li>单链优先对齐输入/输出的高度，连线尽可能直接水平连接。</li>
+<li>同一输出的并行分支在不重叠的行内展示，汇合节点位于其同层前驱右侧。独立网络继续分区排列。</li>
+<li>跳过中间器件列的连线从网络上方绕行，避免穿过无关器件。自环、反馈环路仍显示；环内器件可保留在同一列，环后的串接继续横向展开。</li>
+<li>同层链较长时，整图会变宽。点击 <strong>专注画布</strong> 增加阅读空间，使用滚轮放大、拖动平移、右下角全图导航，或按完整实例路径定位；点击 <strong>全图</strong> 恢复完整范围。</li>
+<li>实例明细、层次概览、展开后的局部图和当前范围 SVG 共用该布局。聚合框中的内部器件需展开后才能看到；复位树的 MUX、RSY_SYNC 同样适用。</li>
+</ul>
+<p>横向排列只调整图形位置和走线，不改变用户配置的层数、实际 RTL 路径、提取出的连线、端口及 NPI 证据。</p>
 <p><a id="large-design"></a></p>
 <h2 id="10">10. 大规模设计：层次概览、展开与定位</h2>
 <p>超过 400 个实例时，默认使用 <strong>RTL 层次概览</strong>。它按实际 RTL 路径、传播层和网络分组，避免把数千个器件一次铺成难以阅读的长图。</p>

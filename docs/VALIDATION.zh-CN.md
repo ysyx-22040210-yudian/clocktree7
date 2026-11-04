@@ -2,6 +2,15 @@
 
 更新日期：2026-11-04。数据来自本地实际保存的 Verdi NPI 结果和 Tk 界面验收；以下为可随源码分享的摘要。完整原始记录保留在本机 `validation/`，不随仓库上传。
 
+## 同层连线优先横向排列
+
+- Windows 全量 Python 检查 **126 通过，1 项 Linux 符号链接检查跳过**。新增布局用例覆盖同层单链、扇出汇合、跳级与空层、独立网络、同层跨列绕线、环路/自环/逆序边、SQLite 索引与聚合投影、SVG 层级宽度，以及 1,600 器件长链；不使用递归布局，不删除节点或连接。
+- VM 普通用户 `host`、Python 3.6.8 / Tk 8.5.13 / Verdi O-2018.09-SP2，在原生 GUI 发起三次真实提取，实例、连接、末端集合及完整性与各自独立 golden 一致。紧凑示例 **6 实例 / 5 连线**，L2 的 Gate → OCC → DIV 为三列且水平对齐，旁支另起一行，L3 自动右移；两级时钟 **13 / 11**、两级复位 **12 / 12** 中全部同层有向连接也沿横向展开。
+- 同一 Tk 窗口实测连线点击及驱动证据、缩放、全图导航、实例定位、聚合展开和 SVG 导出，未记录回调异常。真实窗口截图见手册 [9.4 节](GUI_USER_MANUAL.zh-CN.md#horizontal-layout)。
+- 读取既有 OpenC910 **6,984 实例 / 6,983 连线**结果，SQLite 概览和终端实例定位通过。本项为已有结果的显示回归，不是重新提取 SoC，也不宣称商业芯片全规模验收。
+
+复现：`python3 scripts/check_horizontal_gui.py --extract --out validation/horizontal-layout`，需要 Linux 图形显示和已启用的 Verdi 环境。可追加 `--soc <已有SoC结果.json>` 检查大图。生成结果后不带 `--extract` 可复查相同目录的图形交互。原始记录：`validation/horizontal-layout/acceptance.json`。
+
 ## 闪退后重开提示与跨次断点续跑
 
 - Windows Python 检查 **120 通过，1 项 Linux 符号链接检查跳过**。新增覆盖进程被杀后释放排他锁、运行中任务拒绝重复恢复、输入/config/断点变化拒绝、GUI 正常关闭与异常退出区分，以及安全启动不删除结果缓存。

@@ -9,6 +9,60 @@ NODE_WIDTH = 242
 COLUMN_STEP = 302
 
 
+def horizontal_ranks(nodes, edges):
+    """Rank only same-layer connections; keep cycles in one vertical column.
+
+    Iterative SCC condensation handles long chains without recursion and keeps
+    a cyclic group from hiding its acyclic downstream continuation.
+    """
+    successors, predecessors = defaultdict(set), defaultdict(set)
+    for edge in edges:
+        source, target = edge['source'], edge['target']
+        if nodes[source]['layer'] == nodes[target]['layer']:
+            successors[source].add(target)
+            predecessors[target].add(source)
+    seen, finished = set(), []
+    for root in sorted(nodes):
+        if root in seen:continue
+        seen.add(root)
+        stack = [(root, iter(sorted(successors[root])))]
+        while stack:
+            node, children = stack[-1]
+            child = next(children, None)
+            if child is None:
+                finished.append(node); stack.pop()
+            elif child not in seen:
+                seen.add(child); stack.append((child, iter(sorted(successors[child]))))
+    owners, groups = {}, []
+    for root in reversed(finished):
+        if root in owners:continue
+        group = len(groups)
+        owners[root] = group
+        stack, members = [root], []
+        while stack:
+            node = stack.pop(); members.append(node)
+            for parent in predecessors[node]:
+                if parent not in owners:
+                    owners[parent] = group; stack.append(parent)
+        groups.append(sorted(members))
+    outgoing, degrees = defaultdict(set), [0] * len(groups)
+    for source, targets in successors.items():
+        a = owners[source]
+        for target in targets:
+            b = owners[target]
+            if a != b and b not in outgoing[a]:
+                outgoing[a].add(b); degrees[b] += 1
+    queue = deque(sorted((i for i, degree in enumerate(degrees) if not degree), key=lambda i:groups[i][0]))
+    ranks = [0] * len(groups)
+    while queue:
+        source = queue.popleft()
+        for target in sorted(outgoing[source]):
+            ranks[target] = max(ranks[target], ranks[source] + 1)
+            degrees[target] -= 1
+            if not degrees[target]:queue.append(target)
+    return {key:ranks[owner] for key, owner in owners.items()}
+
+
 class GraphView:
     def __init__(self, graph):
         self.graph = graph
@@ -84,45 +138,52 @@ class GraphView:
     def _layout(self):
         self.positions = {}
         self.component_tops = {}
-        components = defaultdict(list)
-        local_edges = defaultdict(list)
-        for n in self.nodes.values():
-            components[n['component']].append(n)
-        for e in self.edges:
-            if self.nodes[e['source']]['layer'] == self.nodes[e['target']]['layer']:
-                local_edges[(self.nodes[e['source']]['component'], self.nodes[e['source']]['layer'])].append(e)
+        ranks = horizontal_ranks(self.nodes, self.edges)
+        self.layer_columns = dict.fromkeys(range(1, self.layer_count + 1), 1)
+        for key, node in self.nodes.items():
+            self.layer_columns[node['layer']] = max(self.layer_columns[node['layer']], ranks[key] + 1)
+        self.layer_spans, starts = {}, {}
+        column = 0
+        for layer in range(1, self.layer_count + 1):
+            starts[layer] = column
+            width = self.layer_columns[layer] * COLUMN_STEP
+            self.layer_spans[layer] = (18 + column * COLUMN_STEP, width - 24)
+            column += self.layer_columns[layer]
+        self.node_columns = {key:starts[node['layer']] + ranks[key] for key, node in self.nodes.items()}
+        components, incoming, fanout = defaultdict(lambda:defaultdict(list)), defaultdict(list), Counter()
+        heights, anchors = {}, {}
+        for key, node in self.nodes.items():
+            components[node['component']][self.node_columns[key]].append(key)
+            heights[key] = node_height(node)
+            anchors[key] = port_offsets(node, NODE_WIDTH, heights[key])
+        for edge in self.edges:
+            incoming[edge['target']].append(edge)
+            if self.node_columns[edge['target']] > self.node_columns[edge['source']]:fanout[edge['source']] += 1
         offset = 92
-        for component, members in sorted(components.items()):
+        for component, columns in sorted(components.items()):
             self.component_tops[component] = offset
-            height = 116
-            for layer in range(1, self.layer_count + 1):
-                local = {n['id']: n for n in members if n['layer'] == layer}
-                degree = dict.fromkeys(local, 0)
-                successors = defaultdict(list)
-                for e in local_edges[(component, layer)]:
-                    degree[e['target']] += 1
-                    successors[e['source']].append(e['target'])
-                queue = deque(sorted(n for n in local if not degree[n]))
-                ordered, seen = [], set()
-                while queue:
-                    key = queue.popleft()
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    ordered.append(key)
-                    for target in successors[key]:
-                        degree[target] -= 1
-                        if not degree[target]:
-                            queue.append(target)
-                ordered.extend(sorted(set(local) - seen))
-                y = offset
-                for key in ordered:
-                    height_at_node = node_height(local[key])
-                    self.positions[key] = (30 + (layer - 1) * COLUMN_STEP, y, NODE_WIDTH, height_at_node)
-                    y += height_at_node + 32
-                height = max(height, y - offset)
-            offset += height + 56
-        self.bounds = (0, 0, self.layer_count * COLUMN_STEP + 36, max(500, offset))
+            bottom = offset + 116
+            baseline = offset + max(anchors[key][1][1] for key in columns[min(columns)])
+            for column, keys in sorted(columns.items()):
+                preferred = {}
+                for key in keys:
+                    desired = []
+                    node = self.nodes[key]
+                    for edge in incoming[key]:
+                        source = edge['source']
+                        if source not in self.positions or self.node_columns[source] >= column:continue
+                        index = node['inputs'].index(edge['target_pin']) if edge['target_pin'] in node['inputs'] else 0
+                        desired.append(self.positions[source][1] + anchors[source][1][1] - anchors[key][0][index][1])
+                    preferred[key] = sum(desired) / len(desired) if desired else baseline - anchors[key][1][1]
+                next_y = offset
+                for key in sorted(keys, key=lambda key:(preferred[key], -fanout[key], key)):
+                    y = max(next_y, preferred[key])
+                    self.positions[key] = (30 + column * COLUMN_STEP, y, NODE_WIDTH, heights[key])
+                    next_y = y + heights[key] + 32
+                bottom = max(bottom, next_y)
+            offset = bottom + 56
+        width = sum(self.layer_columns.values()) * COLUMN_STEP + 36
+        self.bounds = (0, 0, width, max(500, offset))
 
     def edge_points(self, edge):
         sx, sy, sw, sh = self.positions[edge['source']]
@@ -133,13 +194,15 @@ class GraphView:
         target_inputs, _ = port_offsets(target, tw, th)
         start = (sx + source_output[0], sy + source_output[1])
         end = (tx + target_inputs[index][0], ty + target_inputs[index][1])
-        if edge['layer_delta'] > 1:
-            # A skipped layer may contain an unrelated device at the same y.
-            # Route above this component, never through that device's body.
+        distance = self.node_columns[edge['target']] - self.node_columns[edge['source']]
+        if distance > 1 or distance < 0:
+            # Intermediate columns can belong to the same logical layer. Route
+            # above the component instead of crossing unrelated device bodies.
             top = self.component_tops[source['component']] - 16
             return [start, (start[0]+22, start[1]), (start[0]+22, top),
                     (tx-22, top), (tx-22, end[1]), end]
-        if edge['layer_delta'] > 0:
+        if distance == 1:
+            if start[1] == end[1]:return [start, end]
             lane = start[0] + max(18, (tx - start[0]) / 2)
             return [start, (lane, start[1]), (lane, end[1]), end]
         lane = start[0] + 24
@@ -176,8 +239,8 @@ class GraphView:
                  '<rect width="100%" height="100%" fill="#101b2e"/>',
                  '<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6c94c8"/></marker></defs>']
         for layer in range(1, self.layer_count + 1):
-            x = 18 + (layer - 1) * COLUMN_STEP
-            lines.append('<rect x="{}" y="12" width="278" height="{}" rx="10" fill="#152239"/>'.format(x, height - 24))
+            x, band_width = self.layer_spans[layer]
+            lines.append('<rect class="layer-band" data-layer="{}" x="{}" y="12" width="{}" height="{}" rx="10" fill="#152239"/>'.format(layer, x, band_width, height - 24))
             lines.append('<text x="{}" y="46" fill="#a7bfe1" font-size="17" font-family="sans-serif">L{}</text>'.format(x + 13, layer))
         for edge in self.edges:
             points = ' '.join('{},{}'.format(x, y) for x, y in self.edge_points(edge))

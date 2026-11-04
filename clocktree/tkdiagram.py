@@ -3,7 +3,7 @@ import tkinter as tk
 from tkinter import font as tkfont
 from collections import Counter
 
-from .viewmodel import GraphView, COLUMN_STEP, clip_segment
+from .viewmodel import GraphView, clip_segment
 from .devices import DEVICE_TYPES, symbol_parts
 from .profiles import tree_type
 
@@ -265,8 +265,9 @@ class ClockDiagram(tk.Frame):
         scale = self.scale
         bounds = ((-self.ox)/scale, (48-self.oy)/scale, (cw-self.ox)/scale, (ch-self.oy)/scale)
         for layer in range(1, self.model.layer_count + 1):
-            x, _ = self.point(18+(layer-1)*COLUMN_STEP, 0)
-            c.create_rectangle(x, 44, x+278*scale, ch, fill='#142138' if layer % 2 else '#122035', outline='')
+            band_x, band_width = self.model.layer_spans[layer]
+            x, _ = self.point(band_x, 0)
+            c.create_rectangle(x, 44, x+band_width*scale, ch, fill='#142138' if layer % 2 else '#122035', outline='',tags=('layer-band','layer:'+str(layer)))
         # A clipped, deduplicated wire segment can stand for several actual
         # edges sharing a trunk. Its click inspector preserves all edge IDs.
         segments = {}
@@ -313,11 +314,16 @@ class ClockDiagram(tk.Frame):
         c.create_rectangle(0, 0, cw, 44, fill='#17263e', outline='')
         layer_counts = Counter(n['layer'] for n in self.model.nodes.values())
         for layer in range(1, self.model.layer_count + 1):
-            xx, _ = self.point(30+(layer-1)*COLUMN_STEP, 0)
-            if -100 < xx < cw:
+            band_x, band_width = self.model.layer_spans[layer]
+            left, _ = self.point(band_x, 0)
+            right = left + band_width * scale
+            visible_width = min(cw, right) - max(0, left)
+            xx = max(12, left + 12 * scale)
+            if visible_width > 35:
                 c.create_text(xx, 21, text='L{}'.format(layer), anchor='w', fill=COLORS[(layer-1) % len(COLORS)], font=(self.family, 10, 'bold'))
-                if scale > .34:
-                    c.create_text(xx+29, 21, text='{} 图元'.format(layer_counts[layer]), anchor='w', fill='#7f99bb', font=(self.family, 8))
+                if visible_width > 145:
+                    caption='{} 图元{}'.format(layer_counts[layer], ' · 同层展开' if self.model.layer_columns[layer]>1 else '')
+                    c.create_text(xx+29, 21, text=caption, anchor='w', fill='#7f99bb', font=(self.family, 8))
         if not self.model.nodes:
             c.create_text(cw/2, ch/2, text='当前范围没有匹配实例', fill='#94abc9', font=(self.family, 13))
         self._draw_map()

@@ -6,7 +6,7 @@
 
 **[详细 GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md)** · [离线 HTML 阅读版](docs/GUI_USER_MANUAL.zh-CN.html) · **[其他 EDA 设备部署与验收](docs/PORTABILITY.zh-CN.md)** · [验证摘要](docs/VALIDATION.zh-CN.md) · [可浏览示例](examples/flexible_layers/README.md)
 
-![原生 Tk 工作台与完整七层架构图](docs/images/gui-overview.png)
+![原生 Tk 工作台与同层横向串接架构图](docs/images/horizontal-workbench.png)
 
 ## 功能
 
@@ -26,6 +26,7 @@
 - 闪退后重开 GUI 会提示上次阶段、日志中已知的退出原因和可用断点，点击“从断点继续”恢复原任务；也可执行 `python3 -m clocktree resume --run <任务目录> --memory-limit-gib 60`。原后端仍在运行时可观察，不重复启动。完整原始证据已提交时仅重建拓扑/索引/结果。恢复前校验原输入及实现版本，保留历史并撤回未提交尾部。[恢复步骤与边界](docs/GUI_USER_MANUAL.zh-CN.md#crash-recovery)。
 - 事件逐条处理、队列回收、路径前缀共享、证据与结果索引落盘、JSON 流式导出。Tk 大图先显示概览，展开/点击再取明细；宽层次和连接列表支持翻页，启动恢复配置及结果索引。
 - 完整静态结构图，保留多源、全部扇出、汇合、孤立结构及异常。
+- 同一逻辑层内有连接的器件自动沿信号方向横向展开，分支分行，层级区域按串接长度自动加宽；仍保留原有 L1–LN 编号。实例图、层次概览与 SVG 使用相同布局，复位树同样适用。[查看效果和操作](docs/GUI_USER_MANUAL.zh-CN.md#horizontal-layout)。
 - 驱动/负载双向 NPI 证据；缺失端口、未知逻辑、逆序层、环路、多驱动等诊断。
 - 大图层次概览、逐层展开、全量搜索、缩放平移、全图导航和路径高亮。
 - 独立提取进程、日志进度及取消任务。

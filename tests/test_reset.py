@@ -103,16 +103,14 @@ def test_reset_aggregation_and_high_layers_keep_every_instance():
 
 def test_clock_and_reset_reuse_directory_archive_the_correct_result(tmp_path, monkeypatch):
     module=importlib.import_module('clocktree.extract')
-    monkeypatch.setattr(module,'resolve_verdi',lambda *args:('/verdi/bin/verdi','/verdi'))
+    import sys
+    monkeypatch.setattr(module,'resolve_verdi',lambda *args:(sys.executable,'/verdi'))
     out=tmp_path/'run'
     current=[events()]
-    class Process:
-        def __init__(self,*args,**kwargs):
-            (out/'raw.jsonl').write_text('\n'.join(json.dumps(e) for e in current[0]))
-        def wait(self,*args,**kwargs):
-            assert not args and not kwargs
-            return 0
-    monkeypatch.setattr(module.subprocess,'Popen',Process)
+    def runner(command,work,environment,raw,log,output,config):
+        raw.write_text('\n'.join(json.dumps(e) for e in current[0]))
+        return 0,work,{'state':'finished'}
+    monkeypatch.setattr(module,'run_verdi',runner)
     reset=config()
     path=tmp_path/'config.json'
     path.write_text(json.dumps(reset))

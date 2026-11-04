@@ -33,4 +33,5 @@ gui-log-location*.json
 /memory.json
 /memory-restarts.jsonl
 /module-memory-checks.jsonl
+.clocktree.lock
 /verdiLog/

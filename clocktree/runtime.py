@@ -30,6 +30,7 @@ def process_identity(pid=None):
     value = {'pid':pid,'host':socket.gethostname(),'platform':sys.platform}
     if sys.platform.startswith('linux'):
         try:
+            value['boot_id'] = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
             fields = Path('/proc/{}/stat'.format(pid)).read_text().rsplit(')',1)[1].split()
             value['start_ticks'] = fields[19]
             value['process_state'] = fields[0]
@@ -72,6 +73,7 @@ def alive(identity):
         return None
     if sys.platform.startswith('linux'):
         now = process_identity(pid)
+        if identity.get('boot_id') and identity['boot_id'] != now.get('boot_id'):return False
         if 'start_ticks' not in now or now.get('process_state')=='Z':
             return False
         if identity.get('start_ticks') and identity['start_ticks'] != now['start_ticks']:
@@ -213,6 +215,7 @@ class RunJournal:
             if 'worker' in extra:state['worker']=extra['worker']
             if 'attempt' in extra:state['attempt']=extra['attempt']
             if 'checkpoint' in extra:state['checkpoint']=extra['checkpoint']
+            if 'clean_shutdown' in extra:state['clean_shutdown']=extra['clean_shutdown']
             line=json.dumps(event,ensure_ascii=False,separators=(',',':'))
             item=event['context']
             readable='{} [{}] {} {} {}'.format(event['timestamp'],kind.upper(),event['label'],detail,
@@ -226,11 +229,13 @@ class RunJournal:
 
     def fail(self, error, cancelled=False):
         state=self.state()
-        if state.get('state')=='failed' and not cancelled:
+        failure=state.get('last_failure') or {}
+        if failure and not cancelled:
             # Keep the original worker signal, context and error in the final marker.
-            return self.emit('failed',state.get('stage','config'),detail=str(error)[:6000],
-                             context=state.get('context',{}),error_type=type(error).__name__,
-                             **{k:state.get('last_failure',{}).get(k) for k in ('returncode','exit_signal')})
+            return self.emit('failed',failure.get('stage','config'),detail=failure.get('detail',str(error))[:6000],
+                             context=failure.get('context',{}),error_type=type(error).__name__,
+                             subsequent_error=str(error)[:6000],
+                             **{k:failure.get(k) for k in ('returncode','exit_signal')})
         return self.emit('cancelled' if cancelled else 'failed',state.get('stage','config'),
                          detail=str(error)[:6000],context=state.get('context',{}),error_type=type(error).__name__)
 
@@ -356,7 +361,10 @@ def diagnose_gui(directory):
             'last_completed':state.get('last_completed'),'context':state.get('context',{}),
             'owner_alive':alive(state.get('owner')),'log':str(directory/'gui.log'),
             'events':str(directory/'gui-events.jsonl'),'status':str(directory/'gui-status.json')}
-    if state.get('state')=='running' and result['owner_alive'] is False:result['state']='interrupted'
+    if result['owner_alive'] is False and not state.get('clean_shutdown') and state.get('state') in ('running','finished','attention'):
+        # "finished" can mean that drawing finished while the window stayed
+        # open. Only the explicit close marker makes the GUI session clean.
+        if state.get('detail') != 'GUI 正常关闭':result['state']='interrupted'
     return result
 
 

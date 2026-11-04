@@ -97,6 +97,7 @@ def test_completed_worker_cannot_mask_postprocessing_interruption(tmp_path):
 def test_failure_wrapper_retains_worker_signal_and_context(tmp_path):
     journal=RunJournal.start(tmp_path)
     journal.emit('failed','modules','worker exited',{'module':'gate'},returncode=-9,exit_signal='SIGKILL')
+    journal.emit('begin','topology','attempt to build partial evidence')
     journal.fail(RuntimeError('extract wrapper'))
     report=diagnose(tmp_path)
     assert report['cause']=='worker_exit_-9'

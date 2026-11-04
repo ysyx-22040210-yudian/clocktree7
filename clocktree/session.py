@@ -146,7 +146,9 @@ class SessionStore:
                     raise ValueError('Session analysis type does not match')
                 validate_config(workspace['config'], allow_incomplete=True)
                 graph = workspace.get('graph')
-                filename = None
+                filename = workspace.get('deferred_result') if graph is None else None
+                if filename and (not re.fullmatch(mode + r'-[0-9a-f]{32}\.json', filename) or not (self.directory / filename).is_file()):
+                    filename = None
                 if graph is not None:
                     token = workspace['graph_token']
                     if not re.fullmatch(r'[0-9a-f]{32}', token):
@@ -176,7 +178,7 @@ class SessionStore:
                     except OSError:
                         pass
 
-    def history(self):
+    def history(self, load_results=True):
         files = list(self.runs.glob('*/clocktree.json')) + list(self.runs.glob('*/resettree.json'))
         candidates = []
         for path in files:
@@ -191,6 +193,14 @@ class SessionStore:
                 mode = 'reset' if path.name == 'resettree.json' else 'clock'
                 if mode in workspaces:
                     continue
+                if not load_results:
+                    from .config import load_config
+                    config=load_config(path.parent/'config.json')
+                    if tree_type(config)!=mode:continue
+                    if not workspaces:active=mode
+                    workspaces[mode]={'config':config,'graph':None,'path':path,
+                                     'dirty':False,'active_layer':1,'graph_token':None}
+                    continue
                 graph = read_graph(path, mode)
                 if not workspaces:
                     active = mode
@@ -201,9 +211,9 @@ class SessionStore:
         return {'active': active, 'workspaces': workspaces, 'warnings': [],
                 'origin': 'history' if workspaces else 'empty'}
 
-    def load(self):
+    def load(self, load_results=True):
         if not self.manifest.exists() and not self.backup.exists():
-            return self.history()
+            return self.history(load_results=load_results)
         warnings = []
         with self._lock():
             data = None
@@ -216,7 +226,7 @@ class SessionStore:
                 except (OSError, ValueError, KeyError, TypeError):
                     pass
             if data is None:
-                state = self.history()
+                state = self.history(load_results=load_results)
                 state['warnings'].append('自动记录不可读，已尝试恢复历史运行。')
                 return state
             workspaces = {}
@@ -224,7 +234,9 @@ class SessionStore:
                 workspace = {'config': entry['config'], 'path': entry.get('source_result'),
                              'dirty': bool(entry.get('dirty')), 'active_layer': entry.get('active_layer', 1),
                              'graph': None, 'graph_token': None}
-                if entry.get('result'):
+                if not load_results and entry.get('result'):
+                    workspace['deferred_result'] = entry['result']
+                if entry.get('result') and load_results:
                     try:
                         workspace['graph'] = read_graph(self.directory / entry['result'], mode)
                         workspace['graph_token'] = Path(entry['result']).stem.split('-', 1)[1]

@@ -162,7 +162,7 @@ def _context(path, checkpoint, signature, raw, targets, control, status, checkpo
 
 
 def run_verdi(command, work, environment, raw, log_path, output, config,
-              sampler=None, pause=None, popen=None, monitored=None):
+              sampler=None, pause=None, popen=None, monitored=None, resume=None):
     """Launch fresh workers; completed enumeration/trace batches survive rotation."""
     work, raw, log_path, output = map(Path, (work, raw, log_path, output))
     record_stages=(output/'run-status.json').exists()
@@ -170,15 +170,16 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
     limit_gib = float(config.get('memory_limit_gib', DEFAULT_MEMORY_LIMIT_GIB))
     monitored = sys.platform.startswith('linux') if monitored is None else monitored
     enabled = monitored and limit_gib > 0
+    native_launch = popen is None and sys.platform.startswith('linux')
     sampler, pause, popen = sampler or process_memory, pause or time.sleep, popen or subprocess.Popen
-    signature = hashlib.sha256(json.dumps(config, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+    signature = resume['signature'] if resume else hashlib.sha256(json.dumps(config, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
     checkpoint_path, targets = work / 'checkpoint.json', work / 'targets.tcl'
     control, status = work / 'rotate.request', work / 'worker-status.json'
     module_directory = work / 'module-checkpoints'
     module_directory.mkdir(exist_ok=True)
     module_request, module_ack = work / 'module-check.request', work / 'module-check.ack'
-    checkpoint = _initial_checkpoint(signature)
-    write_graph(checkpoint_path, checkpoint)
+    checkpoint = read_checkpoint(checkpoint_path, signature, raw, targets, config) if resume else _initial_checkpoint(signature)
+    if not resume:write_graph(checkpoint_path, checkpoint)
     report_path = output / 'memory.json'
     report = {'enabled': enabled, 'limit_gib': limit_gib, 'soft_limit_gib': limit_gib*.9,
               'metric': 'supervisor_and_verdi_tree_rss', 'restart_count': 0, 'attempts': 0,
@@ -186,6 +187,22 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
               'module_checks': 0, 'module_checkpoint_directory': str(module_directory),
               'peak_rss_gib': 0., 'current_rss_gib': None, 'state': 'starting',
               'checkpoint_file': str(checkpoint_path), 'restarts': []}
+    if resume:
+        from .runtime import read_json
+        previous = read_json(work / 'memory.json', {})
+        for key in ('restart_count', 'module_checks', 'peak_rss_gib', 'restarts'):
+            if key in previous:report[key] = previous[key]
+        report['attempts'] = max([0]+[int(p.name.split('-')[1]) for p in work.glob('attempt-*')
+                                     if p.is_dir() and p.name.split('-')[-1].isdigit()])
+        report['recovery_count'] = journal.state().get('recovery_count', 1)
+        if checkpoint['stage'] == 'complete':
+            report.update(state='finished', last_checkpoint=checkpoint, exit_code=0, reused_complete_evidence=True)
+            write_graph(report_path, report); write_graph(work / 'memory.json', report)
+            journal.emit('end','trace','已恢复完整原始证据；跳过 Verdi，重建结果',checkpoint=checkpoint)
+            return 0, work / ('attempt-{:04d}'.format(report['attempts'])), report
+    def save_report():
+        write_graph(report_path, report)
+        write_graph(work / 'memory.json', report)
     last_key, stalls, process = None, 0, None
     old_signal = None
     # The Tk job already has its own process group. Workers need separate
@@ -198,7 +215,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
             raise SystemExit(128 + signum)
         signal.signal(signal.SIGTERM, cancelled)
     try:
-        with log_path.open('w', encoding='utf-8') as log:
+        with log_path.open('a' if resume else 'w', encoding='utf-8') as log:
             while True:
                 report['attempts'] += 1
                 attempt = report['attempts']
@@ -218,17 +235,19 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 journal.emit('begin','worker','启动新的 Verdi 进程',{'completed_modules':checkpoint['completed_modules'],
                     'completed_traces':checkpoint['completed_traces']},attempt=attempt,worker_events=str(worker_events),checkpoint=checkpoint)
                 report.update(state='running', last_checkpoint=checkpoint, current_rss_gib=None)
-                write_graph(report_path, report)
+                save_report()
                 log.write('CT7_WORKER_BEGIN attempt={} queries={} traces={} modules={}\n'.format(attempt, checkpoint['completed_queries'], checkpoint['completed_traces'], checkpoint['completed_modules']))
                 log.flush()
                 kwargs = dict(cwd=str(attempt_dir), env=worker_environment, stdout=log, stderr=subprocess.STDOUT)
                 if monitored:
                     kwargs['start_new_session'] = True
-                process = popen(command, **kwargs)
+                launch = ([sys.executable, str(Path(__file__).with_name('worker_launch.py')),
+                           str(attempt_dir/'worker-identity.json'), json.dumps(process_identity())] + list(command)) if native_launch else command
+                process = popen(launch, **kwargs)
                 report['worker_pid'] = getattr(process, 'pid', None)
                 worker_identity=process_identity(process.pid) if getattr(process,'pid',None) else {}
                 journal.emit('progress','worker','Verdi 已启动',attempt=attempt,worker=worker_identity,
-                             worker_events=str(worker_events),durable=False)
+                             worker_events=str(worker_events),durable=True)
                 memory_hit, soft_requested, rotation_rss = False, False, None
                 if not enabled and not (record_stages and monitored):
                     code = process.wait()
@@ -279,7 +298,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                             memory_hit = True
                             rotation_rss = used
                             report['state'] = 'restarting'
-                            write_graph(report_path, report)
+                            save_report()
                             log.write('CT7_MEMORY_HARD rss_gib={:.3f} limit_gib={:.3f}\n'.format(used, limit_gib))
                             log.flush()
                             code = _stop_worker(process)
@@ -296,7 +315,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                             temporary.write_text('{} {} {}\n'.format(pending_module, action, sample['rss_bytes']), encoding='ascii')
                             os.replace(str(temporary), str(module_ack))
                             serviced_module = pending_module
-                        write_graph(report_path, report)
+                        save_report()
                         pause(.1)
                     else:
                         code = process.wait()
@@ -335,7 +354,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                     rollback_files(checkpoint, raw, targets, module_directory)
                     report.update(state='blocked', last_checkpoint=checkpoint,
                                   error='Memory pressure repeated without checkpoint progress')
-                    write_graph(report_path, report)
+                    save_report()
                     raise MemoryResumeError('Verdi memory protection could not advance after {} attempts at the same checkpoint '
                         '(stage={}, completed module queries={}, completed traces={}). Import/handle restoration or one query '
                         'may already exceed the threshold. Narrow the hierarchy or raise memory capacity; '
@@ -349,7 +368,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 log.flush()
             report.update(state='finished' if checkpoint['stage'] == 'complete' else 'failed',
                           last_checkpoint=checkpoint, exit_code=code, current_rss_gib=None)
-            write_graph(report_path, report)
+            save_report()
             return code, attempt_dir, report
     except BaseException as error:
         if process is not None:
@@ -358,7 +377,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
         journal.fail(error,cancelled=isinstance(error,(KeyboardInterrupt,SystemExit)))
         if report.get('state') not in ('blocked', 'finished', 'failed'):
             report['state'] = 'interrupted'
-            write_graph(report_path, report)
+            save_report()
         raise
     finally:
         if old_signal is not None:

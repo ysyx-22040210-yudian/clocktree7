@@ -12,6 +12,9 @@ def main():
     run.add_argument("--config", required=True)
     run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
     run.add_argument('--memory-limit-gib', type=float, help='Verdi + extraction RSS limit; default 60 GiB or config memory_limit_gib. 0 disables rotation.')
+    recover = commands.add_parser('resume', help='Continue an interrupted job from its last committed checkpoint')
+    recover.add_argument('--run', required=True, help='Output directory or .clocktree-runs/<run-id>')
+    recover.add_argument('--memory-limit-gib', type=float, help='Override the memory limit while preserving the original extraction rules')
     serve = commands.add_parser("serve")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", default=8767, type=int)
@@ -34,6 +37,13 @@ def main():
     where.add_argument('--gui-latest',action='store_true',help='Inspect this user\'s latest and previous GUI sessions')
     diagnosis.add_argument('--json',action='store_true')
     args = parser.parse_args()
+    if args.command == 'resume':
+        from .recovery import resume, RecoveryError
+        try:graph = resume(args.run, args.memory_limit_gib)
+        except (RecoveryError, MemoryResumeError, ValueError, OSError) as error:
+            parser.exit(1, 'ClockTree7: ' + str(error) + '\n')
+        print(json.dumps(graph['summary'], indent=2))
+        return 0 if graph['summary']['connectivity_complete'] else 2
     if args.command=='diagnose':
         from .runtime import diagnose, diagnose_gui, read_json
         from .paths import user_state_root
@@ -56,9 +66,10 @@ def main():
             print('An unfinished stage identifies where execution stopped; it does not prove OOM.')
         return 0 if report.get('available') else 1
     if args.command == "extract":
+        from .recovery import RecoveryError
         try:
             graph = extract(args.config, args.out, args.memory_limit_gib)
-        except MemoryResumeError as error:
+        except (MemoryResumeError, RecoveryError) as error:
             parser.exit(1, 'ClockTree7: ' + str(error) + '\n')
         print(json.dumps(graph["summary"], indent=2))
         return 0 if graph["summary"]["connectivity_complete"] else 2

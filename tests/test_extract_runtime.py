@@ -61,12 +61,12 @@ def test_unlimited_wait_repeated_directory_and_failed_attempt_never_reuses_evide
     out = tmp_path / 'run'
     calls = []
     emit = [True]
-    monkeypatch.setattr(extract_module, 'resolve_verdi', lambda *a: ('/tools/bin/verdi', '/tools'))
-    class Process:
-        def __init__(self, command, cwd, env, stdout, stderr):
-            calls.append(cwd)
+    import sys
+    monkeypatch.setattr(extract_module, 'resolve_verdi', lambda *a: (sys.executable, '/tools'))
+    def runner(command, work, env, raw, log, output, config):
+            calls.append(str(work))
             assert env['VERDI_HOME'] == '/tools'
-            stdout.write('this attempt only\n')
+            log.write_text('this attempt only\n')
             if emit[0]:
                 events = [dict(event='instance', path='top.div', module='divider', layer=1,
                                inputs=['i'], output='o', kind='div'),
@@ -74,11 +74,9 @@ def test_unlimited_wait_repeated_directory_and_failed_attempt_never_reuses_evide
                                results=[dict(status='input_boundary', endpoint='top.clk')]),
                           dict(event='trace', instance='top.div', pin='o', direction='load',
                                results=[dict(status='output_boundary')]), dict(event='complete')]
-                (out / 'raw.jsonl').write_text('\n'.join(json.dumps(e) for e in events))
-        def wait(self, *args, **kwargs):
-            assert not args and not kwargs, 'Extraction must never pass a runtime timeout'
-            return 0
-    monkeypatch.setattr(extract_module.subprocess, 'Popen', Process)
+                raw.write_text('\n'.join(json.dumps(e) for e in events))
+            return 0,work,{'state':'finished'}
+    monkeypatch.setattr(extract_module, 'run_verdi', runner)
     for _ in range(3):
         graph = extract_module.extract(path, out)
         assert graph['summary']['connectivity_complete']

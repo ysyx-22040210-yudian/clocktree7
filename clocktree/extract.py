@@ -83,27 +83,37 @@ def prepare_output(out, identifier=None, work=None):
 
 
 def extract(config_path, output_dir, memory_limit_gib=None):
+    from .recovery import RunLease
+    with RunLease(output_dir):
+        return _new_extraction(config_path, output_dir, memory_limit_gib)
+
+
+def finish_extraction(graph, journal):
+    failure=journal.state().get('last_failure') or {}
+    if graph.get('metadata',{}).get('verdi_exit_code') or graph.get('metadata',{}).get('memory_protection',{}).get('state')=='failed':
+        journal.emit('failed',failure.get('stage','worker'),'Verdi 异常退出；已保留可用的部分结果',
+                     context=failure.get('context',{}),returncode=graph['metadata']['verdi_exit_code'],
+                     exit_signal=failure.get('exit_signal'),partial_result=True)
+    else:
+        journal.emit('finished' if graph['summary']['connectivity_complete'] else 'attention','export',
+                     '后端提取结束' if graph['summary']['connectivity_complete'] else '结果已写出，存在未解析或诊断',
+                     context={'instances':graph['summary']['instances'],'edges':graph['summary']['edges']})
+
+
+def _new_extraction(config_path, output_dir, memory_limit_gib):
     journal=RunJournal.start(output_dir)
     try:
         graph=_extract(config_path,output_dir,memory_limit_gib,journal)
-        failure=journal.state().get('last_failure') or {}
-        if graph.get('metadata',{}).get('verdi_exit_code'):
-            journal.emit('failed',failure.get('stage','worker'),'Verdi 异常退出；已保留可用的部分结果',
-                         context=failure.get('context',{}),returncode=graph['metadata']['verdi_exit_code'],
-                         exit_signal=failure.get('exit_signal'),partial_result=True)
-        else:
-            journal.emit('finished' if graph['summary']['connectivity_complete'] else 'attention','export',
-                         '后端提取结束' if graph['summary']['connectivity_complete'] else '结果已写出，存在未解析或诊断',
-                         context={'instances':graph['summary']['instances'],'edges':graph['summary']['edges']})
+        finish_extraction(graph, journal)
         return graph
     except BaseException as error:
         journal.fail(error,cancelled=isinstance(error,(KeyboardInterrupt,SystemExit)))
         raise
 
 
-def _extract(config_path, output_dir, memory_limit_gib, journal):
-    journal.emit('progress','config','读取并校验配置',{'config_file':str(Path(config_path).resolve())})
-    config = load_config(config_path)
+def _extract(config_path, output_dir, memory_limit_gib, journal, recovery=None):
+    journal.emit('progress','config','读取并校验配置',{'config_file':str(Path(config_path).resolve()) if config_path else '原任务配置快照'})
+    config = json.loads(json.dumps(recovery['config'])) if recovery else load_config(config_path)
     if memory_limit_gib is not None:
         config['memory_limit_gib'] = memory_limit_gib
         validate_config(config)
@@ -114,8 +124,8 @@ def _extract(config_path, output_dir, memory_limit_gib, journal):
     environment['VERDI_HOME'] = verdi_home
     out = Path(output_dir).resolve()
     out.mkdir(parents=True, exist_ok=True)
-    recorded_work = prepare_output(out,identifier=journal.directory.name,work=journal.directory)
-    work = vendor_work_dir(recorded_work)
+    recorded_work = journal.directory
+    work = Path(recovery['work']) if recovery else vendor_work_dir(prepare_output(out,identifier=journal.directory.name,work=recorded_work))
     if work != recorded_work:
         (recorded_work / 'runtime-location.json').write_text(json.dumps({'working_directory': str(work)}), encoding='utf-8')
     root = Path(__file__).resolve().parents[1]
@@ -124,20 +134,28 @@ def _extract(config_path, output_dir, memory_limit_gib, journal):
         source = runtime_config['design'].get(key)
         if source and not vendor_safe_path(source):
             alias = work / ('input-kdb.elab++' if key == 'elab' else 'input.f')
-            alias.symlink_to(source, target_is_directory=key == 'elab')
+            if not alias.exists():alias.symlink_to(source, target_is_directory=key == 'elab')
             runtime_config['design'][key] = str(alias)
-    raw_path = out / 'raw.jsonl' if vendor_safe_path(out) else work / 'raw.jsonl'
+    # The authoritative raw prefix belongs to this logical job, even when the
+    # user starts another fresh task in the same output directory.
+    raw_path = Path(recovery['raw']) if recovery else work / 'raw.jsonl'
     write_tcl_config(runtime_config, work / 'rules.tcl', str(raw_path))
     shutil.copy2(str(work / 'rules.tcl'), str(out / 'rules.tcl'))
     # A relative -play path also avoids legacy Verdi path decoding on installs
     # whose source directory contains Unicode characters or spaces.
-    shutil.copy2(str(root / 'npi/extract.tcl'), str(work / 'clocktree-extract.tcl'))
+    if not recovery:
+        shutil.copy2(str(root / 'npi/extract.tcl'), str(work / 'clocktree-extract.tcl'))
+        from .recovery import prepare_recovery
+        journal.emit('progress','config','记录 RTL/elab 输入身份与任务恢复信息')
+        prepare_recovery(journal, out, work, raw_path, config, executable)
+    journal.emit('end','config','运行配置与恢复记录已就绪')
     (out / "config.json").write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
     environment["CT7_CONFIG"] = str(work / "rules.tcl")
     command = [executable, "-batch", "-nologo", "-play", 'clocktree-extract.tcl']
     started = time.time()
     try:
-        exit_code, final_work, memory_report = run_verdi(command, work, environment, raw_path, out / 'verdi.log', out, config)
+        arguments = {'resume': recovery} if recovery else {}
+        exit_code, final_work, memory_report = run_verdi(command, work, environment, raw_path, out / 'verdi.log', out, config, **arguments)
     finally:
         if raw_path != out / 'raw.jsonl' and raw_path.is_file():
             shutil.copy2(str(raw_path), str(out / 'raw.jsonl'))
@@ -146,7 +164,9 @@ def _extract(config_path, output_dir, memory_limit_gib, journal):
     print('CT7_BUILD_BEGIN', flush=True)
     journal.emit('begin','topology','逐事件构建完整拓扑',{'raw':str(out/'raw.jsonl')})
     store = new_store(out)
-    graph = build_graph(read_events(out / "raw.jsonl"), config, evidence_store=store)
+    failed_worker = memory_report.get('state') == 'failed'
+    limit = memory_report.get('last_checkpoint',{}).get('raw_offset',0) if failed_worker else None
+    graph = build_graph(read_events(out / "raw.jsonl", limit=limit), config, evidence_store=store)
     compiler_log = final_work / "verdiLog" / "compiler.log"
     compiler_errors = []
     compiler_error_count = 0
@@ -167,8 +187,8 @@ def _extract(config_path, output_dir, memory_limit_gib, journal):
                               "verdi_executable": executable, "verdi_home": verdi_home})
     graph['metadata'].update(python_version=platform.python_version(), platform=sys.platform)
     graph['metadata']['memory_protection'] = memory_report
-    graph['metadata']['runtime'] = journal.paths()
-    if exit_code:
+    graph['metadata']['runtime'] = dict(journal.paths(), recovery_count=journal.state().get('recovery_count',0))
+    if exit_code or failed_worker:
         graph["summary"]["connectivity_complete"] = False
         graph["diagnostics"].append({"code": "verdi_exit", "exit_code": exit_code})
     graph["summary"]["diagnostics"] = len(graph["diagnostics"])

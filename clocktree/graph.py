@@ -258,8 +258,12 @@ def build_graph(events, config, evidence_store=None):
                         "topology_valid": not any(d["code"] in topology_errors for d in diagnostics)}}
 
 
-def read_events(path):
-    with open(str(path), encoding="utf-8") as stream:
-        for line in stream:
-            if line.strip():
-                yield json.loads(line)
+def read_events(path, limit=None):
+    """Read complete events, optionally stopping at a committed byte offset."""
+    with open(str(path), 'rb') as stream:
+        remaining = limit
+        while remaining is None or remaining > 0:
+            line = stream.readline() if remaining is None else stream.readline(remaining)
+            if not line:break
+            if remaining is not None:remaining -= len(line)
+            if line.strip():yield json.loads(line.decode('utf-8'))

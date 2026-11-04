@@ -31,6 +31,8 @@ from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
 from .indexed_view import IndexedGraphView
 from .runtime import RunJournal, read_json as runtime_json, diagnose, diagnose_gui, tail_text, stage_node, bind_gui, alive, LABELS
 from .stageview import StageView
+from .recovery import inspect_recovery
+from .recoveryview import RecoveryDialog
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -143,6 +145,11 @@ class ClockTreeApp(tk.Tk):
         self.gui_journal=RunJournal(gui_base/('ui_'+uuid.uuid4().hex),prefix='gui')
         latest=gui_base/'latest.json'
         old=runtime_json(latest)
+        self._previous_gui_issue=diagnose_gui(old['journal_directory']) if old and old.get('journal_directory') else None
+        if self._previous_gui_issue and self._previous_gui_issue.get('state') not in ('interrupted','failed'):
+            self._previous_gui_issue=None
+        self.recovery_dialog=None
+        self._recovery_result=None
         if old:write_json(gui_base/'previous.json',old)
         write_json(latest,self.gui_journal.paths())
         self.gui_journal.emit('begin','display','初始化 Tk 界面')
@@ -429,6 +436,7 @@ class ClockTreeApp(tk.Tk):
         self.runs_tree.pack(fill='both',expand=True)
         self.runs_tree.bind('<Double-1>',lambda e:self.open_history())
         ttk.Button(history,text='打开所选运行',command=self.open_history).pack(fill='x',pady=(9,5))
+        ttk.Button(history,text='诊断 / 从断点继续',command=self.recover_history).pack(fill='x',pady=(0,5))
         ttk.Button(history,text='刷新记录',command=self.refresh_runs).pack(fill='x')
         self.nav_query=tk.StringVar()
         navtop=ttk.Frame(browser,style='White.TFrame')
@@ -652,19 +660,20 @@ class ClockTreeApp(tk.Tk):
     def _remember_workspace(self):
         if self._session_restoring:return
         config=self.get_config(validate=False)
+        deferred=self._workspaces.get(self._active_tree_type,{}).get('deferred_result') if self.graph is None else None
         self._workspaces[self._active_tree_type]={
             'config':config,'graph':self.graph,'path':self.graph_file,
             'dirty':self._config_dirty or bool(self.graph and not same_config(config,self.graph['config'])),
-            'active_layer':self.active_layer,'graph_token':self._graph_token}
+            'active_layer':self.active_layer,'graph_token':self._graph_token,'deferred_result':deferred}
 
     def _load_previous_session(self,config_path=None,result_path=None):
         def worker():
             self.gui_journal.emit('begin','session','恢复历史配置与结果索引',{'runs':str(self.runs),
                 'manifest':str(self._session_store.manifest)})
             try:
-                state=self._session_store.load()
+                state=self._session_store.load(load_results=not bool(self._previous_gui_issue))
             except Exception as error:
-                state=self._session_store.history()
+                state=self._session_store.history(load_results=not bool(self._previous_gui_issue))
                 state['warnings'].append('自动记录不可读：'+str(error))
             try:
                 if config_path:
@@ -714,6 +723,12 @@ class ClockTreeApp(tk.Tk):
             self.set_status('；'.join(state['warnings']))
             if not self.graph:self._badge('配置已恢复 · 查看状态提示','warn')
         self._schedule_session_save()
+        if self._previous_gui_issue:
+            self._recovery_result=workspace.get('path')
+            if workspace.get('deferred_result') and (not self._recovery_result or not Path(self._recovery_result).is_file()):
+                self._recovery_result=self._session_store.directory/workspace['deferred_result']
+            self.set_status('检测到上次界面异常退出；先恢复配置，等待选择继续任务或打开结果。')
+        self.after(100,self.check_previous_run)
 
     def _schedule_session_save(self):
         if not self._session_writer or not self._session_ready or self._session_restoring or self._destroying:return
@@ -1206,7 +1221,14 @@ class ClockTreeApp(tk.Tk):
         except Exception as error:
             self.show_error('无法开始提取',error)
             return
+        command=[sys.executable,'-m','clocktree','extract','--config',str(path),'--out',str(directory)]
+        self._launch_extraction(directory,result_path,command)
+
+    def _launch_extraction(self,directory,result_path,command,resuming=False):
         self.job_dir=directory
+        if self._session_store:
+            write_json(self._session_store.directory/'active-job.json',{'directory':str(directory),'command':command})
+        write_json(self.gui_journal.directory/'active-job.json',{'directory':str(directory),'command':command})
         bind_gui(directory,self.gui_journal)
         self._runtime_directory=directory
         self._runtime_state={}
@@ -1214,17 +1236,16 @@ class ClockTreeApp(tk.Tk):
         self._log_mtime=None
         self.cancel_event.clear()
         self._set_busy('extract')
-        self._badge('正在解析 elab · 提取全网','busy')
-        self.set_status('正在执行 NPI，界面可继续缩放和查看已有架构图。')
+        self._badge('正在校验断点与原输入' if resuming else '正在解析 elab · 提取全网','busy')
+        self.set_status('正在校验原任务输入并准备恢复，随后继续未提交的工作。' if resuming else '正在执行 NPI，界面可继续缩放和查看已有架构图。')
         self.show_log(True)
         self.log_source.set('阶段日志')
         self._log_filter=None
-        self._replace_text(self.log_text,'启动真实 Verdi NPI 提取：{}\n'.format(identifier))
-        command=[sys.executable,'-m','clocktree','extract','--config',str(path),'--out',str(directory)]
+        self._replace_text(self.log_text,('恢复上次任务：' if resuming else '启动真实 Verdi NPI 提取：')+str(directory)+'\n')
         write_json(directory/'gui-job.json',{'state':'running','command':command,'workspace':str(ROOT)})
         def worker():
             try:
-                with (directory/'cli.log').open('w',encoding='utf-8') as stream:
+                with (directory/'cli.log').open('a' if resuming else 'w',encoding='utf-8') as stream:
                     if self.cancel_event.is_set():
                         self.events.put(('cancelled',directory))
                         return
@@ -1246,6 +1267,62 @@ class ClockTreeApp(tk.Tk):
                 self.process=None
                 if self.gui_journal.state().get('stage')=='load':self.gui_journal.fail(error)
                 self.events.put(('error','提取失败',str(error)))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def resume_extraction(self,info,limit):
+        if self.busy:return
+        manifest=info.get('manifest')
+        if not manifest:return
+        self._remember_workspace()
+        self.set_config(copy.deepcopy(manifest['config']))
+        self.memory_limit_var.set(str(limit))
+        directory=Path(manifest['output'])
+        command=[sys.executable,'-m','clocktree','resume','--run',manifest['journal'],'--memory-limit-gib',str(limit)]
+        self._launch_extraction(directory,directory/result_filename(manifest['config']),command,resuming=True)
+
+    def check_previous_run(self):
+        if self._destroying or self.busy:return
+        def worker():
+            pointer=runtime_json(self._session_store.directory/'active-job.json',{}) if self._session_store else {}
+            if not pointer and self._previous_gui_issue:
+                pointer=runtime_json(Path(self._previous_gui_issue['directory'])/'active-job.json',{})
+            directory=Path(pointer['directory']) if pointer.get('directory') else None
+            if directory is None:
+                candidates=[p for p in self.runs.iterdir() if p.is_dir() and (p/'run-status.json').is_file()]
+                if candidates:directory=max(candidates,key=lambda p:(p/'run-status.json').stat().st_mtime)
+            info=inspect_recovery(directory) if directory else {'diagnosis':{},'resumable':False}
+            if self._previous_gui_issue or info.get('diagnosis',{}).get('state') in ('interrupted','failed','cancelled') or info.get('running'):
+                self.events.put(('recovery_notice',info))
+        threading.Thread(target=worker,daemon=True).start()
+
+    def recover_history(self):
+        if self.busy:return
+        selection=self.runs_tree.selection()
+        if not selection:return
+        self.show_recovery(inspect_recovery(self.runs/selection[0]))
+
+    def show_recovery(self,info):
+        if self.recovery_dialog and self.recovery_dialog.winfo_exists():self.recovery_dialog.destroy()
+        self.recovery_dialog=RecoveryDialog(self,info,self._previous_gui_issue)
+        self._badge('发现历史中断 · 可查看日志与断点','warn')
+
+    def monitor_extraction(self,info):
+        if self.busy:return
+        directory=Path(info['directory'])
+        self.job_dir=directory;self._runtime_directory=directory;self._runtime_stamp=None
+        self._set_busy('monitor');self.show_log(True)
+        self.set_status('正在观察原后端任务；不会重复启动 Verdi。')
+        def worker():
+            while True:
+                if self._destroying:return
+                current=inspect_recovery(directory)
+                if not current.get('running'):break
+                time.sleep(.5)
+            path=directory/result_filename(info['manifest']['config'])
+            if current['diagnosis'].get('state') in ('finished','attention') and path.is_file():
+                try:self.events.put(('loaded',read_graph(path),path,None))
+                except Exception as error:self.events.put(('error','打开结果失败',str(error)))
+            else:self.events.put(('monitor_stopped',current))
         threading.Thread(target=worker,daemon=True).start()
 
     def _terminate_process(self):
@@ -1275,6 +1352,10 @@ class ClockTreeApp(tk.Tk):
                 kind=item[0]
                 if kind=='session_loaded':
                     self._apply_previous_session(item[1])
+                elif kind=='recovery_notice':
+                    if not self.busy:self.show_recovery(item[1])
+                elif kind=='monitor_stopped':
+                    self._set_busy(None);self.show_recovery(item[1])
                 elif kind=='session_save_error':
                     if not self._closing:self.set_status('自动恢复记录未能保存：'+item[1])
                 elif kind=='loaded':
@@ -1304,7 +1385,7 @@ class ClockTreeApp(tk.Tk):
                         self.log_text.see('end')
                         self.log_path_label.configure(text=item[2])
         except queue.Empty:pass
-        if self.job_kind=='extract' and self.job_dir:
+        if self.job_kind in ('extract','monitor') and self.job_dir:
             memory_file=self.job_dir/'memory.json'
             try:
                 stamp=(memory_file.stat().st_mtime,memory_file.stat().st_size)
@@ -1360,6 +1441,7 @@ class ClockTreeApp(tk.Tk):
                     job=read_json(directory/'gui-job.json')
                     status={'cancelled':'已取消','failed':'失败','running':'运行中'}.get(job.get('state'),'—')
                     count='—'
+                elif (directory/'run-status.json').is_file():status='阶段记录';count='—'
                 else:continue
                 runtime=runtime_json(directory/'run-status.json',{})
                 current=runtime.get('state')
@@ -1385,6 +1467,7 @@ class ClockTreeApp(tk.Tk):
             self._update_runtime_view()
             self.show_run_diagnosis()
             self.set_status('该记录未生成完整结果：{}'.format(directory))
+            if not self.busy:self.show_recovery(inspect_recovery(directory))
 
     def refresh_nodes(self):
         self.nav_tree.delete(*self.nav_tree.get_children())
@@ -1700,6 +1783,8 @@ class ClockTreeApp(tk.Tk):
         self._closing=True
         if self.job_kind=='extract':
             self.cancel_job()
+        elif self.job_kind=='monitor':
+            self._set_busy(None);self._finish_close()
         elif self.busy:
             pass
         else:self._finish_close()
@@ -1711,7 +1796,7 @@ class ClockTreeApp(tk.Tk):
             if not self._close_save_started:self._save_session_now()
             self._session_writer.close()
         self.gui_journal.emit('end','session','历史配置与结果保存流程结束')
-        self.gui_journal.emit('finished','display','GUI 正常关闭')
+        self.gui_journal.emit('finished','display','GUI 正常关闭',clean_shutdown=True)
         for timer in self.tk.splitlist(self.tk.call('after','info')):
             # Native ttk timers contain Tcl command lists on Tk 8.5, which
             # Python 3.6's after_cancel cannot delete as Python callbacks.

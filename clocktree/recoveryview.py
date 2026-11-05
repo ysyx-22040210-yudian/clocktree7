@@ -27,6 +27,11 @@ class RecoveryDialog(tk.Toplevel):
                           '状态说明：' + info.get('reason', '')])
             for key, label in (('module', 'Module'), ('scope', '范围'), ('instance', '实例'), ('pin', '端口')):
                 if context.get(key):lines.append('{}：{}'.format(label, context[key]))
+            if context.get('api'):
+                lines.append('最后记录的 NPI 操作：{} · {}'.format(context['api'],context.get('object','')))
+            if 'scanned' in context:
+                lines.append('端口内进度：已扫描 {}，已处理 {}，待处理 {}。'.format(
+                    context['scanned'],context.get('processed',0),context.get('pending',0)))
             lines.append('已提交断点：{} 条 module 规则 / {} 个端口追踪'.format(
                 checkpoint.get('completed_modules', 0), checkpoint.get('completed_traces', 0)))
             if checkpoint.get('last_module'):

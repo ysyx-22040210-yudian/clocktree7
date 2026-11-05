@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from clocktree.config import validate_config
 from clocktree.extract import extract
+from clocktree.graph import read_events
 
 
 RTL = '''
@@ -137,7 +138,9 @@ def main():
     for layer in bad['layers']:layer['hierarchy'] = ''
     invalid = run(bad, out / 'missing-root')
     assert not invalid['summary']['connectivity_complete'] and not invalid['nodes']
-    assert any(d['code'] == 'scope_not_found' for d in invalid['diagnostics'])
+    # A failed worker publishes only its committed prefix. The pre-checkpoint
+    # reason remains in raw evidence / stage logs, not in the accepted graph.
+    assert any(d.get('code') == 'scope_not_found' for d in read_events(out/'missing-root/raw.jsonl'))
     # Instance search only examines direct children, excluding the root itself.
     leaf_scope = 'scope_top.domain.u_mux'
     leaf_filelist = out / 'module/fixture/rtl.f'

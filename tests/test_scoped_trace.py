@@ -111,6 +111,22 @@ def tcl_walk():
         proc ct_inst {hdl} {return [join [lrange [split $hdl .] 0 end-1] .]}
         proc npi_nl_get {args} {return 0}
         proc npi_nl_handle {args} {return ""}
+        proc npi_nl_release_handle {args} {}
+        set iterators {};set next_iterator 0
+        proc npi_nl_iterate {args} {
+            global visits iterators next_iterator
+            set hdl [lindex $args 3]
+            lappend visits $hdl
+            if {$hdl eq "top.domain.u.i"} {set next top.domain.wire} elseif {$hdl eq "top.domain.wire"} {
+                set next top.domain_extra.wire
+            } else {error "Traversal escaped the configured root"}
+            set id [incr next_iterator];dict set iterators $id $next;return $id
+        }
+        proc npi_nl_scan {args} {
+            global iterators
+            set id [lindex $args 1];set value [dict get $iterators $id]
+            dict set iterators $id {};return $value
+        }
         namespace eval ::npi_L1 {}
         proc ::npi_L1::npi_nl_trace_driver_by_hdl2 {hdl result} {
             global visits

@@ -1,6 +1,7 @@
 """Native Tk execution-stage strip; no graph data or trace paths are cached."""
 import tkinter as tk
 from tkinter import ttk
+import time
 from .runtime import STAGES, LABELS, stage_node
 
 
@@ -40,6 +41,16 @@ class StageView(ttk.Frame):
         if context.get('instance'):parts.append(str(context['instance']))
         if context.get('pin'):parts.append('端口 '+str(context['pin'])+' '+str(context.get('direction','')))
         if context.get('trace_id'):parts.append('追踪 #'+str(context['trace_id']))
+        if 'scanned' in context:
+            parts.append('已扫描 {} · 已处理 {} · 待处理 {} · 命中/边界 {}'.format(
+                context['scanned'],context.get('processed',0),context.get('pending',0),context.get('results',0)))
+            phases={'iterator_open':'打开连接迭代器','iterator_scan':'逐项读取连接',
+                    'iterator_done':'迭代完成','primitive_begin':'穿过透明器件',
+                    'primitive_end':'透明器件完成','driver_begin':'查询驱动',
+                    'driver_end':'驱动查询完成','complete':'端口完成'}
+            parts.append(phases.get(context.get('phase'),context.get('phase','')))
+            age=max(0,int(time.time()-active.get('last_event',{}).get('time_ms',time.time()*1000)/1000))
+            if state=='running' and age>=5:parts.append('距上次进度 {} 秒（持续等待）'.format(age))
         checkpoint=backend.get('checkpoint') or {}
         if checkpoint:parts.append('已提交 {} module / {} 追踪'.format(checkpoint.get('completed_modules',0),checkpoint.get('completed_traces',0)))
         self.item.set((' · '.join(parts) or active.get('detail') or '点击阶段节点查看对应日志')[-175:])

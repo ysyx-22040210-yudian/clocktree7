@@ -1,4 +1,5 @@
-# Uses supported base NPI driver/load interfaces, not the Universe trace wrapper.
+# Stream output net connectivity with base NPI iterators. Retain L1 for
+# narrow driver queries and bit correspondence across transparent primitives.
 proc ct_js {value} {
     return "\"[string map [list \\ \\\\ \" \\\" \n \\n \r \\r \t \\t] $value]\""
 }
@@ -31,16 +32,33 @@ proc ct_full {hdl} {
     }
     return $full
 }
-proc ct_inst {hdl} {return [npi_nl_handle -type npiNlInst -refHandle [ct_full $hdl]]}
+proc ct_release {hdl} {if {$hdl ne ""} {npi_nl_release_handle -object $hdl}}
+proc ct_inst {hdl} {
+    set full [ct_full $hdl]
+    set result [npi_nl_handle -type npiNlInst -refHandle $full]
+    if {$full ne $hdl} {ct_release $full}
+    return $result
+}
+proc ct_inst_prop {hdl property} {
+    set inst [ct_inst $hdl]
+    set value [ct_prop $inst $property]
+    ct_release $inst
+    return $value
+}
 proc ct_key {hdl} {
     set inst [ct_inst $hdl]
     if {$inst eq ""} {return ""}
     set full [ct_full $hdl]
-    return [list [ct_prop $inst npiNlFullName] [ct_prop $full npiNlName] \
+    set value [list [ct_prop $inst npiNlFullName] [ct_prop $full npiNlName] \
         [npi_nl_get -property npiNlLeft -object $hdl] [npi_nl_get -property npiNlRight -object $hdl]]
+    ct_release $inst
+    if {$full ne $hdl} {ct_release $full}
+    return $value
 }
 proc ct_state {hdl} {
-    return [list [ct_prop $hdl npiNlType] [ct_prop $hdl npiNlFullName] \
+    set name [ct_prop $hdl npiNlFullName]
+    if {$name eq ""} {set name $hdl}
+    return [list [ct_prop $hdl npiNlType] $name \
         [npi_nl_get -property npiNlLeft -object $hdl] [npi_nl_get -property npiNlRight -object $hdl]]
 }
 proc ct_evidence {hdl} {
@@ -48,6 +66,7 @@ proc ct_evidence {hdl} {
     set net ""
     catch {set net [npi_nl_handle -type npiNlNet -refHandle $hdl]}
     set net_name [ct_prop $net npiNlFullName]
+    ct_release $net
     if {$ct_trace_scope ne "" && ![ct_scope_match $net_name $ct_trace_scope]} {set net_name ""}
     return [ct_object type [ct_js [ct_prop $hdl npiNlType]] \
         name [ct_js [ct_prop $hdl npiNlFullName]] net [ct_js $net_name]]
@@ -133,7 +152,7 @@ proc ct_inside_trace_scope {hdl} {
     if {$ct_trace_scope eq ""} {return 1}
     set name [ct_prop $hdl npiNlFullName]
     if {$name ne ""} {return [ct_scope_match $name $ct_trace_scope]}
-    set owner [ct_prop [ct_inst $hdl] npiNlFullName]
+    set owner [ct_inst_prop $hdl npiNlFullName]
     return [expr {$owner ne "" && [ct_scope_match $owner $ct_trace_scope]}]
 }
 proc ct_scope_boundary {path endpoint direction} {
@@ -168,12 +187,16 @@ proc ct_pin {path pin} {
                         if {$port ne ""} {set result $port; break}
                     }
                 }
+                foreach p $connections {ct_release $p}
                 if {$result ne ""} {break}
             }
+            ct_release $sig
         }
     }
     if {$result ne "" && $bit ne ""} {
-        set result [npi_nl_handle_by_index -object $result -index $bit]
+        set whole $result
+        set result [npi_nl_handle_by_index -object $whole -index $bit]
+        ct_release $whole
     }
     return $result
 }
@@ -205,10 +228,141 @@ proc ct_terminal {result} {
     ct_emit [ct_object event [ct_js trace_result] trace_id $ct_trace_id result $result]
     incr ct_result_count
 }
+proc ct_trace_note {phase hdl api {force 0}} {
+    global ct_walk_stats ct_walk_context ct_walk_started ct_walk_updated ct_result_count
+    set now [clock milliseconds]
+    if {!$force && $now - $ct_walk_updated < 1000} {return}
+    set ct_walk_updated $now
+    set context [ct_object {*}$ct_walk_context phase [ct_js $phase] api [ct_js $api] \
+        object [ct_js [ct_prop $hdl npiNlFullName]] processed [dict get $ct_walk_stats processed] \
+        discovered [dict get $ct_walk_stats discovered] pending [dict get $ct_walk_stats pending] \
+        scanned [dict get $ct_walk_stats scanned] duplicates [dict get $ct_walk_stats duplicates] \
+        results $ct_result_count elapsed_ms [expr {$now-$ct_walk_started}]]
+    ct_journal progress trace $context "port connectivity scan"
+    return $context
+}
+proc ct_schedule {hdl path last_inside} {
+    # Called only by ct_expand: transfer one acquired handle to the FIFO or
+    # release a duplicate immediately. Never accumulate a second fanout list.
+    upvar 1 queue queue tail tail scheduled scheduled
+    global ct_walk_stats
+    set state [ct_state $hdl]
+    if {[dict exists $scheduled $state]} {
+        dict incr ct_walk_stats duplicates
+        if {[string match *Port [lindex $state 0]]} {dict incr ct_walk_stats repeated_ports}
+        ct_release $hdl
+        return
+    }
+    dict set scheduled $state 1
+    dict set queue $tail [list $hdl $path 0 $last_inside]
+    incr tail
+    dict incr ct_walk_stats discovered
+    dict incr ct_walk_stats pending
+}
+proc ct_expand {hdl direction path last_inside} {
+    upvar 1 queue queue tail tail scheduled scheduled
+    global ct_walk_stats ct_walk_noted_net
+    set type [ct_prop $hdl npiNlType]
+    if {$direction eq "driver"} {
+        # L1 collapses the attached net. Inspect an outward input connection
+        # first so a generate scope cannot silently leave its configured root
+        # through a parent-declared wire and re-enter at a sibling instance.
+        if {[string match *InstPort $type] && [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
+            set net [npi_nl_handle -type npiNlNet -refHandle $hdl]
+            if {$net ne "" && ![npi_nl_get -property npiNlIsLiteral -object $net] && ![ct_inside_trace_scope $net]} {
+                ct_schedule $net $path $last_inside
+                return 1
+            }
+            ct_release $net
+        }
+        # Driver queries return a narrow result. Retain the native L1 bit
+        # mapping here: walking an entire high-fanout net's connectivity once
+        # per input would turn N downstream inputs into O(N^2) Tcl scans.
+        ct_trace_note driver_begin $hdl npi_nl_trace_driver_by_hdl2
+        set next {}
+        set code [catch {::npi_L1::npi_nl_trace_driver_by_hdl2 $hdl next} message]
+        if {$code} {
+            foreach target $next {ct_release $target}
+            return -code error $message
+        }
+        set count [llength $next]
+        dict incr ct_walk_stats scanned $count
+        foreach target $next {ct_schedule $target $path $last_inside}
+        ct_trace_note driver_end $hdl npi_nl_trace_driver_by_hdl2
+        return $count
+    }
+    set is_net [string match *Net $type]
+    set relation [expr {$direction eq "load" ? "npiNlLoad" : "npiNlDriver"}]
+    if {$is_net} {
+        if {[npi_nl_get -property npiNlIsLiteral -object $hdl]} {return 0}
+        # A directional iterator alone omits slice/concat aliases in Verdi
+        # 2018. Walk net connectivity, filtering direction at each pin.
+        set relation npiNlConnectivity
+    } elseif {[string match *InstPort $type] && [ct_inst_prop $hdl npiNlCellType] ne "npiNlModuleCell"} {
+        set port_direction [ct_prop $hdl npiNlDirection]
+        if {($direction eq "load" && $port_direction eq "npiNlInput") ||
+                ($direction eq "driver" && $port_direction eq "npiNlOutput") || $port_direction eq "npiNlInout"} {
+            set api "npi_nl_trace_${direction}_by_hdl2"
+            ct_trace_note primitive_begin $hdl $api 1
+            set next {}
+            set code [catch {::npi_L1::$api $hdl next} message]
+            if {$code} {
+                foreach target $next {ct_release $target}
+                return -code error $message
+            }
+            set count [llength $next]
+            foreach target $next {ct_schedule $target $path $last_inside}
+            ct_trace_note primitive_end $hdl $api 1
+            return $count
+        }
+    }
+    # Record the first net expansion (the usual high-fanout point) before
+    # entering NPI. Later fast expansions are sampled, not flushed per load.
+    set report [expr {[dict get $ct_walk_stats processed] == 1 || ($is_net && !$ct_walk_noted_net)}]
+    if {$is_net} {set ct_walk_noted_net 1}
+    ct_trace_note iterator_open $hdl "npi_nl_iterate:$relation" $report
+    set iterator [npi_nl_iterate -type $relation -refHandle $hdl]
+    if {$iterator eq ""} {return 0}
+    ct_trace_note iterator_scan $hdl npi_nl_scan $report
+    set count 0
+    set code [catch {
+        while {1} {
+            set target [npi_nl_scan -iterator $iterator]
+            if {$target eq ""} {set iterator ""; break}
+            dict incr ct_walk_stats scanned
+            set accept 1
+            if {$is_net} {
+                set target_type [ct_prop $target npiNlType]
+                if {[string match *Port $target_type]} {
+                    set port_direction [ct_prop $target npiNlDirection]
+                    set input [expr {[string match *InstPort $target_type] == ($direction eq "load")}]
+                    set want [expr {$input ? "npiNlInput" : "npiNlOutput"}]
+                    set accept [expr {$port_direction eq $want || $port_direction eq "npiNlInout"}]
+                } elseif {![string match *Net $target_type]} {
+                    ct_release $target
+                    error "Unsupported net connectivity object: $target_type"
+                }
+            }
+            if {$accept} {incr count; ct_schedule $target $path $last_inside} else {ct_release $target}
+            if {[dict get $ct_walk_stats scanned] % 128 == 0} {ct_trace_note iterator_scan $hdl npi_nl_scan}
+        }
+    } message]
+    # Exhausted iterators are already released by NPI; release only on error.
+    ct_release $iterator
+    if {$code} {return -code error $message}
+    ct_trace_note iterator_done $hdl npi_nl_scan
+    return $count
+}
 proc ct_walk {seed direction owner pin trace_id} {
     global ct_selected ct_instances ct_max_steps ct_owner_paths ct_top ct_trace_scope ct_trace_id ct_result_count ct_stream
+    global ct_walk_stats ct_walk_context ct_walk_started ct_walk_updated ct_walk_noted_net
     set ct_trace_id $trace_id
-    set trace_context [ct_object trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    set ct_walk_context [list trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    set trace_context [ct_object {*}$ct_walk_context]
+    set ct_walk_stats [dict create processed 0 discovered 1 pending 1 scanned 0 duplicates 0 repeated_ports 0]
+    set ct_walk_started [clock milliseconds]
+    set ct_walk_updated 0
+    set ct_walk_noted_net 0
     ct_journal item_begin trace $trace_context "port trace begin"
     set ct_result_count 0
     ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
@@ -218,11 +372,17 @@ proc ct_walk {seed direction owner pin trace_id} {
     set tail 1
     set cursor 0
     set path_count 0
-    set seen [dict create]
+    set scheduled [dict create [ct_state $seed] 1]
+    set owned ""
     while {$cursor < $tail} {
+        ct_release $owned
+        set owned ""
         lassign [dict get $queue $cursor] hdl path is_seed last_inside
         dict unset queue $cursor
+        if {!$is_seed} {set owned $hdl}
         incr cursor
+        dict incr ct_walk_stats processed
+        dict incr ct_walk_stats pending -1
         if {$ct_max_steps > 0 && $cursor > $ct_max_steps} {
             ct_terminal [ct_result trace_limit $path]
             break
@@ -231,9 +391,6 @@ proc ct_walk {seed direction owner pin trace_id} {
             ct_terminal [ct_scope_boundary $path $last_inside $direction]
             continue
         }
-        set state [ct_state $hdl]
-        if {[dict exists $seen $state]} {continue}
-        dict set seen $state 1
         set parent $path
         set path [incr path_count]
         ct_emit [ct_object event [ct_js path_step] trace_id $trace_id path_id $path parent_id $parent evidence [ct_evidence $hdl]]
@@ -243,7 +400,7 @@ proc ct_walk {seed direction owner pin trace_id} {
         # Root interface ports are the strict boundary, including selected
         # roots. Never cross into the parent and then re-enter elsewhere.
         if {$ct_trace_scope ne "" && [string match *Port $type] &&
-                [ct_prop [ct_inst $hdl] npiNlFullName] eq $ct_trace_scope} {
+                [ct_inst_prop $hdl npiNlFullName] eq $ct_trace_scope} {
             set port_direction [ct_prop $hdl npiNlDirection]
             if {($direction eq "driver" && $port_direction eq "npiNlInput") ||
                     ($direction eq "load" && $port_direction eq "npiNlOutput")} {
@@ -251,7 +408,7 @@ proc ct_walk {seed direction owner pin trace_id} {
                 continue
             }
         }
-        if {!$is_seed} {
+        if {!$is_seed && [string match *Port $type]} {
             set key [ct_key $hdl]
             if {$key ne "" && [dict exists $ct_selected $key]} {
                 lassign [dict get $ct_selected $key] target target_pin role
@@ -265,6 +422,11 @@ proc ct_walk {seed direction owner pin trace_id} {
             set inst_path [ct_prop $inst npiNlFullName]
             if {[dict exists $ct_owner_paths $inst_path]} {set inst_path [dict get $ct_owner_paths $inst_path]}
             set cell [ct_prop $inst npiNlCellType]
+            set is_interface_connector 0
+            if {$cell eq "npiNlMacroCell"} {
+                catch {set is_interface_connector [npi_nl_get -property npiNlIsIntfConnector -object $inst]}
+            }
+            ct_release $inst
             if {$inst_path eq $ct_top && $type in {npiNlPort npiNlPseudoPort}} {
                 set port_direction [ct_prop $hdl npiNlDirection]
                 if {($direction eq "load" && $port_direction eq "npiNlOutput") || ($direction eq "driver" && $port_direction eq "npiNlInput")} {
@@ -280,10 +442,6 @@ proc ct_walk {seed direction owner pin trace_id} {
                 continue
             }
             if {[string match *InstPort $type] && $cell ne "npiNlModuleCell"} {
-                set is_interface_connector 0
-                if {$cell eq "npiNlMacroCell"} {
-                    catch {set is_interface_connector [npi_nl_get -property npiNlIsIntfConnector -object $inst]}
-                }
                 if {!$is_interface_connector && $cell ni {npiNlAssignCell npiNlBufCell npiNlNegCell}} {
                     set status unknown_cell
                     if {$direction eq "load" && $cell in {npiNlFlipFlopCell npiNlLatchCell npiNlFSMCell npiNlExternalRamCell npiNlFlipFlopComboCell npiNlLatchComboCell}} {set status sink}
@@ -292,12 +450,12 @@ proc ct_walk {seed direction owner pin trace_id} {
                 }
             }
         }
-        set next {}
-        if {[catch {::npi_L1::npi_nl_trace_${direction}_by_hdl2 $hdl next} message]} {
+        if {[catch {ct_expand $hdl $direction $path $last_inside} next_count]} {
+            set message $next_count
             ct_terminal [ct_result error $path message [ct_js $message]]
             continue
         }
-        if {![llength $next]} {
+        if {!$next_count} {
             set status [expr {$direction eq "load" ? "no_load" : "undriven"}]
             if {[string match *Port $type] && ![string match *InstPort $type]} {
                 set status [expr {$direction eq "load" ? "output_boundary" : "input_boundary"}]
@@ -307,16 +465,26 @@ proc ct_walk {seed direction owner pin trace_id} {
                 set attached_net ""
                 catch {set attached_net [npi_nl_handle -type npiNlNet -refHandle $hdl]}
                 if {$attached_net ne "" && [npi_nl_get -property npiNlIsLiteral -object $attached_net]} {set status constant}
+                ct_release $attached_net
             }
             ct_terminal [ct_result $status $path endpoint [ct_js [ct_prop $hdl npiNlFullName]]]
         }
-        foreach target $next {dict set queue $tail [list $target $path 0 $last_inside]; incr tail}
-        unset next
     }
-    if {!$ct_result_count} {ct_terminal [ct_result error 0 message [ct_js "No terminal or target found; possible connectivity cycle"]]}
+    ct_release $owned
+    dict for {index entry} $queue {if {![lindex $entry 2]} {ct_release [lindex $entry 0]}}
+    if {!$ct_result_count} {
+        # Net-to-net alias links are bidirectional and may form a harmless
+        # cycle with no load. A repeated pin instead indicates a logic loop.
+        if {$direction eq "load" && ![dict get $ct_walk_stats repeated_ports]} {
+            ct_terminal [ct_result no_load $path endpoint [ct_js "$owner.$pin"]]
+        } else {
+            ct_terminal [ct_result error 0 message [ct_js "No terminal or target found; possible connectivity cycle"]]
+        }
+    }
     ct_emit [ct_object event [ct_js trace_end] trace_id $trace_id result_count $ct_result_count path_steps $path_count]
     flush $ct_stream
-    ct_journal item_end trace $trace_context "port trace complete"
+    set final_context [ct_trace_note complete $seed "" 1]
+    ct_journal item_end trace $final_context "port trace complete"
     return $ct_result_count
 }
 proc ct_atomic_json {path record {backup 0}} {
@@ -444,6 +612,7 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
                 ct_emit [ct_object event [ct_js trace] instance [ct_js $path] pin [ct_js $pin] direction [ct_js $direction] \
                     results [ct_array [list [ct_object status [ct_js $status] path {[]}]]]]
             }
+            ct_release $p
             continue
         }
         set expected [expr {$role eq "output" ? "npiNlOutput" : "npiNlInput"}]
@@ -451,7 +620,7 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
             ct_emit [ct_object event [ct_js diagnostic] code [ct_js pin_validation] instance [ct_js $path] pin [ct_js $pin]]
         }
         dict set ct_selected [ct_key $p] [list $path $pin $role]
-        dict set ct_owner_paths [ct_prop [ct_inst $p] npiNlFullName] $path
+        dict set ct_owner_paths [ct_inst_prop $p npiNlFullName] $path
         dict set ct_pins_to_trace $ct_pin_count [list $p $direction $path $pin]
         incr ct_pin_count
     }
@@ -517,7 +686,8 @@ proc ct_main {} {
     if {[tell $ct_stream] == 0} {
         ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
             verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] \
-            instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1 port_connection_protocol 1]
+            instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1 port_connection_protocol 1 \
+            connectivity_traversal [ct_js streaming_net_connectivity]]
         flush $ct_stream
         ct_save_checkpoint import 0 0
     }
@@ -648,7 +818,10 @@ proc ct_main {} {
     ct_save_checkpoint trace $query_count $ct_resume_completed_traces
     set count $ct_resume_completed_traces
     if {$count > $ct_pin_count} {error "Checkpoint trace count exceeds restored ports"}
-    for {set index 0} {$index < $count} {incr index} {dict unset ct_pins_to_trace $index}
+    for {set index 0} {$index < $count} {incr index} {
+        ct_release [lindex [dict get $ct_pins_to_trace $index] 0]
+        dict unset ct_pins_to_trace $index
+    }
     ct_worker_status trace "$count / $ct_pin_count"
     ct_journal begin trace [ct_object completed_traces $count total_traces $ct_pin_count] "trace all selected ports"
     while {$count < $ct_pin_count} {
@@ -656,7 +829,11 @@ proc ct_main {} {
         dict unset ct_pins_to_trace $count
         incr count
         ct_walk $p $direction $owner $pin $count
-        if {$count % 32 == 0} {ct_save_checkpoint trace $query_count $count}
+        ct_release $p
+        # Commit a completed expensive port immediately so an interruption on
+        # the next port cannot force a large fanout to be traversed again.
+        if {$count % 32 == 0 || [dict get $::ct_walk_stats scanned] >= 256 ||
+                [clock milliseconds]-$::ct_walk_started >= 1000} {ct_save_checkpoint trace $query_count $count}
         if {[ct_maybe_rotate trace $query_count $count]} {return}
         if {$count % 100 == 0} {
             puts "CT7_TRACE $count/$ct_pin_count"; flush stdout

@@ -124,7 +124,7 @@ def main():
     assert [module['new_instances'] for module in modules[:4]]==[1,0,0,0]
     assert all('CT7_MODULE_SKIP index={}'.format(i) in (directory/'verdi.log').read_text() for i in (1,2,3))
     report['cases'].append({'case':'within_shared_query','pass':True,'module_checkpoints':len(modules),'restarts':3,
-        'completed_rules_skipped':True,'full_graph_and_dual_evidence_equal':True,'port_connections_equal':True})
+        'completed_rules_skipped':True,'full_graph_and_mode_evidence_equal':True,'port_connections_equal':True})
     # An empty result and a nonexistent scope are both committed as handled
     # rules with explicit failures; neither can certify complete connectivity.
     config=copy.deepcopy(configs['clock'])

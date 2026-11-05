@@ -9,7 +9,7 @@ from .profiles import profile, tree_type
 from .config import hierarchy_contains
 
 
-UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type"}
+UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression"}
 
 
 def build_graph(events, config, evidence_store=None):
@@ -20,6 +20,7 @@ def build_graph(events, config, evidence_store=None):
     edges, boundaries, trace_keys = {}, [], set()
     active = {}
     trace_index = 0
+    output_checks = {}
 
     def consume(trace, result):
         if result['status'] == 'sink':
@@ -111,6 +112,10 @@ def build_graph(events, config, evidence_store=None):
             evidence_store.end_trace(item['trace_id'])
         elif kind == "diagnostic":
             diagnostics.append(item)
+        elif kind == 'output_check':
+            output_checks[(item['instance'], item['pin'])] = item['status']
+            if item['status'] != 'ok':
+                diagnostics.append(dict(item, code='pin_validation'))
         elif kind == "metadata":
             metadata.update(item)
         elif kind == 'scoped_query':
@@ -145,8 +150,13 @@ def build_graph(events, config, evidence_store=None):
             del edges[key]
             continue
         edge['layer_delta'] = nodes[edge['target']]['layer'] - nodes[edge['source']]['layer']
+    # Raw metadata defines evidence semantics; old saved results remain dual-direction.
+    target_mode = metadata.get('extraction_mode') == 'target'
+    if target_mode and any(direction != 'driver' for _, _, direction in trace_keys):
+        diagnostics.append({'code': 'trace_protocol', 'message': 'Target mode contains an output load trace'})
     for edge in edges.values():
-        if len(edge["evidence"]) != 2:
+        required = {'driver'} if target_mode else {'driver', 'load'}
+        if set(edge['evidence']) != required:
             diagnostics.append({"code": "trace_mismatch", "edge": edge["id"], "observed": sorted(edge["evidence"])})
         if edge["layer_delta"] < 0:
             diagnostics.append({"code": "reverse_layer", "edge": edge["id"]})
@@ -186,7 +196,9 @@ def build_graph(events, config, evidence_store=None):
     expected_count = 0
     missing = []
     for node in nodes.values():
-        for pin, direction in [(node['output'], 'load')] + [(pin, 'driver') for pin in node['inputs']]:
+        if target_mode and (node['id'], node['output']) not in output_checks:
+            diagnostics.append({'code': 'pin_validation', 'instance': node['id'], 'pin': node['output'], 'status': 'missing_output_check'})
+        for pin, direction in ([] if target_mode else [(node['output'], 'load')]) + [(pin, 'driver') for pin in node['inputs']]:
             expected_count += 1
             key = (node['id'], pin, direction)
             if key not in trace_keys:
@@ -228,9 +240,11 @@ def build_graph(events, config, evidence_store=None):
     unresolved_outputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'load'}
     scope_outputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'load'}
     scope_inputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'driver'}
+    uncertain_inputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'driver'}
+    uncertain_inputs.update(node for node, pin, direction in missing if direction == 'driver')
     for node in nodes.values():
         node["component"] = component_id[node["id"]]
-        node["root"] = not incoming.get(node['id'])
+        node["root"] = not incoming.get(node['id']) and not (target_mode and node['id'] in uncertain_inputs)
         node["terminal"] = not outgoing.get(node['id']) and node['id'] not in unresolved_outputs and node['id'] not in scope_outputs and (node["id"], node["output"], "load") in trace_keys
         node['scope_input_boundary'] = node['id'] in scope_inputs
         node['scope_output_boundary'] = node['id'] in scope_outputs
@@ -239,6 +253,13 @@ def build_graph(events, config, evidence_store=None):
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
     fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint'}
     coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
+    if target_mode:
+        # An unresolved input elsewhere could be a downstream branch of any
+        # apparent terminal. Do not claim proven terminals on an incomplete graph.
+        for node in nodes.values():
+            node['terminal'] = bool(coverage_ok and not outgoing.get(node['id']) and output_checks.get((node['id'], node['output'])) == 'ok')
+            node['physical_loads_checked'] = False
+            node['terminal_semantics'] = 'selected_structure'
     topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
     return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,
             "nodes": sorted(nodes.values(), key=lambda n: (n["layer"], n["id"])),
@@ -246,6 +267,10 @@ def build_graph(events, config, evidence_store=None):
             "components": components, info['sources']: sorted(sources.values(), key=lambda s: s["id"]), "diagnostics": diagnostics,
             "summary": {"instances": len(nodes), "edges": len(edges), "roots": sum(n["root"] for n in nodes.values()),
                         "tree_type": tree_type(config),
+                        'extraction_mode': 'target' if target_mode else 'full',
+                        'physical_loads_checked': not target_mode and coverage_ok,
+                        'terminal_semantics': 'selected_structure' if target_mode else 'load_trace',
+                        'validated_outputs': sum(v == 'ok' for v in output_checks.values()),
                         "terminals": sum(n["terminal"] for n in nodes.values()), "components": len(components), info['sources']: len(sources),
                         "layers": dict(Counter(str(n["layer"]) for n in nodes.values())),
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),

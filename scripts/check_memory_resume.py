@@ -79,7 +79,8 @@ def same_graph(left, right):
     before = {edge['id']: edge for edge in left['edges']}
     for edge in right['edges']:
         old = before[edge['id']]
-        for direction in ('load', 'driver'):
+        assert set(edge['evidence']) == set(old['evidence'])
+        for direction in old['evidence']:
             assert list(edge['evidence'][direction]) == list(old['evidence'][direction])
     assert [(b['status'], b['instance'], b['pin'], b['direction'], list(b.get('path', []))) for b in left['boundaries']] == [
         (b['status'], b['instance'], b['pin'], b['direction'], list(b.get('path', []))) for b in right['boundaries']]
@@ -202,7 +203,7 @@ def main():
         assert guard['restart_count'] == 2 and len(soc['nodes']) == len(expected)
         report['soc'] = {'pass': True, 'instances':len(expected), 'edges':len(soc['edges']), 'scope':cfg['trace_scope'],
                          'full_chip':False,'restarts':2,
-                         'full_graph_and_dual_evidence_equal':True, 'actual_60_gib_allocation':False, 'samples':injection_samples}
+                         'full_graph_and_mode_evidence_equal':True, 'actual_60_gib_allocation':False, 'samples':injection_samples}
     # A real threshold below the controller's own RSS must stop, not loop.
     blocked = out / 'baseline-too-large'
     try:

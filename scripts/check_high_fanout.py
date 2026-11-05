@@ -143,7 +143,7 @@ def gui(out):
             if alive(identity):os.killpg(identity['pid'],signal.SIGKILL)
 
 
-def fixture(out, count):
+def fixture(out, count, mode='full'):
     out.mkdir(parents=True, exist_ok=True)
     lines = ['''module fan_source(input i,output o); assign o=i; endmodule
 module fan_gate(input i,en,output o); assign o=i&en; endmodule
@@ -163,7 +163,7 @@ wire [3:0] packed_clk; assign packed_clk={root_clk,clk,alias_clk,clk};
               'fan_domain domain(.*); endmodule']
     (out/'fixture.sv').write_text('\n'.join(lines), encoding='utf-8')
     (out/'rtl.f').write_text(str(out/'fixture.sv')+'\n', encoding='utf-8')
-    config = {'design':{'top':'fan_top','filelist':str(out/'rtl.f')}, 'trace_scope':'fan_top.domain',
+    config = {'extraction_mode':mode, 'design':{'top':'fan_top','filelist':str(out/'rtl.f')}, 'trace_scope':'fan_top.domain',
               'layers':[{'index':1,'hierarchy':'fan_top.domain','modules':[
                   {'module':'fan_source','kind':'gate','clock_inputs':['i'],'clock_output':'o'}]},
                   {'index':2,'hierarchy':'fan_top.domain','modules':[

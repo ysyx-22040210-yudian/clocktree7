@@ -4,6 +4,8 @@
 
 2026-11-04 增补：大图索引使用 Python 标准库 SQLite，已验证系统 SQLite 3.7.17；Linux 内存保护通过 `/proc` 读取本次 Verdi 和提取控制进程的 RSS，默认 60 GiB，可在 GUI 修改或关闭。当前版本支持提交断点后自动轮换 Verdi，详细行为与适用边界见 [内存优化与重启续跑](MEMORY.zh-CN.md)。运行目录应有足够磁盘空间保存证据、索引、断点和每次 Verdi 工作区。
 
+2026-11-06 增补：默认目标结构模式使用 NPI Language Model 的 `npi_trace_driver_by_hdl2`、`npiHighConn`、`npi_compare_objects` 等接口。离线包包含 `npi/target_trace.tcl`，不能只更新 Python 文件。Verdi 2018 的复杂数组连接存在已知未实现类型，详见 [本次验收报告](TARGET_MODE_VALIDATION.zh-CN.md)。现场仍需用实际 KDB 验证；目标范围不会自动裁剪 elab 导入内存。
+
 ## 1. 支持范围与设备条件
 
 | 用途 | 系统及依赖 | 验收方式 |

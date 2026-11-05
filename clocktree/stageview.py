@@ -47,7 +47,8 @@ class StageView(ttk.Frame):
             phases={'iterator_open':'打开连接迭代器','iterator_scan':'逐项读取连接',
                     'iterator_done':'迭代完成','primitive_begin':'穿过透明器件',
                     'primitive_end':'透明器件完成','driver_begin':'查询驱动',
-                    'driver_end':'驱动查询完成','complete':'端口完成'}
+                    'driver_end':'驱动查询完成','bind':'读取实际端口连接','complete':'端口完成'}
+            if 'cache_hits' in context:parts.append('公共路径复用 {}'.format(context['cache_hits']))
             parts.append(phases.get(context.get('phase'),context.get('phase','')))
             age=max(0,int(time.time()-active.get('last_event',{}).get('time_ms',time.time()*1000)/1000))
             if state=='running' and age>=5:parts.append('距上次进度 {} 秒（持续等待）'.format(age))

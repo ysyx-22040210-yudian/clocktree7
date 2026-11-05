@@ -75,8 +75,8 @@ proc ct_real_pressure {stage marker corrupt soft} {
 '''
 HARD = r'''
 rename ct_register_instance ct_pressure_original_register
-proc ct_register_instance {path module layer inputs output kind source emit} {
-    ct_pressure_original_register $path $module $layer $inputs $output $kind $source $emit
+proc ct_register_instance {path module layer inputs output kind source emit {language_handle ""}} {
+    ct_pressure_original_register $path $module $layer $inputs $output $kind $source $emit $language_handle
     if {$emit && [uplevel 1 {set query_count}] == 2} {ct_real_pressure actual_hard_enum hard-enum-once 1 0}
 }
 rename ct_walk ct_pressure_original_walk
@@ -185,6 +185,16 @@ def main():
             hook = 'set ct_test_limit {}\n'.format(configuration['memory_limit_gib']) + PRESSURE + (SOFT if kind == 'soft' else HARD)
             source = source.replace('if {[catch {ct_main} message]}', hook + '\nif {[catch {ct_main} message]}')
             worker.write_text(source, encoding='utf-8')
+            language = Path(work)/'target_trace.tcl'
+            if configuration.get('extraction_mode','target')=='target':
+                extra = '''
+rename ct_l_walk ct_pressure_original_language_walk
+proc ct_l_walk {owner pin trace_id} {
+    ct_pressure_original_language_walk $owner $pin $trace_id
+    if {$trace_id == 2} {ct_real_pressure actual_%s_trace %s-trace-once %d %d}
+}
+''' % (kind,kind,kind=='hard',kind=='soft')
+                language.write_text(language.read_text(encoding='utf-8')+extra,encoding='utf-8')
             environment = dict(environment, CT7_TEST_MEMORY_REPORT=str(Path(output) / 'memory.json'))
             # Deliberately do not pass sampler/pause/popen overrides.
             code, final, guard = runner(command, work, environment, raw, log_path, output, configuration)
@@ -227,14 +237,16 @@ def main():
         assert sum(event['event'] == 'complete' for event in events) == 1
         assert sum(event['event'] == 'instance' for event in events) == len(result['nodes'])
         assert guard['restarts'][0]['checkpoint']['completed_queries'] == 1
-        assert guard['restarts'][1]['checkpoint']['completed_traces'] == (2 if kind == 'soft' else 0)
+        target_mode=cfg.get('extraction_mode','target')=='target'
+        assert guard['restarts'][1]['checkpoint']['completed_traces'] == (2 if kind == 'soft' else (1 if target_mode else 0))
         allocations = [json.loads(line) for line in (Path(guard['checkpoint_file']).parent / 'pressure-allocations.jsonl').read_text().splitlines()]
         assert len(allocations) == 2 and all(no_live_process(item['pid']) for item in allocations)
         assert all((directory / name).is_file() for name in ('memory.json','memory-restarts.jsonl','verdi.log'))
         case = {'pass':True, 'tree_type':mode, 'action':kind, 'configured_limit_gib':cfg['memory_limit_gib'],
                 'effective_limit_gib':limit, 'cli_override':cli_override, 'restarts':2, 'attempts':3,
                 'actual_peak_rss_gib':guard['peak_rss_gib'], 'trigger_rss_gib':[event['rss_gib'] for event in guard['restarts']],
-                'instances':len(result['nodes']), 'edges':len(result['edges']), 'dual_evidence_equal':True,
+                'instances':len(result['nodes']), 'edges':len(result['edges']), 'exact_evidence_equal':True,
+                'extraction_mode':cfg.get('extraction_mode','target'),
                 'trace_ids_unique':True, 'all_workers_terminated':True, 'allocations':allocations}
         cases.append(case)
         print(json.dumps({key:case[key] for key in ('tree_type','action','effective_limit_gib','restarts','trigger_rss_gib','pass')}),flush=True)

@@ -4,6 +4,8 @@ import math
 from pathlib import Path
 from .profiles import TREE_PROFILES, tree_type, profile, rule_ports
 
+EXTRACTION_MODES = {'target': '目标结构提取（大设计推荐）', 'full': '全负载核验'}
+
 
 def load_config(path):
     with open(str(path), encoding="utf-8-sig") as stream:
@@ -49,6 +51,8 @@ def validate_config(config, allow_incomplete=False):
     if not isinstance(mode, str) or mode not in TREE_PROFILES:
         raise ValueError('tree_type must be clock or reset')
     info = profile(config)
+    if not isinstance(config.get('extraction_mode', 'target'), str) or config.get('extraction_mode', 'target') not in EXTRACTION_MODES:
+        raise ValueError('extraction_mode must be target or full')
     layers = config.get("layers", [])
     if (not isinstance(layers, list) or not layers or
             any(not isinstance(x, dict) for x in layers) or
@@ -108,6 +112,7 @@ def tcl_string(value):
 
 def write_tcl_config(config, path, output):
     lines = ["set ct_rules {}", 'set ct_tree_type ' + tcl_string(tree_type(config)),
+             'set ct_extraction_mode ' + tcl_string(config.get('extraction_mode', 'target')),
              'set ct_trace_scope ' + tcl_string(config.get('trace_scope', '').strip().rstrip('./'))]
     for layer in config["layers"]:
         for rule in layer.get("modules", []):

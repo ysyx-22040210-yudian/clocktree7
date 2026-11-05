@@ -65,7 +65,7 @@ def config(filelist,mode='clock',scope='direct_top.domain'):
            [rule('direct_outgate','gate',['i'],'o')]) if mode=='clock' else (
            [rule('direct_rmux','mux',['a','b'],'y',mode)],
            [rule('direct_sync','rsy_sync',['rst_ni'],'rst_no',mode)])
-    return {'tree_type':mode,'trace_scope':scope,'design':{'top':'direct_top','filelist':str(filelist)},
+    return {'extraction_mode':'full','tree_type':mode,'trace_scope':scope,'design':{'top':'direct_top','filelist':str(filelist)},
             'layers':[{'index':i,'hierarchy':scope,'modules':modules} for i,modules in enumerate(rules,1)]}
 
 

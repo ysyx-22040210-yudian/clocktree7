@@ -18,7 +18,7 @@ from itertools import islice
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
-from .config import load_config, validate_config
+from .config import load_config, validate_config, EXTRACTION_MODES
 from .paths import default_runs_dir
 from .paths import user_state_root
 from .environment import resolve_verdi
@@ -353,6 +353,7 @@ class ClockTreeApp(tk.Tk):
         self.mode_var=tk.StringVar(value='已有 elab / KDB')
         self.path_var=tk.StringVar()
         self.trace_scope_var=tk.StringVar()
+        self.extraction_mode_var=tk.StringVar(value=EXTRACTION_MODES['target'])
         self.memory_limit_var=tk.StringVar(value='60')
         self.memory_status=tk.StringVar(value='等待提取 · RSS 监测在 Linux 上启用')
         self.hierarchy_var=tk.StringVar()
@@ -371,6 +372,11 @@ class ClockTreeApp(tk.Tk):
         self.trace_scope_entry=ttk.Entry(settings,textvariable=self.trace_scope_var)
         self.trace_scope_entry.pack(fill='x',pady=(5,4))
         ttk.Label(settings,text='填写后仅追踪该层次及其子层次\n留空保留原有顶层追踪方式',style='Muted.TLabel').pack(anchor='w')
+        ttk.Label(settings,text='连接提取方式',style='Small.TLabel').pack(anchor='w',pady=(12,0))
+        self.extraction_mode_box=ttk.Combobox(settings,textvariable=self.extraction_mode_var,
+            values=[EXTRACTION_MODES[k] for k in ('target','full')],state='readonly')
+        self.extraction_mode_box.pack(fill='x',pady=(5,4))
+        ttk.Label(settings,text='目标结构：全部关注输入反查，不展开输出负载\n全负载核验：另行提取驱动与全部负载',style='Muted.TLabel').pack(anchor='w')
         memory_row=ttk.Frame(settings,style='White.TFrame')
         memory_row.pack(fill='x',pady=(12,4))
         ttk.Label(memory_row,text='内存重启阈值（GiB）',style='Small.TLabel').pack(side='left')
@@ -423,7 +429,7 @@ class ClockTreeApp(tk.Tk):
         self.bind('<MouseWheel>',self._config_wheel,add='+')
         self.bind('<Button-4>',self._config_wheel,add='+')
         self.bind('<Button-5>',self._config_wheel,add='+')
-        for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var,self.trace_scope_var]:
+        for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var,self.trace_scope_var,self.extraction_mode_var]:
             variable.trace('w',self.mark_dirty)
         self.memory_limit_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
@@ -597,7 +603,7 @@ class ClockTreeApp(tk.Tk):
         ttk.Label(prop,text='单击连线查看证据 · 双击对端定位',style='Muted.TLabel').pack(anchor='w',pady=(6,0))
         self.evidence_text=self._scroll_text(ev,self.mono,8)
         self.diag_text=self._scroll_text(diag,self.family,9)
-        self._properties('全量时钟树架构', [('选择节点','查看真实 RTL 实例、输入输出端口和上下游连接。'),('选择连线','查看驱动和负载两个方向的 NPI 路径。'),('层次概览','虚线框表示多个真实实例的聚合，双击展开。')])
+        self._properties('全量时钟树架构', [('选择节点','查看真实 RTL 实例、输入输出端口和上下游连接。'),('选择连线','查看本次提取的 NPI 连接证据。'),('层次概览','虚线框表示多个真实实例的聚合，双击展开。')])
 
     def _text(self,parent,family,size,height=10):
         return tk.Text(parent,font=(family,size),height=height,bg='white',fg=INK,borderwidth=0,highlightthickness=0,wrap='word',padx=3,pady=8,state='disabled',width=1)
@@ -993,6 +999,7 @@ class ClockTreeApp(tk.Tk):
         self.mode_var.set('已有 elab / KDB' if use_elab else 'RTL 文件列表')
         self.path_var.set(design.get('elab',design.get('filelist','')))
         self.trace_scope_var.set(config.get('trace_scope',''))
+        self.extraction_mode_var.set(EXTRACTION_MODES[config.get('extraction_mode','target')])
         self.memory_limit_var.set(str(config.get('memory_limit_gib',60)))
         self.layers=copy.deepcopy(config.get('layers',[]))
         if not self.layers:
@@ -1018,6 +1025,9 @@ class ClockTreeApp(tk.Tk):
         scope=self.trace_scope_var.get().strip().rstrip('./')
         if scope:data['trace_scope']=scope
         else:data.pop('trace_scope',None)
+        extraction_mode=next(k for k,v in EXTRACTION_MODES.items() if v==self.extraction_mode_var.get())
+        if extraction_mode=='target' and 'extraction_mode' not in self._base_config:data.pop('extraction_mode',None)
+        else:data['extraction_mode']=extraction_mode
         memory_text=self.memory_limit_var.get().strip()
         try:
             memory_limit=float(memory_text)
@@ -1176,7 +1186,7 @@ class ClockTreeApp(tk.Tk):
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
         summary=graph['summary']
         if summary['connectivity_complete'] and summary.get('topology_valid',True):
-            self._badge('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析','pass')
+            self._badge('目标结构连接已解析 · 未核验普通负载' if summary.get('extraction_mode')=='target' else ('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析'),'pass')
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
         else:self._badge('存在未解析断点 / 诊断','warn')
         components=graph['components'][:500]
@@ -1199,7 +1209,8 @@ class ClockTreeApp(tk.Tk):
             ('器件类型',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in (graph.kind_counts() if isinstance(graph,IndexedGraph) else Counter(n.get('kind') for n in self.diagram.model.original.values())).items())),
             ('结果读取','磁盘索引 · 概览优先 · 展开读取明细' if isinstance(graph,IndexedGraph) else '直接读取'),
             ('分支末端','  /  '.join('L{}: {}'.format(k,v) for k,v in sorted(summary.get('terminal_layers',{}).items()))),
-            ('完整性','全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
+            ('提取方式',EXTRACTION_MODES[summary.get('extraction_mode','full')]),
+            ('完整性','全部关注输入反查驱动；末端表示没有已配置的下游器件。普通负载未核验。' if summary.get('extraction_mode')=='target' else '全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
         self._replace_text(self.diag_text,json.dumps({'summary':summary,'diagnostics':graph.get('diagnostics',[])[:500],'diagnostic_rows_shown':min(500,len(graph.get('diagnostics',[]))),'metadata':graph.get('metadata',{})},ensure_ascii=False,indent=2))
         self.refresh_nodes()
@@ -1316,7 +1327,12 @@ class ClockTreeApp(tk.Tk):
             while True:
                 if self._destroying:return
                 current=inspect_recovery(directory)
-                if not current.get('running'):break
+                report=current['diagnosis']
+                if report.get('state') in ('finished','attention'):break
+                # inspect_recovery reads two atomically replaced status
+                # snapshots. Completion may fall between them: a missing
+                # running flag does not prove a live owner has stopped.
+                if not current.get('running') and report.get('owner_alive') is not True:break
                 time.sleep(.5)
             path=directory/result_filename(info['manifest']['config'])
             if current['diagnosis'].get('state') in ('finished','attention') and path.is_file():
@@ -1616,7 +1632,7 @@ class ClockTreeApp(tk.Tk):
         self._fill_connections(edges)
         self._properties('实际端口连接', [('共用当前线段','{} 条真实端口连接'.format(len(edges))),
                                         ('查看依据','在下面列表选择具体连线，或在“连线证据”页查看第一条。'),
-                                        ('数据来源','驱动 / 负载双向 NPI 静态网络追踪')])
+                                        ('数据来源','Language Model 输入驱动证据' if self.graph['summary'].get('extraction_mode')=='target' else '驱动 / 负载双向 NPI 静态网络追踪')])
         self._edge_evidence(edges[0])
         self.inspector_tabs.select(1)
 
@@ -1628,6 +1644,9 @@ class ClockTreeApp(tk.Tk):
             lines+=['',label,connection_details(node,[edge[pin_key]])]
         for direction,label in [('load','输出 → 全部负载'),('driver','输入 ← 实际驱动')]:
             lines+=['','─'*24,label,'']
+            if direction=='load' and self.graph['summary'].get('extraction_mode')=='target':
+                lines.append('本次为目标结构提取，未执行输出全负载核验。')
+                continue
             evidence=edge.get('evidence',{}).get(direction,[])
             if not evidence:lines.append('此方向没有证据，请查看诊断。')
             for i,step in enumerate(evidence,1):

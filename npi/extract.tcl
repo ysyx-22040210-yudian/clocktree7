@@ -562,6 +562,7 @@ proc ct_close_streams {} {
     global ct_stream ct_target_stream
     catch {close $ct_stream}
     catch {close $ct_target_stream}
+    catch {close $::ct_l_cache_stream}
 }
 proc ct_maybe_rotate {stage queries traces} {
     global ct_context ct_rotate_file
@@ -594,6 +595,11 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
         ct_emit [ct_object event [ct_js instance] path [ct_js $path] module [ct_js $module] layer $layer \
             inputs [ct_strings $inputs] output [ct_js $output] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
         if {$ct_context} {puts $ct_target_stream [list ct_target $path $module $layer $inputs $output $kind $source]}
+    }
+    if {$::ct_extraction_mode eq "target"} {
+        ct_l_register $path $inputs $output $emit
+        ct_journal item_end $register_stage $register_context "language ports indexed"
+        return
     }
     foreach pin [concat $inputs [list $output]] {
         set role [expr {$pin eq $output ? "output" : "input"}]
@@ -649,6 +655,7 @@ proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
     global ct_resume_completed_modules ct_resume_last_module ct_completed_modules ct_last_module ct_saved_module ct_total_modules
+    global ct_extraction_mode
     ct_journal begin worker {} "read worker configuration"
     source $env(CT7_CONFIG)
     set ct_context [info exists env(CT7_RESUME)]
@@ -664,6 +671,7 @@ proc ct_main {} {
         set ct_resume_last_module null
     }
     if {![info exists ct_tree_type]} {set ct_tree_type clock}
+    if {![info exists ct_extraction_mode]} {set ct_extraction_mode full}
     if {![info exists ct_trace_scope]} {set ct_trace_scope ""}
     set ct_selected [dict create]
     set ct_instances [dict create]
@@ -687,7 +695,8 @@ proc ct_main {} {
         ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
             verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] \
             instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1 port_connection_protocol 1 \
-            connectivity_traversal [ct_js streaming_net_connectivity]]
+            extraction_mode [ct_js $ct_extraction_mode] \
+            connectivity_traversal [ct_js [expr {$ct_extraction_mode eq "target" ? "language_input_index" : "streaming_net_connectivity"}]]]
         flush $ct_stream
         ct_save_checkpoint import 0 0
     }
@@ -695,7 +704,11 @@ proc ct_main {} {
     ct_journal end worker {} "worker configuration ready"
     ct_journal begin import [ct_object top [ct_js $ct_top]] "import elab / RTL"
     source $env(VERDI_HOME)/share/NPI/L1/TCL/npi_L1.tcl
-    schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on
+    if {$ct_extraction_mode eq "full"} {schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on}
+    if {$ct_extraction_mode eq "target"} {
+        source [file join [file dirname [info script]] target_trace.tcl]
+        ct_l_init
+    }
     puts "CT7_IMPORT_BEGIN"
     flush stdout
     if {[info exists ct_elab] && $ct_elab ne ""} {
@@ -815,11 +828,12 @@ proc ct_main {} {
     if {$ct_completed_modules != $ct_total_modules} {error "Module checkpoint count does not cover all configured rules"}
     ct_journal end modules [ct_object completed_modules $ct_completed_modules instances [dict size $ct_instances]] "all module rules committed"
     unset query_groups ct_rules
+    if {$ct_extraction_mode eq "target"} {npi_release_all_handles; ct_l_cache_open}
     ct_save_checkpoint trace $query_count $ct_resume_completed_traces
     set count $ct_resume_completed_traces
     if {$count > $ct_pin_count} {error "Checkpoint trace count exceeds restored ports"}
     for {set index 0} {$index < $count} {incr index} {
-        ct_release [lindex [dict get $ct_pins_to_trace $index] 0]
+        if {$ct_extraction_mode eq "full"} {ct_release [lindex [dict get $ct_pins_to_trace $index] 0]}
         dict unset ct_pins_to_trace $index
     }
     ct_worker_status trace "$count / $ct_pin_count"
@@ -828,11 +842,15 @@ proc ct_main {} {
         lassign [dict get $ct_pins_to_trace $count] p direction owner pin
         dict unset ct_pins_to_trace $count
         incr count
-        ct_walk $p $direction $owner $pin $count
-        ct_release $p
+        if {$ct_extraction_mode eq "target"} {
+            ct_l_walk $owner $pin $count
+        } else {
+            ct_walk $p $direction $owner $pin $count
+            ct_release $p
+        }
         # Commit a completed expensive port immediately so an interruption on
         # the next port cannot force a large fanout to be traversed again.
-        if {$count % 32 == 0 || [dict get $::ct_walk_stats scanned] >= 256 ||
+        if {$ct_extraction_mode eq "target" || $count % 32 == 0 || [dict get $::ct_walk_stats scanned] >= 256 ||
                 [clock milliseconds]-$::ct_walk_started >= 1000} {ct_save_checkpoint trace $query_count $count}
         if {[ct_maybe_rotate trace $query_count $count]} {return}
         if {$count % 100 == 0} {
@@ -840,6 +858,7 @@ proc ct_main {} {
             ct_worker_status trace "$count / $ct_pin_count"
         }
     }
+    if {$ct_extraction_mode eq "target"} {ct_emit [ct_object event [ct_js metadata] language_trace_stats [ct_object {*}$::ct_l_totals]]}
     ct_emit [ct_object event [ct_js complete] instances [dict size $ct_instances] pin_traces $count module_rules $ct_completed_modules]
     ct_save_checkpoint complete $query_count $count
     ct_worker_status complete

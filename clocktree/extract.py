@@ -145,6 +145,7 @@ def _extract(config_path, output_dir, memory_limit_gib, journal, recovery=None):
     # whose source directory contains Unicode characters or spaces.
     if not recovery:
         shutil.copy2(str(root / 'npi/extract.tcl'), str(work / 'clocktree-extract.tcl'))
+        shutil.copy2(str(root / 'npi/target_trace.tcl'), str(work / 'target_trace.tcl'))
         from .recovery import prepare_recovery
         journal.emit('progress','config','记录 RTL/elab 输入身份与任务恢复信息')
         prepare_recovery(journal, out, work, raw_path, config, executable)

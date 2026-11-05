@@ -10,10 +10,11 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：2.3 · 更新日期：2026-11-05 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：2.4 · 更新日期：2026-11-06 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
+<p><strong>大规模设计默认选“目标结构提取（大设计推荐）”</strong>，从全部关注输入反查驱动，不展开输出全部 load。需要检查普通寄存器负载时，另选“全负载核验”并新建提取。两种模式的证据与末端含义不同，见 <a href="#target-extraction">第 28 章</a>。本手册旧截图和历史验收中关于 driver/load 双向证据、范围出口与普通负载统计的描述，适用于全负载核验模式。</p>
 <p><a class="figure" href="images/default-two-layers.png" target="_blank"><img alt="没有历史记录时的两级空白配置" src="images/default-two-layers.png" /></a></p>
 <p><a class="figure" href="images/horizontal-workbench.png" target="_blank"><img alt="ClockTree7 主界面：同层连接横向展开" src="images/horizontal-workbench.png" /></a></p>
 <h2 id="_1">目录</h2>
@@ -45,6 +46,7 @@
 <li><a href="#memory-restart">监测内存、自动重启 Verdi 并续跑</a></li>
 <li><a href="#runtime-stages">运行阶段节点、日志与闪退定位</a></li>
 <li><a href="#crash-recovery">闪退后提示原因并从断点继续</a></li>
+<li><a href="#target-extraction">大设计：目标结构提取与全负载核验</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -1505,4 +1507,64 @@ python3 -m clocktree resume --run /project/clocktree-run --memory-limit-gib 60
 <p>输入变化、缺失或包含目前无法解析的动态文件列表语法；提取程序或 Verdi 启动程序改变；恢复工作区被清除；断点损坏且备份也无效；路径迁移或不同主机，都会显示具体阻止原因。此时不截断旧数据，先恢复原环境或新建任务。恢复过程的排他文件锁防止两个控制进程同时写入同一运行目录。</p>
 <p>此前版本已经中断的任务没有 <code>recovery.json</code> 和输入快照，不能安全转换为可续跑任务；日志诊断和已有结果仍可查看。当前版本创建的新任务才具有完整的跨次恢复信息。共享文件系统必须正确支持本工具的文件锁与原子替换；磁盘丢失、损坏和硬断电不属于已验证的进程闪退恢复范围。</p>
 <h3 id="275">27.5 实际验收</h3>
-<p>VM 中完成了时钟/复位共 16 项真实 Verdi 与控制进程 SIGKILL 恢复检查，包含已提交 32 次追踪后继续；完整结果和双向 NPI 证据均与不中断对照一致。4 项真实 Tk 检查覆盖重开提示、按钮续跑、原后端仍活时观察，以及画布闪退后的配置优先恢复。OpenC910 22 实例 KDB 子网也通过追踪和结果阶段的跨次恢复。具体规模、脚本与限制见 <a href="VALIDATION.zh-CN.md#闪退后重开提示与跨次断点续跑">验证摘要</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>VM 中完成了时钟/复位共 16 项真实 Verdi 与控制进程 SIGKILL 恢复检查，包含已提交 32 次追踪后继续；完整结果和双向 NPI 证据均与不中断对照一致。4 项真实 Tk 检查覆盖重开提示、按钮续跑、原后端仍活时观察，以及画布闪退后的配置优先恢复。OpenC910 22 实例 KDB 子网也通过追踪和结果阶段的跨次恢复。具体规模、脚本与限制见 <a href="VALIDATION.zh-CN.md#闪退后重开提示与跨次断点续跑">验证摘要</a>。</p>
+<p><a id="target-extraction"></a></p>
+<h2 id="28">28. 大设计：目标结构提取与全负载核验</h2>
+<h3 id="281">28.1 选择提取方式</h3>
+<p>左侧“提取配置”的“端口追踪根层次”下方新增“连接提取方式”。时钟树和复位树都支持以下选项，选择会随配置、工作区草稿和启动历史保存。</p>
+<table>
+<thead>
+<tr>
+<th>选项</th>
+<th>检查范围与证据</th>
+<th>末端含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>目标结构提取（大设计推荐）</td>
+<td>全部已配置实例的关注输入；Language Model driver 证据</td>
+<td>没有已配置的下游器件；没有核验普通负载或输出范围外分支</td>
+</tr>
+<tr>
+<td>全负载核验</td>
+<td>关注输入追驱动、输出展开所有负载；driver/load 双向证据</td>
+<td>根据负载追踪判断；范围出口单列</td>
+</tr>
+</tbody>
+</table>
+<p>新配置以及没有 <code>extraction_mode</code> 字段的配置默认使用目标结构提取。旧结果仍按结果自身记录的证据模式读取，不会把历史双向结果改成单向结果。切换选项后必须重新提取才产生该模式的新结果；历史结果仍可打开。</p>
+<p>操作顺序：</p>
+<ol>
+<li>选择时钟树或复位树，导入配置或填写设计入口。</li>
+<li>填写每层的直接实例查找路径及关注 module、输入和输出。子层次中的目标实例需要单独配置其实际父层路径。</li>
+<li>填写能够包含连接路径的“端口追踪根层次”，留空则追踪到设计顶层边界。</li>
+<li>选择“目标结构提取（大设计推荐）”，按需要设置内存阈值，再点击开始提取。</li>
+<li>在运行阶段查看当前输入端口、原生查询位置、扫描数和“公共路径复用”数。每个输入端口完成后立即提交断点。</li>
+<li>完成后查看状态“目标结构连接已解析 · 未核验普通负载”。点击连线时，driver 栏显示实际证据；load 栏说明本模式没有执行全负载核验，不能误读为缺失证据错误。</li>
+<li>如需普通负载统计，改选“全负载核验”再运行。该检查是独立任务，可能再次触发较重的 Netlist Model 查询。</li>
+</ol>
+<p>JSON 配置可明确写入：</p>
+<pre><code class="language-json">&quot;extraction_mode&quot;: &quot;target&quot;
+</code></pre>
+<p>全负载核验对应 <code>"extraction_mode": "full"</code>。此字段与 <code>tree_type</code> 相互独立。</p>
+<h3 id="282">28.2 为什么能恢复全部目标分支</h3>
+<p>工具建立目标输出实际连接对象的索引，并处理每一个目标输入。若一个输出驱动三个目标模块，三个输入的追踪结果会合并成三条边。MUX 的全部关注输入分别处理；同级、跳级、独立网络和提前结束的分支都会保留。连线依据 elab，不根据层级编号猜测。</p>
+<p>每个公共信号首次使用时仍核对真实驱动，避免直接同网匹配掩盖额外别名驱动；后续输入复用已验证步骤。缓存最多保存 2,048 项、约 4 MiB 序列化数据，磁盘日志上限约 8 MiB，超过后淘汰并按需重查。这些是缓存容量限制，不是分支截断、追踪步数限制或 NPI 查询内存上界。</p>
+<p>Language Model 临时句柄在每个输入端口结束时统一释放。跨进程保存的是对象名称、位信息和解析步骤，不保存旧 NPI 句柄。断点续跑会重导入同一设计、恢复目标索引，并校验任务输入和实现版本。</p>
+<h3 id="283">28.3 完整性、诊断和限制</h3>
+<ul>
+<li>目标结构完整要求所有关注输入完成解析、输出端口检查通过、全部 module 查询完成，且无致命诊断。缺失输出端口不能因为没有 load 追踪就被忽略。</li>
+<li>一条边只有 driver 证据在此模式中是正常结果；工具不会补造 load 证据。</li>
+<li>普通寄存器负载没有统计；“结构末端”不证明真实 RTL 输出没有其他负载，也不证明信号不通向追踪范围外。</li>
+<li>存在未解析输入时，不将其实例标成已确认根结构；全图有未解析连接时，不声明已确认结构末端。</li>
+<li>目前支持已验证的直接接线、静态总线位映射、拼接赋值、包装层端口、generate 常量索引、透明 assign、buf/not 和关注器件边界。未知逻辑、动态索引等明确保留诊断，不把所有表达式操作数当成时钟源，不自动回退到全 load 扫描。</li>
+<li>Verdi 2018 对某些实例数组的拼接/重复拼接高层连接返回 <code>npiNIY</code>（尚未实现），这种连接在目标模式中明确报未解析。数组表达式的源码顺序可能不同于端口声明顺序，工具不据此猜连线；可另用全负载核验。普通标量广播连接的实例数组已通过恢复回归。</li>
+<li>package 常量引用会通过 NPI 实际对象解析后判断静态索引；引用运行时变量仍视为动态索引。</li>
+<li>此模式没有设置默认超时。内存阈值、取消、日志和闪退恢复保持有效。</li>
+<li>目标范围不会自动裁剪整片 elab 的导入内存；仍需目标设备提供可用的 Language Model 和许可。现场商业芯片的原生库性能需要实测。</li>
+</ul>
+<p>结果 JSON 的 <code>summary.extraction_mode</code>、<code>physical_loads_checked</code>、<code>terminal_semantics</code> 描述本次检查语义。<code>metadata.language_trace_stats</code> 记录当前 Verdi 尝试中的原生 driver 查询数、缓存命中数及输出端口命中数；有重启时该统计不是整个任务所有尝试的累加。</p>
+<p>升级前已完成的结果可继续浏览。升级前未完成的任务如果实现签名不一致，需要重新提取；不要手动修改恢复文件绕过检查。</p>
+<p>本次原生 Tk 界面与完整验收记录见 <a href="TARGET_MODE_VALIDATION.zh-CN.md">目标结构模式验收报告</a>。</p>
+<p><a class="figure" href="images/target-mode-workbench.png" target="_blank"><img alt="目标结构模式与真实驱动证据" src="images/target-mode-workbench.png" /></a></p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

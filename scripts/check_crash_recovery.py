@@ -33,10 +33,10 @@ module rec_sync(input rn,ck,output ro); assign ro=rn; endmodule
 module rec_top(input a,b,en,s,rn,output [39:0] clk,output d,output [19:0] rst);
  wire m,r;
  rec_mux u_mux(.a(a),.b(b),.s(s),.y(m));
- rec_gate u_gate[39:0](.i({40{m}}),.en({40{en}}),.o(clk));
+ rec_gate u_gate[39:0](.i(m),.en(en),.o(clk));
  rec_div u_div(.i(clk[0]),.o(d));
  rec_rmux u_rmux(.a(rn),.b(rn),.s(s),.y(r));
- rec_sync u_sync[19:0](.rn({20{r}}),.ck({20{a}}),.ro(rst));
+ rec_sync u_sync[19:0](.rn(r),.ck(a),.ro(rst));
 endmodule
 '''
 
@@ -52,7 +52,8 @@ proc ct_journal {kind stage {context "{}"} {detail ""}} {
     set pause 0
     if {$ct_test_pause_stage eq "import" && $stage eq "import" && $kind eq "begin"} {set pause 1}
     if {$ct_test_pause_stage eq "modules" && $stage eq "modules" && $detail eq "native instance query" && $ct_completed_modules>=1} {set pause 1}
-    if {$ct_test_pause_stage eq "trace" && $stage eq "trace" && $kind eq "item_begin" && [regexp {"trace_id":33,} $context]} {set pause 1}
+    if {$ct_test_pause_stage eq "trace" && $stage eq "trace" && $kind eq "item_begin" &&
+            [regexp {"trace_id":([0-9]+),} $context -> trace] && $trace == min(33,$::ct_pin_count)} {set pause 1}
     if {!$pause} {return}
     if {$stage ne "import" && $ct_test_dirty_tail} {
         puts -nonewline $ct_stream "\{\"UNCOMMITTED-测试\":"; flush $ct_stream
@@ -152,7 +153,8 @@ def check_result(directory,mode,baseline,checkpoint):
         assert 'traces={}'.format(checkpoint['completed_traces']) in text
     return {'instances':len(graph['nodes']),'edges':len(graph['edges']),
             'committed_modules':checkpoint['completed_modules'],'committed_traces':checkpoint['completed_traces'],
-            'attempts':report['attempts'],'old_worker_gone':True,'exact_dual_evidence':True}
+            'attempts':report['attempts'],'old_worker_gone':True,'exact_evidence':True,
+            'extraction_mode':graph['summary'].get('extraction_mode','full')}
 
 
 def crash_case(out,mode,stage,victim,baseline):
@@ -175,7 +177,7 @@ def crash_case(out,mode,stage,victim,baseline):
             assert info['diagnosis']['stage']==stage,info
             checkpoint=info['checkpoint']
             if stage=='modules':assert checkpoint['completed_modules']==1
-            if stage=='trace':assert checkpoint['completed_traces']==32
+            if stage=='trace':assert checkpoint['completed_traces']==min(32,baseline['summary']['expected_pin_traces']-1)
             write_graph(directory/'before-reopen.json',info)
             with (directory/'resume-cli.log').open('w') as stream:
                 subprocess.check_call([sys.executable,'-m','clocktree','resume','--run',str(directory),
@@ -240,7 +242,7 @@ def gui_reopen(out,mode,live=False):
     app.update();x11_image(app.winfo_id()).save(str(out/'recovery-finished.png'))
     write_graph(out/'gui-acceptance.json',{'pass':True,'real_gui_reopened':True,'reason_notice':True,
                                         'button_resumed_real_verdi':not live,'observed_existing_worker':live,
-                                        'no_duplicate_worker':True,'exact_dual_evidence':True,'errors':errors})
+                                        'no_duplicate_worker':True,'exact_evidence':True,'errors':errors})
     app.close();pump(lambda:app._destroying)
 
 

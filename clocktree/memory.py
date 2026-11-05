@@ -162,6 +162,10 @@ def _context(path, checkpoint, signature, raw, targets, control, status, checkpo
     lines.append('set ct_resume_stage ' + tcl_string(checkpoint['stage']))
     lines.append('set ct_timeout_instances [dict create]')
     if timeouts is not None:
+        lines.append('set ct_trace_transport '+tcl_string(timeouts.transport))
+        if timeouts.channel:
+            lines += ['set ct_trace_monitor_port '+str(timeouts.channel.port),
+                      'set ct_trace_monitor_token '+tcl_string(timeouts.channel.token)]
         lines += ['set ct_trace_current_file '+tcl_string(str(timeouts.status)),
                   'set ct_trace_ack_file '+tcl_string(str(timeouts.ack))]
         for owner, record in timeouts.records.items():
@@ -180,10 +184,13 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
     monitored = sys.platform.startswith('linux') if monitored is None else monitored
     enabled = monitored and limit_gib > 0
     native_launch = popen is None and sys.platform.startswith('linux')
-    sampler, pause, popen = sampler or process_memory, pause or time.sleep, popen or subprocess.Popen
+    sampler, popen = sampler or process_memory, popen or subprocess.Popen
     signature = resume['signature'] if resume else hashlib.sha256(json.dumps(config, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
-    timeouts = TraceTimeouts(work, signature, config.get('port_trace_timeout_s', 0), resume=bool(resume))
-    poll_interval = .01 if timeouts.seconds else .1
+    transport = environment.get('CLOCKTREE_TRACE_TRANSPORT', 'socket') if native_launch else 'file'
+    if transport not in ('socket','file'):raise ValueError('CLOCKTREE_TRACE_TRANSPORT must be socket or file')
+    timeouts = TraceTimeouts(work, signature, config.get('port_trace_timeout_s', 0), resume=bool(resume),transport=transport)
+    pause = pause or timeouts.wait
+    poll_interval = .1 if timeouts.channel or not timeouts.seconds else .01
     if resume and timeouts.records:
         with (output/'trace-timeouts.jsonl').open('w',encoding='utf-8') as audit:
             for record in sorted(timeouts.records.values(),key=lambda r:r['trace_id']):
@@ -204,7 +211,9 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
               'peak_rss_gib': 0., 'current_rss_gib': None, 'state': 'starting',
               'checkpoint_file': str(checkpoint_path), 'restarts': [],
               'port_trace_timeout_s':timeouts.seconds, 'trace_timeout_count':len(timeouts.records),
-              'timeout_restart_count':0, 'trace_timeout_file':str(timeouts.file)}
+              'timeout_restart_count':0, 'trace_timeout_file':str(timeouts.file),
+              'trace_monitor_transport':timeouts.transport if timeouts.seconds else 'disabled',
+              'trace_monitor_fallback':timeouts.fallback_reason}
     if resume:
         from .runtime import read_json
         previous = read_json(work / 'memory.json', {})
@@ -215,11 +224,14 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                                      if p.is_dir() and p.name.split('-')[-1].isdigit()])
         report['recovery_count'] = journal.state().get('recovery_count', 1)
         if checkpoint['stage'] == 'complete':
+            timeouts.close()
             report.update(state='finished', last_checkpoint=checkpoint, exit_code=0, reused_complete_evidence=True)
             write_graph(report_path, report); write_graph(work / 'memory.json', report)
             journal.emit('end','trace','已恢复完整原始证据；跳过 Verdi，重建结果',checkpoint=checkpoint)
             return 0, work / ('attempt-{:04d}'.format(report['attempts'])), report
     def save_report():
+        report.update(trace_monitor_transport=timeouts.transport if timeouts.seconds else 'disabled',
+                      trace_monitor_fallback=timeouts.fallback_reason)
         write_graph(report_path, report)
         write_graph(work / 'memory.json', report)
     last_key, stalls, process = None, 0, None
@@ -275,9 +287,13 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 if not enabled and not timeouts.seconds and not (record_stages and monitored):
                     code = process.wait()
                 else:
-                    next_sample, serviced_module = 0., 0
+                    next_sample, serviced_module, next_events = 0., 0, 0.
                     while process.poll() is None:
-                        reader.drain(journal,attempt,worker_identity)
+                        # Keep full worker logs on disk; avoid rewriting mirrored
+                        # progress snapshots for every fast IPC acknowledgement.
+                        if time.monotonic() >= next_events:
+                            reader.drain(journal,attempt,worker_identity)
+                            next_events = time.monotonic()+.1
                         decision = timeouts.poll()
                         if decision:
                             committed = read_checkpoint(checkpoint_path, signature, raw, targets, config)
@@ -427,5 +443,6 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
             save_report()
         raise
     finally:
+        timeouts.close()
         if old_signal is not None:
             signal.signal(signal.SIGTERM, old_signal)

@@ -546,13 +546,35 @@ proc ct_module_memory_check {} {
 proc ct_trace_deadline_begin {trace_id owner pin direction} {
     if {$::ct_port_trace_timeout_s <= 0} {return}
     set ::ct_deadline_context [list trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
-    ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js active] {*}$::ct_deadline_context]
+    set record [ct_object state [ct_js active] {*}$::ct_deadline_context]
+    if {[info exists ::ct_trace_transport] && $::ct_trace_transport eq "socket"} {
+        ct_trace_exchange $record $trace_id start
+    } else {ct_atomic_json $::ct_trace_current_file $record}
     set ::ct_deadline_started [clock milliseconds]
+}
+proc ct_trace_exchange {record trace_id action} {
+    if {![info exists ::ct_trace_channel]} {
+        set ::ct_trace_channel [socket 127.0.0.1 $::ct_trace_monitor_port]
+        fconfigure $::ct_trace_channel -encoding utf-8 -translation lf -buffering line -blocking 1
+        puts $::ct_trace_channel "CT7 $::ct_trace_monitor_token"
+    }
+    puts $::ct_trace_channel $record
+    # The controller remains independently runnable while NPI blocks. EOF
+    # here means it exited; never commit evidence without a matching reply.
+    if {[gets $::ct_trace_channel reply] < 0} {error "Trace monitor disconnected before acknowledgement"}
+    if {[llength $reply] != 2 || [lindex $reply 0] ne "$trace_id" || [lindex $reply 1] ne $action} {
+        error "Invalid trace monitor acknowledgement"
+    }
 }
 proc ct_trace_deadline_finish {trace_id} {
     if {$::ct_port_trace_timeout_s <= 0} {return}
     set elapsed [expr {max(0, [clock milliseconds]-$::ct_deadline_started)}]
-    ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js complete] {*}$::ct_deadline_context elapsed_ms $elapsed]
+    set record [ct_object state [ct_js complete] {*}$::ct_deadline_context elapsed_ms $elapsed]
+    if {[info exists ::ct_trace_transport] && $::ct_trace_transport eq "socket"} {
+        ct_trace_exchange $record $trace_id continue
+        return
+    }
+    ct_atomic_json $::ct_trace_current_file $record
     # Native NPI calls cannot be interrupted by Tcl's event loop. The external
     # controller decides whether this trace may commit, before the next starts.
     while {1} {
@@ -597,6 +619,7 @@ proc ct_close_streams {} {
     catch {close $ct_stream}
     catch {close $ct_target_stream}
     catch {close $::ct_l_cache_stream}
+    catch {close $::ct_trace_channel}
 }
 proc ct_maybe_rotate {stage queries traces} {
     global ct_context ct_rotate_file
@@ -685,6 +708,21 @@ proc ct_restore_targets {} {
         error "Target checkpoint is incomplete"
     }
 }
+proc ct_validate_compiler_log {path} {
+    if {![file exists $path]} {return}
+    set stream [open $path r]
+    set errors 0
+    set truncated ""
+    while {[gets $stream line] >= 0} {
+        incr errors [regexp -all {\*Error\*|Error-\[} $line]
+        if {[regexp -nocase {Over Maximum Hierarchy layers.*Skip elaboration} $line]} {set truncated $line}
+    }
+    close $stream
+    if {$truncated ne ""} {
+        error "HDL elaboration was truncated by Verdi's hierarchy limit: $truncated. Import a complete elab/KDB or correct the elaboration settings; no extraction was started."
+    }
+    if {$errors > 0} {error "HDL elaboration has $errors compiler errors; use a valid elab/KDB"}
+}
 proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
@@ -749,19 +787,16 @@ proc ct_main {} {
     puts "CT7_IMPORT_BEGIN"
     flush stdout
     if {[info exists ct_elab] && $ct_elab ne ""} {
+        # Standard VCS KDB builds keep their elaboration log beside the DB.
+        # A truncated KDB can import without repeating the original warning.
+        ct_validate_compiler_log [file join [file dirname [file normalize $ct_elab]] elabcomLog compiler.log]
         debImport -elab $ct_elab
     } else {
         debImport -sv -f $ct_filelist -top $ct_top
     }
     puts "CT7_IMPORT_END"
     flush stdout
-    if {[file exists verdiLog/compiler.log]} {
-        set log_file [open verdiLog/compiler.log r]
-        set error_count 0
-        while {[gets $log_file line] >= 0} {incr error_count [regexp -all {\*Error\*|Error-\[} $line]}
-        close $log_file
-        if {$error_count > 0} {error "HDL elaboration has $error_count compiler errors; use a valid elab/KDB"}
-    }
+    ct_validate_compiler_log verdiLog/compiler.log
     set top_hdl [npi_handle_by_name -name $ct_top -scope ""]
     if {$top_hdl eq ""} {error "Requested top was not elaborated: $ct_top"}
     if {$ct_trace_scope ne "" && [npi_handle_by_name -name $ct_trace_scope -scope ""] eq ""} {
@@ -803,6 +838,11 @@ proc ct_main {} {
         ct_worker_status enumerate "$scope / $module"
         set root_handle [npi_handle_by_name -name $scope -scope ""]
         set scope_found [expr {$root_handle ne ""}]
+        if {$scope_found && [npi_get_str -property npiType -object $root_handle] eq "npiModule" &&
+                [npi_get_str -property npiDefName -object $root_handle] eq ""} {
+            npi_release_handle -object $root_handle
+            error "Instance search scope has no elaborated module definition: $scope; check compiler/KDB hierarchy limits or unresolved modules."
+        }
         set handles {}
         if {$scope_found} {
             puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules] mode=direct_children"
@@ -900,7 +940,7 @@ proc ct_main {} {
         # the next port cannot force a large fanout to be traversed again.
         if {$ct_port_trace_timeout_s > 0 || $ct_extraction_mode eq "target" || $count % 32 == 0 || [dict get $::ct_walk_stats scanned] >= 256 ||
                 [clock milliseconds]-$::ct_walk_started >= 1000} {ct_save_checkpoint trace $query_count $count}
-        if {$ct_port_trace_timeout_s > 0} {ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js idle]]}
+        if {$ct_port_trace_timeout_s > 0 && $::ct_trace_transport eq "file"} {ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js idle]]}
         if {[ct_maybe_rotate trace $query_count $count]} {return}
         if {$count % 100 == 0} {
             puts "CT7_TRACE $count/$ct_pin_count"; flush stdout

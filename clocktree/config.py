@@ -95,6 +95,10 @@ def validate_config(config, allow_incomplete=False):
         limit = config['memory_limit_gib']
         if type(limit) not in (int, float) or not math.isfinite(limit) or limit < 0:
             raise ValueError('memory_limit_gib must be a finite nonnegative number (0 disables memory protection)')
+    if 'port_trace_timeout_s' in config and not allow_incomplete:
+        seconds = config['port_trace_timeout_s']
+        if type(seconds) not in (int, float) or not math.isfinite(seconds) or seconds < 0:
+            raise ValueError('port_trace_timeout_s must be a finite nonnegative number (0 means unlimited)')
     if trace_scope and not allow_incomplete:
         if '*' in trace_scope or '?' in trace_scope or not hierarchy_contains(trace_scope, design['top']):
             raise ValueError('trace_scope must be an exact hierarchy at or below design.top')
@@ -113,6 +117,7 @@ def tcl_string(value):
 def write_tcl_config(config, path, output):
     lines = ["set ct_rules {}", 'set ct_tree_type ' + tcl_string(tree_type(config)),
              'set ct_extraction_mode ' + tcl_string(config.get('extraction_mode', 'target')),
+             'set ct_port_trace_timeout_s ' + str(config.get('port_trace_timeout_s', 0)),
              'set ct_trace_scope ' + tcl_string(config.get('trace_scope', '').strip().rstrip('./'))]
     for layer in config["layers"]:
         for rule in layer.get("modules", []):

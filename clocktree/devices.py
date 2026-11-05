@@ -85,7 +85,8 @@ def port_offsets(node, width, height):
         return [(0, 110)], (width, 110)
     count = len(node['inputs'])
     middle = (50 + height - 18) / 2
-    ys = [middle] if count == 1 else [60 + i * (height - 88) / (count - 1) for i in range(count)]
+    # Leave room beneath the last signal label for boundary/status markers.
+    ys = [middle] if count == 1 else [60 + i * (height - 104) / (count - 1) for i in range(count)]
     return [(0, y) for y in ys], (width, middle)
 
 
@@ -117,7 +118,22 @@ def connection_details(node, pins):
             lines.append('  .{} 的整体连接；关注 {}，未推断逐位映射'.format(connection['formal_port'], pin))
         if connection.get('reason'):
             lines.append('  原因：' + connection['reason'])
+        if node.get('trace_timeout'):
+            state = node.get('port_trace_status', {}).get(pin, 'not_traced')
+            label = {'trace_timeout':'trace 超时；本条未完成证据已撤回',
+                     'trace_skipped_timeout':'trace 已跳过（本例化其他端口超时）',
+                     'completed':'此前 trace 已完成，证据保留',
+                     'not_requested':'本例化 trace 超时；目标结构模式未执行输出 load trace',
+                     'not_traced':'本例化 trace 超时；此端口未执行 trace'}.get(state, state)
+            lines.append('  ' + label)
     return '\n'.join(lines)
+
+
+def trace_pin_label(node, pin):
+    state = node.get('port_trace_status', {}).get(pin)
+    suffix = {'trace_timeout':'trace 超时', 'trace_skipped_timeout':'trace 跳过',
+              'not_requested':'实例超时', 'not_traced':'实例超时'}.get(state)
+    return pin + ' · ' + suffix if suffix else pin
 
 
 def symbol_parts(node, width, height, selected=False):
@@ -139,12 +155,14 @@ def symbol_parts(node, width, height, selected=False):
     def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None, tooltip=None):
         add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width, tooltip=tooltip)
     add('rect', x=0, y=0, w=width, h=height, radius=8,
-        fill='#1b3350' if selected else '#17283e', stroke='#78bdff' if selected else '#2e445f',
+        fill='#1b3350' if selected else '#17283e', stroke='#78bdff' if selected else ('#f5a46b' if node.get('trace_timeout') else '#2e445f'),
         width=2 if selected else 1, dash=aggregate)
     path = node.get('path', node['id'])
     title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
     text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-(88 if kind=='rsy_sync' else 70))
-    text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-20)
+    text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-(115 if node.get('trace_timeout') else 20))
+    if node.get('trace_timeout'):
+        text(width-11, 34, 'trace 超时', size=10, fill='#ffb27b', bold=True, anchor='e')
     if aggregate:
         text(width-11, 16, 'RTL', size=9, fill='#9eb5d4', anchor='e')
         counts = node.get('kind_counts', {})
@@ -221,18 +239,18 @@ def symbol_parts(node, width, height, selected=False):
         for pin, (px, py) in zip(node['inputs'], inputs):
             line([(px, py), (input_end, py)])
             detail = '{} · {}'.format(path, connection_details(node, [pin]))
-            text(7, py-11, pin, size=11, fill='#b5cbe5', max_width=input_end-12, tooltip=detail)
+            text(7, py-11, trace_pin_label(node,pin), size=11, fill='#ffb27b' if node.get('trace_timeout') else '#b5cbe5', max_width=input_end-12, tooltip=detail)
             text(7, py+11, connection_label(node,pin), size=11, fill='#9fcfc3', max_width=input_end-12, tooltip=detail)
         line([(output_start, cy), output])
         detail = '{} · {}'.format(path, connection_details(node, [node['output']]))
-        text(width-7, cy-11, node['output'], size=11, fill='#b5cbe5', anchor='e', max_width=width-output_start-10, tooltip=detail)
+        text(width-7, cy-11, trace_pin_label(node,node['output']), size=11, fill='#ffb27b' if node.get('trace_timeout') else '#b5cbe5', anchor='e', max_width=width-output_start-10, tooltip=detail)
         text(width-7, cy+11, connection_label(node,node['output']), size=11, fill='#9fcfc3', anchor='e', max_width=width-output_start-10, tooltip=detail)
     else:
         text(width-10,16,'待分类',size=9,fill='#8097b6',anchor='e')
         for pin, (px,py) in zip(node['inputs'],inputs):
-            text(10,py-7,pin,size=9,max_width=width/2-12)
+            text(10,py-7,trace_pin_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
             text(10,py+7,connection_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
-        text(width-10,output[1]-7,node['output'],size=9,anchor='e',max_width=width/2-12)
+        text(width-10,output[1]-7,trace_pin_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
         text(width-10,output[1]+7,connection_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
     for px, py in inputs+[output]:
         add('circle', x=px, y=py, r=3, fill='#14253a', stroke=color, width=1.3)

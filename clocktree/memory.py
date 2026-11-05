@@ -1,6 +1,7 @@
 """Monitor owned EDA processes and resume only durable, complete work units.
 
-No extraction runtime timeout is imposed. A restart rebuilds NPI handles from
+There is no overall runtime timeout. Optional per-port deadlines skip only
+the timed-out instance. A restart rebuilds NPI handles from
 names; process-local handles and partial queries are never treated as results.
 """
 import hashlib
@@ -17,6 +18,7 @@ from collections import OrderedDict
 from .config import tcl_string
 from .storage import write_graph
 from .runtime import RunJournal, WorkerEvents, process_identity
+from .trace_timeout import TraceTimeouts
 
 
 GIB = 1024 ** 3
@@ -144,7 +146,7 @@ def rollback_files(checkpoint, raw, targets, module_directory=None):
                 path.unlink()
 
 
-def _context(path, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled):
+def _context(path, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled, timeouts=None):
     lines = []
     for key, value in (('checkpoint', checkpoint_path), ('target_file', targets),
                        ('rotate_file', control), ('status_file', status), ('signature', signature)):
@@ -158,6 +160,13 @@ def _context(path, checkpoint, signature, raw, targets, control, status, checkpo
     for key in ('completed_queries', 'completed_traces', 'completed_modules', 'instances', 'raw_offset', 'targets_offset'):
         lines.append('set ct_resume_' + key + ' ' + str(checkpoint[key]))
     lines.append('set ct_resume_stage ' + tcl_string(checkpoint['stage']))
+    lines.append('set ct_timeout_instances [dict create]')
+    if timeouts is not None:
+        lines += ['set ct_trace_current_file '+tcl_string(str(timeouts.status)),
+                  'set ct_trace_ack_file '+tcl_string(str(timeouts.ack))]
+        for owner, record in timeouts.records.items():
+            lines.append('dict set ct_timeout_instances {} [list {} {}]'.format(tcl_string(owner),
+                record['trace_id'], tcl_string(json.dumps(record,ensure_ascii=False,separators=(',',':')))))
     path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -173,6 +182,13 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
     native_launch = popen is None and sys.platform.startswith('linux')
     sampler, pause, popen = sampler or process_memory, pause or time.sleep, popen or subprocess.Popen
     signature = resume['signature'] if resume else hashlib.sha256(json.dumps(config, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+    timeouts = TraceTimeouts(work, signature, config.get('port_trace_timeout_s', 0), resume=bool(resume))
+    poll_interval = .01 if timeouts.seconds else .1
+    if resume and timeouts.records:
+        with (output/'trace-timeouts.jsonl').open('w',encoding='utf-8') as audit:
+            for record in sorted(timeouts.records.values(),key=lambda r:r['trace_id']):
+                audit.write(json.dumps(record,ensure_ascii=False)+'\n')
+            audit.flush();os.fsync(audit.fileno())
     checkpoint_path, targets = work / 'checkpoint.json', work / 'targets.tcl'
     control, status = work / 'rotate.request', work / 'worker-status.json'
     module_directory = work / 'module-checkpoints'
@@ -186,12 +202,15 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
               'scope': 'Verdi worker phase, including extraction controller; excludes GUI and later graph processing',
               'module_checks': 0, 'module_checkpoint_directory': str(module_directory),
               'peak_rss_gib': 0., 'current_rss_gib': None, 'state': 'starting',
-              'checkpoint_file': str(checkpoint_path), 'restarts': []}
+              'checkpoint_file': str(checkpoint_path), 'restarts': [],
+              'port_trace_timeout_s':timeouts.seconds, 'trace_timeout_count':len(timeouts.records),
+              'timeout_restart_count':0, 'trace_timeout_file':str(timeouts.file)}
     if resume:
         from .runtime import read_json
         previous = read_json(work / 'memory.json', {})
-        for key in ('restart_count', 'module_checks', 'peak_rss_gib', 'restarts'):
+        for key in ('restart_count', 'module_checks', 'peak_rss_gib', 'restarts', 'timeout_restart_count'):
             if key in previous:report[key] = previous[key]
+        report['timeout_restart_count'] = max(report['timeout_restart_count'], len(timeouts.records))
         report['attempts'] = max([0]+[int(p.name.split('-')[1]) for p in work.glob('attempt-*')
                                      if p.is_dir() and p.name.split('-')[-1].isdigit()])
         report['recovery_count'] = journal.state().get('recovery_count', 1)
@@ -230,7 +249,8 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                     if path.exists():
                         path.unlink()
                 context = attempt_dir / 'resume.tcl'
-                _context(context, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled)
+                timeouts.reset_attempt()
+                _context(context, checkpoint, signature, raw, targets, control, status, checkpoint_path, enabled, timeouts)
                 worker_events=attempt_dir/'worker-events.jsonl'
                 reader=WorkerEvents(worker_events)
                 worker_environment = dict(environment, CT7_RESUME=str(context), CT7_WORKER_EVENTS=str(worker_events))
@@ -251,14 +271,28 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 journal.emit('progress','worker','Verdi 已启动',attempt=attempt,worker=worker_identity,
                              worker_events=str(worker_events),durable=True)
                 memory_hit, soft_requested, rotation_rss = False, False, None
-                if not enabled and not (record_stages and monitored):
+                timeout_hit = None
+                if not enabled and not timeouts.seconds and not (record_stages and monitored):
                     code = process.wait()
                 else:
                     next_sample, serviced_module = 0., 0
                     while process.poll() is None:
                         reader.drain(journal,attempt,worker_identity)
+                        decision = timeouts.poll()
+                        if decision:
+                            committed = read_checkpoint(checkpoint_path, signature, raw, targets, config)
+                            timeout_hit = timeouts.commit(decision, committed, attempt)
+                            report.update(state='restarting', trace_timeout_count=len(timeouts.records), last_trace_timeout=timeout_hit)
+                            save_report()
+                            journal.emit('progress','trace','端口 trace 超时；跳过当前例化的剩余追踪',
+                                         timeout_hit,attempt=attempt,checkpoint=committed,durable=True)
+                            with (output/'trace-timeouts.jsonl').open('a',encoding='utf-8') as audit:
+                                audit.write(json.dumps(timeout_hit,ensure_ascii=False)+'\n');audit.flush();os.fsync(audit.fileno())
+                            log.write('CT7_PORT_TIMEOUT '+json.dumps(timeout_hit,ensure_ascii=False)+'\n');log.flush()
+                            code = _stop_worker(process)
+                            break
                         if not enabled:
-                            pause(.1)
+                            pause(poll_interval)
                             continue
                         try:
                             pending_module = int(module_request.read_text(encoding='ascii').strip())
@@ -266,7 +300,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                             pending_module = 0
                         boundary = pending_module > 0 and pending_module != serviced_module
                         if not boundary and time.monotonic() < next_sample:
-                            pause(.1)
+                            pause(poll_interval)
                             continue
                         sample = sampler(process.pid)
                         next_sample = time.monotonic() + 1.
@@ -318,7 +352,7 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                             os.replace(str(temporary), str(module_ack))
                             serviced_module = pending_module
                         save_report()
-                        pause(.1)
+                        pause(poll_interval)
                     else:
                         code = process.wait()
                 reader.drain(journal,attempt,worker_identity,all_records=True)
@@ -332,6 +366,17 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 last_context=(reader.last or {}).get('context',{})
                 journal.emit('worker_exit',last_stage,'Verdi 进程已退出',last_context,
                              attempt=attempt,returncode=code,worker=worker_identity,checkpoint=checkpoint)
+                if timeout_hit:
+                    # The decision is durable before killing the worker. A
+                    # later GUI/controller recovery loads the same skip set.
+                    rollback_files(checkpoint, raw, targets, module_directory)
+                    report['timeout_restart_count'] += 1
+                    save_report()
+                    journal.emit('restart','trace','trace 超时后重启 Verdi；继续其他例化',timeout_hit,
+                                 attempt=attempt,reason='port_trace_timeout',returncode=code,checkpoint=checkpoint,
+                                 controlled_trace_timeout_restart=True)
+                    log.write('CT7_TIMEOUT_RESTART next_attempt={} instance={}\n'.format(attempt+1,timeout_hit['instance']));log.flush()
+                    continue
                 if checkpoint['stage'] == 'complete':
                     code = 0 if memory_hit else code
                     break

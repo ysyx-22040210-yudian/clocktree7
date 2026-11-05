@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：2.4 · 更新日期：2026-11-06 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：2.5 · 更新日期：2026-11-06 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树有上述四类模型；复位树只有 <strong>MUX / RSY_SYNC</strong>，同样默认两级、可自定义层数。切换会保留当前会话中各自的配置草稿与结果，历史记录按分析类型显示。第 1–19 章以时钟树说明通用操作；复位树完整步骤与 JSON 字段见 <a href="#reset-tree">第 20 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
@@ -47,6 +47,7 @@
 <li><a href="#runtime-stages">运行阶段节点、日志与闪退定位</a></li>
 <li><a href="#crash-recovery">闪退后提示原因并从断点继续</a></li>
 <li><a href="#target-extraction">大设计：目标结构提取与全负载核验</a></li>
+<li><a href="#port-trace-timeout">端口 trace 超时与当前例化跳过</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -411,7 +412,7 @@ L7  fixture_top.l7
 <h2 id="8">8. 运行、观察进度、取消任务</h2>
 <h3 id="81">8.1 启动真实提取</h3>
 <p>完成规则后，先点 <strong>保存配置</strong> 留下可复用规则，再点 <strong>开始提取全部时钟树</strong>。程序会检查配置和本机 Verdi，创建新的 <code>tk_...</code> 运行目录，然后启动独立提取进程。</p>
-<p><strong>提取没有运行超时，默认持续到 Verdi 正常结束、失败或用户主动取消。</strong> 旧 JSON 中的 <code>timeout_seconds</code> 不再生效，GUI 再次保存配置时会移除此旧字段。默认也不设 NPI 追踪步数上限；内部已访问对象集合用于避免重复追踪。</p>
+<p><strong>任务没有总运行超时，端口 trace 默认也不限时。</strong> 如需跳过卡住的例化，可设置第 29 章的“端口 trace 超时（秒）”。旧 JSON 中的 <code>timeout_seconds</code> 不再生效，GUI 再次保存配置时会移除此旧字段；新端口阈值使用独立字段 <code>port_trace_timeout_s</code>。默认也不设 NPI 追踪步数上限；内部已访问对象集合用于避免重复追踪。</p>
 <p>同一 GUI 可以连续点击运行，不限制次数，历史任务各自保留。CLI 的 <code>--out</code> 目录也可以反复使用；省略 <code>--out</code> 就使用当前目录。再次运行时，上次的规则、原始证据、结果和日志自动保存在 <code>.clocktree-history/时间_编号/</code>。本次 Verdi 使用 <code>.clocktree-runs/时间_编号/</code> 作为独立编译目录，避免旧编译日志污染新结果；目录根下始终为最近一次尝试的输出。失败尝试不会沿用旧的绿色结果。</p>
 <p>任务使用启动时的配置快照。建议在任务期间查看已有架构图和日志，等任务结束后再继续编辑规则。</p>
 <h3 id="82">8.2 查看日志与进度</h3>
@@ -424,7 +425,7 @@ L7  fixture_top.l7
 <p>关闭正在提取的 GUI 时，程序会先停止该 GUI 启动的任务，再退出。下次打开后可在提示中选择“从断点继续”，也可在运行记录中选择“诊断 / 从断点继续”。此操作沿用原任务配置；重新点击主提取按钮仍会创建新任务。</p>
 <p><a id="high-fanout"></a></p>
 <h3 id="84-load">8.4 某个输出口的 load 很多、长时间停留在追踪阶段</h3>
-<p>本版将输出网络改为逐项读取连接，遇到重复网络或端口时在入队前去重，并释放已处理的临时 NPI 句柄。不会用“只取前 100 个 load”或超时跳过端口的方式完成任务。选择器、门控、OCC、DIV 以及复位树共用这一遍历实现；总线拼接、位选仍保留位对应关系。</p>
+<p>本版将输出网络改为逐项读取连接，遇到重复网络或端口时在入队前去重，并释放已处理的临时 NPI 句柄。不按 load 数量截断。默认等待端口完整结束；用户启用端口超时后，允许跳过超时例化，但结果明确标为连接不完整，不作为完整提取通过。选择器、门控、OCC、DIV 以及复位树共用这一遍历实现；总线拼接、位选仍保留位对应关系。</p>
 <p>运行节点下方会显示当前实例、端口、追踪编号，以及例如：</p>
 <p><code>已扫描 128 · 已处理 2 · 待处理 127 · 命中/边界 0 · 逐项读取连接</code></p>
 <ul>
@@ -1567,4 +1568,77 @@ python3 -m clocktree resume --run /project/clocktree-run --memory-limit-gib 60
 <p>结果 JSON 的 <code>summary.extraction_mode</code>、<code>physical_loads_checked</code>、<code>terminal_semantics</code> 描述本次检查语义。<code>metadata.language_trace_stats</code> 记录当前 Verdi 尝试中的原生 driver 查询数、缓存命中数及输出端口命中数；有重启时该统计不是整个任务所有尝试的累加。</p>
 <p>升级前已完成的结果可继续浏览。升级前未完成的任务如果实现签名不一致，需要重新提取；不要手动修改恢复文件绕过检查。</p>
 <p>本次原生 Tk 界面与完整验收记录见 <a href="TARGET_MODE_VALIDATION.zh-CN.md">目标结构模式验收报告</a>。</p>
-<p><a class="figure" href="images/target-mode-workbench.png" target="_blank"><img alt="目标结构模式与真实驱动证据" src="images/target-mode-workbench.png" /></a></p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p><a class="figure" href="images/target-mode-workbench.png" target="_blank"><img alt="目标结构模式与真实驱动证据" src="images/target-mode-workbench.png" /></a></p>
+<p><a id="port-trace-timeout"></a></p>
+<h2 id="29-trace">29. 端口 trace 超时与当前例化跳过</h2>
+<h3 id="291">29.1 设置阈值</h3>
+<p>在左侧“提取配置”中找到 <strong>端口 trace 超时（秒）</strong>，位于内存设置下方。窗口高度不够时，在左侧配置区域滚动。填写非负数字后再开始提取；允许小数，例如 <code>12.5</code>。默认 <code>0</code> 表示不限时，任务总运行时间始终没有上限。</p>
+<p>配置文件对应顶层字段：</p>
+<pre><code class="language-json">&quot;port_trace_timeout_s&quot;: 120
+</code></pre>
+<p>此例表示每个实际执行的输入或输出端口 trace 单独计时，阈值为 120 秒；不是整实例所有端口合计 120 秒。配置导入、保存、关闭后重开和时钟/复位工作区切换均保留该值。省略字段等同于 <code>0</code>，旧字段 <code>timeout_seconds</code> 仍不生效。</p>
+<p>阈值在启动任务时读取。运行中修改界面值不改变已经启动的任务；从旧断点恢复时沿用原任务保存的阈值。如需重新追踪此前已跳过的实例，应调整阈值后新建提取，旧结果保留在历史中。</p>
+<h3 id="292">29.2 超时后工具怎么处理</h3>
+<ol>
+<li>每个端口开始前，先提交此前已完成的追踪证据。</li>
+<li>外部控制进程监测当前端口耗时。超时时先保存当前完整实例路径、端口、方向、阈值、已用时间和追踪序号，再结束这一轮 Verdi 进程组。</li>
+<li>撤回当前未完成端口的原始数据，保留此前完整端口的结果和连线。</li>
+<li>重新导入设计并恢复已找到的实例。将触发端口记为 <code>trace_timeout</code>，本实例尚未处理的端口记为 <code>trace_skipped_timeout</code>，不再次调用这些端口的 NPI 追踪。</li>
+<li>继续其他例化，<strong>包括同名 module 的其他实例</strong>。例如 <code>top.u0</code> 超时只跳过 <code>top.u0</code> 的剩余端口，<code>top.u1</code> 不受此跳过决定影响。</li>
+</ol>
+<p>即使原生 NPI 调用不返回，外部监控仍可结束 Verdi；不能只依赖 Tcl 定时回调。端口正常返回后，需要控制进程确认未超时，才能提交其结果并进入下一端口，避免超时处理误伤下一实例。开启该选项会增加每端口确认和断点写盘开销；默认 <code>0</code> 不增加这套确认流程。本次共享目录上 1,026 路目标负载的对照为关闭约 19.2 秒、开启约 58.7 秒，两次连线完全一致；其他设备的开销需实测。</p>
+<h3 id="293">29.3 看图、查属性与导出</h3>
+<table>
+<thead>
+<tr>
+<th>显示</th>
+<th>含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>器件卡片 <code>trace 超时</code></td>
+<td>这个具体实例有端口触发超时</td>
+</tr>
+<tr>
+<td><code>b · trace 超时</code></td>
+<td><code>b</code> 是实际触发超时的端口，本次未完成证据已撤回</td>
+</tr>
+<tr>
+<td><code>c · trace 跳过</code></td>
+<td><code>c</code> 尚未追踪，因为本实例已经超时而跳过</td>
+</tr>
+<tr>
+<td>属性 <code>此前 trace 已完成，证据保留</code></td>
+<td>该端口在超时之前已经完成，其结果仍然有效</td>
+</tr>
+<tr>
+<td>输出口 <code>y · 实例超时</code></td>
+<td>目标结构模式没有执行输出 load trace，仅说明其所属实例发生输入超时</td>
+</tr>
+</tbody>
+</table>
+<p>端口下一行仍显示实际 RTL 例化连接信号名。点击器件，在属性中查看触发端口、driver/load 方向、阈值、实际等待时间及每个端口的状态；鼠标悬停可看端口明细。</p>
+<p>图中保留全部已找到的实例、已确认连线和独立分支。例如其他实例的输入反查已经证明它由超时实例的输出驱动，这条有效连线仍可显示。超时实例不会被当成已确认根或末端；顶部明确提示“X 个例化 trace 超时 · 连接不完整”。未完成的端口不能被解释为没有连接。</p>
+<p>JSON 保存 <code>trace_timeout</code>、<code>port_trace_status</code>、超时边界和摘要计数。SVG 使用与 Tk 相同的器件标记。历史结果重新打开也能看到这些信息。CLI 正常生成了不完整结果时沿用退出码 <code>2</code>，并不意味着没有生成文件。</p>
+<p><a class="figure" href="images/trace-timeout-workbench.png" target="_blank"><img alt="原生 Tk：实例超时、跳过端口与实际连接信号" src="images/trace-timeout-workbench.png" /></a></p>
+<h3 id="294">29.4 日志与再次闪退恢复</h3>
+<ul>
+<li><code>verdi.log</code>：<code>CT7_PORT_TIMEOUT</code> 记录触发实例、端口和阈值；<code>CT7_TIMEOUT_RESTART</code> 记录下一轮启动。</li>
+<li><code>trace-timeouts.jsonl</code>：本任务的超时实例明细。</li>
+<li><code>memory.json</code>：<code>trace_timeout_count</code>、<code>timeout_restart_count</code> 单独记录超时实例数和超时重启数；原有 <code>restart_count</code> 仍表示内存重启。</li>
+<li>每个任务工作目录的 <code>trace-timeouts.json</code>：带任务签名的持久跳过决定；配合 <code>checkpoint.json</code> 恢复。不要手动删除或改写这些文件。</li>
+<li>阶段日志：追踪、超时、重新启动和后续继续都可定位到当前实例与端口。</li>
+</ul>
+<p>如果超时决定保存后控制进程又突然退出，重开 GUI 可看到已保存的超时决定并从断点继续。工具先核对并停止旧 worker，再撤回未提交尾部；不会因重新打开而再次陷入相同实例的超时端口。恢复仍校验原输入、原设备和实现版本。</p>
+<h3 id="295">29.5 作用范围</h3>
+<ul>
+<li><strong>目标结构提取</strong>：对实际执行的输入 driver trace 计时；该模式不展开输出 load，因此没有虚构的“输出负载超时”。</li>
+<li><strong>全负载核验</strong>：输入 driver、输出 load 分别计时；任何一个超时都只跳过当前实例的剩余端口。</li>
+<li><strong>时钟树与复位树</strong>均支持；与内存阈值独立，内存监测设为 <code>0</code> 时端口超时仍生效。</li>
+<li>阈值覆盖一个端口的整次 trace 工作，不是“最近一次进度之后的空闲时间”。即使计数仍增加，达到端口总耗时阈值也会跳过。</li>
+<li><strong>不覆盖</strong> elab 导入、module 查找、枚举时端口绑定/输出校验、重启时句柄恢复、拓扑/索引/绘图。若卡在这些阶段，此选项不会把它误记为某个端口 trace 超时。</li>
+<li>监测、系统调度和终止进程存在延迟；实际超时记录可能略大于设定值。重导入 elab 的时间不属于该端口阈值，超时不代表下一实例能在该秒数内立即开始。</li>
+<li>无法从一个未完成端口的第 N 个 load 继续。该端口本次结果整体撤回，先前已经提交的其他端口不受影响。</li>
+</ul>
+<p>实测范围、阻塞注入方法和逐项验收见 <a href="PORT_TRACE_TIMEOUT_VALIDATION.zh-CN.md">端口超时验收报告</a>。商业芯片原始故障库不在本次测试中，不能把测试电路结果等同于商业全芯片验收。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

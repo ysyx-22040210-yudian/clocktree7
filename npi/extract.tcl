@@ -543,6 +543,40 @@ proc ct_module_memory_check {} {
         after 20
     }
 }
+proc ct_trace_deadline_begin {trace_id owner pin direction} {
+    if {$::ct_port_trace_timeout_s <= 0} {return}
+    set ::ct_deadline_context [list trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js active] {*}$::ct_deadline_context]
+    set ::ct_deadline_started [clock milliseconds]
+}
+proc ct_trace_deadline_finish {trace_id} {
+    if {$::ct_port_trace_timeout_s <= 0} {return}
+    set elapsed [expr {max(0, [clock milliseconds]-$::ct_deadline_started)}]
+    ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js complete] {*}$::ct_deadline_context elapsed_ms $elapsed]
+    # Native NPI calls cannot be interrupted by Tcl's event loop. The external
+    # controller decides whether this trace may commit, before the next starts.
+    while {1} {
+        if {[file exists $::ct_trace_ack_file] && ![catch {set stream [open $::ct_trace_ack_file r]}]} {
+            set reply [read $stream]; close $stream
+            if {[llength $reply] == 2 && [lindex $reply 0] eq "$trace_id" && [lindex $reply 1] eq "continue"} {return}
+        }
+        if {![file exists /proc/$::ct_controller_pid]} {error "Extraction controller exited during trace deadline check"}
+        after 5
+    }
+}
+proc ct_trace_skip_timeout {trace_id owner pin direction} {
+    lassign [dict get $::ct_timeout_instances $owner] trigger record
+    if {$trace_id < $trigger} {error "Timeout decision precedes the committed trace cursor"}
+    set status [expr {$trace_id == $trigger ? "trace_timeout" : "trace_skipped_timeout"}]
+    if {$trace_id == $trigger} {ct_emit [ct_object event [ct_js instance_trace_timeout] detail $record]}
+    set context [ct_object trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    ct_journal item_begin trace $context "skip port on timed-out instance"
+    ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    ct_emit [ct_object event [ct_js trace_result] trace_id $trace_id result \
+        [ct_object status [ct_js $status] path {[]} timeout $record]]
+    ct_emit [ct_object event [ct_js trace_end] trace_id $trace_id result_count 1 path_steps 0]
+    ct_journal item_end trace $context $status
+}
 proc ct_commit_module {queries query rule layer scope module matched added status} {
     global ct_completed_modules ct_last_module ct_total_modules
     incr ct_completed_modules
@@ -655,7 +689,7 @@ proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
     global ct_resume_completed_modules ct_resume_last_module ct_completed_modules ct_last_module ct_saved_module ct_total_modules
-    global ct_extraction_mode
+    global ct_extraction_mode ct_port_trace_timeout_s ct_timeout_instances
     ct_journal begin worker {} "read worker configuration"
     source $env(CT7_CONFIG)
     set ct_context [info exists env(CT7_RESUME)]
@@ -673,6 +707,9 @@ proc ct_main {} {
     if {![info exists ct_tree_type]} {set ct_tree_type clock}
     if {![info exists ct_extraction_mode]} {set ct_extraction_mode full}
     if {![info exists ct_trace_scope]} {set ct_trace_scope ""}
+    if {![info exists ct_port_trace_timeout_s]} {set ct_port_trace_timeout_s 0}
+    if {![info exists ct_timeout_instances]} {set ct_timeout_instances [dict create]}
+    if {$ct_port_trace_timeout_s > 0 && !$ct_context} {error "Port trace deadlines require the external extraction controller"}
     set ct_selected [dict create]
     set ct_instances [dict create]
     set ct_owner_paths [dict create]
@@ -695,7 +732,7 @@ proc ct_main {} {
         ct_emit [ct_object event [ct_js metadata] backend [ct_js verdi_base_npi] \
             verdi_home [ct_js $env(VERDI_HOME)] top [ct_js $ct_top] tree_type [ct_js $ct_tree_type] trace_scope [ct_js $ct_trace_scope] \
             instance_search [ct_js direct_children] raw_protocol 2 module_checkpoint_protocol 1 port_connection_protocol 1 \
-            extraction_mode [ct_js $ct_extraction_mode] \
+            extraction_mode [ct_js $ct_extraction_mode] port_trace_timeout_s $ct_port_trace_timeout_s \
             connectivity_traversal [ct_js [expr {$ct_extraction_mode eq "target" ? "language_input_index" : "streaming_net_connectivity"}]]]
         flush $ct_stream
         ct_save_checkpoint import 0 0
@@ -842,16 +879,28 @@ proc ct_main {} {
         lassign [dict get $ct_pins_to_trace $count] p direction owner pin
         dict unset ct_pins_to_trace $count
         incr count
+        if {[dict exists $ct_timeout_instances $owner]} {
+            ct_trace_skip_timeout $count $owner $pin $direction
+            if {$ct_extraction_mode eq "full"} {ct_release $p}
+            ct_save_checkpoint trace $query_count $count
+            if {[ct_maybe_rotate trace $query_count $count]} {return}
+            continue
+        }
+        # The trace-phase entry and every preceding port already committed
+        # this prefix. Avoid rewriting the same checkpoint before each port.
+        ct_trace_deadline_begin $count $owner $pin $direction
         if {$ct_extraction_mode eq "target"} {
             ct_l_walk $owner $pin $count
         } else {
             ct_walk $p $direction $owner $pin $count
             ct_release $p
         }
+        ct_trace_deadline_finish $count
         # Commit a completed expensive port immediately so an interruption on
         # the next port cannot force a large fanout to be traversed again.
-        if {$ct_extraction_mode eq "target" || $count % 32 == 0 || [dict get $::ct_walk_stats scanned] >= 256 ||
+        if {$ct_port_trace_timeout_s > 0 || $ct_extraction_mode eq "target" || $count % 32 == 0 || [dict get $::ct_walk_stats scanned] >= 256 ||
                 [clock milliseconds]-$::ct_walk_started >= 1000} {ct_save_checkpoint trace $query_count $count}
+        if {$ct_port_trace_timeout_s > 0} {ct_atomic_json $::ct_trace_current_file [ct_object state [ct_js idle]]}
         if {[ct_maybe_rotate trace $query_count $count]} {return}
         if {$count % 100 == 0} {
             puts "CT7_TRACE $count/$ct_pin_count"; flush stdout

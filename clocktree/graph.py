@@ -9,7 +9,8 @@ from .profiles import profile, tree_type
 from .config import hierarchy_contains
 
 
-UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression"}
+UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression",
+              "trace_timeout", "trace_skipped_timeout"}
 
 
 def build_graph(events, config, evidence_store=None):
@@ -21,6 +22,7 @@ def build_graph(events, config, evidence_store=None):
     active = {}
     trace_index = 0
     output_checks = {}
+    timeout_instances = {}
 
     def consume(trace, result):
         if result['status'] == 'sink':
@@ -112,6 +114,10 @@ def build_graph(events, config, evidence_store=None):
             evidence_store.end_trace(item['trace_id'])
         elif kind == "diagnostic":
             diagnostics.append(item)
+        elif kind == 'instance_trace_timeout':
+            decision = item['detail']
+            timeout_instances[decision['instance']] = decision
+            diagnostics.append(dict(decision, code='instance_trace_timeout'))
         elif kind == 'output_check':
             output_checks[(item['instance'], item['pin'])] = item['status']
             if item['status'] != 'ok':
@@ -242,16 +248,25 @@ def build_graph(events, config, evidence_store=None):
     scope_inputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'driver'}
     uncertain_inputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'driver'}
     uncertain_inputs.update(node for node, pin, direction in missing if direction == 'driver')
+    timeout_pins = {(b['instance'], b['pin']): b['status'] for b in boundaries
+                    if b['status'] in ('trace_timeout', 'trace_skipped_timeout')}
     for node in nodes.values():
         node["component"] = component_id[node["id"]]
-        node["root"] = not incoming.get(node['id']) and not (target_mode and node['id'] in uncertain_inputs)
-        node["terminal"] = not outgoing.get(node['id']) and node['id'] not in unresolved_outputs and node['id'] not in scope_outputs and (node["id"], node["output"], "load") in trace_keys
+        timed_out = node['id'] in timeout_instances
+        node["root"] = not timed_out and not incoming.get(node['id']) and not (target_mode and node['id'] in uncertain_inputs)
+        node["terminal"] = not timed_out and not outgoing.get(node['id']) and node['id'] not in unresolved_outputs and node['id'] not in scope_outputs and (node["id"], node["output"], "load") in trace_keys
+        if timed_out:
+            node['trace_timeout'] = timeout_instances[node['id']]
+            node['port_trace_status'] = {pin: timeout_pins.get((node['id'], pin),
+                'completed' if (node['id'], pin, direction) in trace_keys else
+                ('not_requested' if target_mode and direction == 'load' else 'not_traced'))
+                for pin, direction in [(p, 'driver') for p in node['inputs']] + [(node['output'], 'load')]}
         node['scope_input_boundary'] = node['id'] in scope_inputs
         node['scope_output_boundary'] = node['id'] in scope_outputs
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
         if node["root"] and node["layer"] != 1 and not node['scope_input_boundary']:
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
-    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint'}
+    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint', 'instance_trace_timeout'}
     coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
     if target_mode:
         # An unresolved input elsewhere could be a downstream branch of any
@@ -276,6 +291,9 @@ def build_graph(events, config, evidence_store=None):
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
                         "expected_pin_traces": expected_count, "observed_pin_traces": len(trace_keys),
                         "unresolved": unresolved_count, "diagnostics": len(diagnostics),
+                        'trace_timeout_instances': len(timeout_instances),
+                        'trace_timeout_ports': sum(s == 'trace_timeout' for s in timeout_pins.values()),
+                        'trace_skipped_ports': sum(s == 'trace_skipped_timeout' for s in timeout_pins.values()),
                         'trace_scope': trace_scope, 'scope_limited': bool(trace_scope),
                         'scope_boundaries': sum(b['status'] == 'scope_boundary' for b in boundaries),
                         'scope_output_instances': len(scope_outputs),

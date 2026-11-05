@@ -339,9 +339,10 @@ def diagnose(directory):
     elif failure.get('returncode') is not None:result['cause']='worker_exit_{}'.format(failure['returncode'])
     memory=read_json(output/'memory.json',{}) if same_run else {}
     if memory:
-        result['memory']={key:memory.get(key) for key in ('state','limit_gib','current_rss_gib','peak_rss_gib','restart_count','error')}
+        result['memory']={key:memory.get(key) for key in ('state','limit_gib','current_rss_gib','peak_rss_gib','restart_count','error','trace_timeout_count','timeout_restart_count','last_trace_timeout')}
         if memory.get('state')=='blocked':result['cause']='memory_protection_stalled'
-        elif canonical.get('state')=='restarting':result['cause']='memory_protection'
+        elif canonical.get('state')=='restarting':
+            result['cause']='port_trace_timeout' if (canonical.get('last_interruption') or {}).get('controlled_trace_timeout_restart') else 'memory_protection'
     reference=read_json(directory/'gui-log-location.json')
     if reference:
         result['gui']=diagnose_gui(reference['journal_directory'])

@@ -19,7 +19,7 @@ from .memory import run_verdi
 from .runtime import RunJournal
 
 
-RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json', 'memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl')
+RESULT_FILES = ('rules.tcl', 'config.json', 'raw.jsonl', 'verdi.log', 'clocktree.json', 'resettree.json', 'summary.json', 'memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl', 'trace-timeouts.jsonl')
 
 
 def vendor_safe_path(path):
@@ -73,7 +73,7 @@ def prepare_output(out, identifier=None, work=None):
         pointer = index_pointer(source)
         if pointer.is_file():
             pointer.unlink()
-    for name in ('memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl'):
+    for name in ('memory.json', 'memory-restarts.jsonl', 'module-memory-checks.jsonl', 'trace-timeouts.jsonl'):
         source = out / name
         if source.is_file():
             source.unlink()

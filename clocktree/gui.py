@@ -355,6 +355,7 @@ class ClockTreeApp(tk.Tk):
         self.trace_scope_var=tk.StringVar()
         self.extraction_mode_var=tk.StringVar(value=EXTRACTION_MODES['target'])
         self.memory_limit_var=tk.StringVar(value='60')
+        self.port_timeout_var=tk.StringVar(value='0')
         self.memory_status=tk.StringVar(value='等待提取 · RSS 监测在 Linux 上启用')
         self.hierarchy_var=tk.StringVar()
         top_label=ttk.Frame(settings,style='White.TFrame')
@@ -384,6 +385,12 @@ class ClockTreeApp(tk.Tk):
         self.memory_limit_entry.pack(side='right')
         ttk.Label(settings,text='默认60；0关闭。接近阈值提交断点并重启\n监测 Verdi 与提取控制进程的合计 RSS',style='Muted.TLabel').pack(anchor='w')
         ttk.Label(settings,textvariable=self.memory_status,style='Muted.TLabel',wraplength=260).pack(anchor='w',pady=(4,0))
+        timeout_row=ttk.Frame(settings,style='White.TFrame')
+        timeout_row.pack(fill='x',pady=(12,4))
+        ttk.Label(timeout_row,text='端口 trace 超时（秒）',style='Small.TLabel').pack(side='left')
+        self.port_timeout_entry=ttk.Entry(timeout_row,textvariable=self.port_timeout_var,width=7)
+        self.port_timeout_entry.pack(side='right')
+        ttk.Label(settings,text='默认0：不限时。超时后重启并跳过当前\n例化的剩余端口，同名其他例化继续',style='Muted.TLabel').pack(anchor='w')
         ttk.Separator(settings).pack(fill='x',pady=15)
         rule_heading=ttk.Frame(settings,style='White.TFrame')
         rule_heading.pack(fill='x')
@@ -432,6 +439,7 @@ class ClockTreeApp(tk.Tk):
         for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var,self.trace_scope_var,self.extraction_mode_var]:
             variable.trace('w',self.mark_dirty)
         self.memory_limit_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
+        self.port_timeout_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
         self.runs_tree.heading('#0',text='运行记录')
         self.runs_tree.heading('count',text='实例')
@@ -1001,6 +1009,7 @@ class ClockTreeApp(tk.Tk):
         self.trace_scope_var.set(config.get('trace_scope',''))
         self.extraction_mode_var.set(EXTRACTION_MODES[config.get('extraction_mode','target')])
         self.memory_limit_var.set(str(config.get('memory_limit_gib',60)))
+        self.port_timeout_var.set(str(config.get('port_trace_timeout_s',0)))
         self.layers=copy.deepcopy(config.get('layers',[]))
         if not self.layers:
             self.layers=[{'index':i,'hierarchy':'','modules':[]} for i in (1,2)]
@@ -1037,6 +1046,15 @@ class ClockTreeApp(tk.Tk):
             memory_limit=memory_text
         if memory_limit==60 and 'memory_limit_gib' not in self._base_config:data.pop('memory_limit_gib',None)
         else:data['memory_limit_gib']=memory_limit
+        timeout_text=self.port_timeout_var.get().strip()
+        try:
+            timeout=float(timeout_text)
+            if not math.isfinite(timeout) or timeout<0:raise ValueError('nonnegative finite number required')
+        except ValueError:
+            if validate:raise ValueError('端口 trace 超时需填写非负数字，单位秒；0 表示不限时。')
+            timeout=timeout_text
+        if timeout==0 and 'port_trace_timeout_s' not in self._base_config:data.pop('port_trace_timeout_s',None)
+        else:data['port_trace_timeout_s']=timeout
         data.pop('timeout_seconds',None)
         return validate_config(data) if validate else data
 
@@ -1181,6 +1199,8 @@ class ClockTreeApp(tk.Tk):
         self.memory_status.set(('Verdi 阶段峰值 {} GiB · 重启 {} 次'.format(memory.get('peak_rss_gib','—'),memory.get('restart_count',0)) if memory.get('enabled') else '本次运行未启用 RSS 监测') if memory else '等待提取 · RSS 监测在 Linux 上启用')
         if memory.get('last_checkpoint',{}).get('completed_modules') is not None:
             self.memory_status.set(self.memory_status.get()+'\n已提交 {} 条 module 查找断点'.format(memory['last_checkpoint']['completed_modules']))
+        if memory.get('trace_timeout_count'):
+            self.memory_status.set(self.memory_status.get()+'\n{} 个例化 trace 超时 · 超时重启 {} 次'.format(memory['trace_timeout_count'],memory.get('timeout_restart_count',0)))
         self._graph_token=graph_token or uuid.uuid4().hex
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
@@ -1188,7 +1208,7 @@ class ClockTreeApp(tk.Tk):
         if summary['connectivity_complete'] and summary.get('topology_valid',True):
             self._badge('目标结构连接已解析 · 未核验普通负载' if summary.get('extraction_mode')=='target' else ('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析'),'pass')
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
-        else:self._badge('存在未解析断点 / 诊断','warn')
+        else:self._badge('{} 个例化 trace 超时 · 连接不完整'.format(summary['trace_timeout_instances']) if summary.get('trace_timeout_instances') else '存在未解析断点 / 诊断','warn')
         components=graph['components'][:500]
         self.component_ids=[None]+[c['id'] for c in components]
         values=['全部'+profile(graph['config'])['network']]+['网络 {} · {} 实例'.format(c['id']+1,len(c['nodes'])) for c in components]
@@ -1410,6 +1430,8 @@ class ClockTreeApp(tk.Tk):
                     memory=read_json(memory_file)
                     used=memory.get('current_rss_gib')
                     self.memory_status.set('RSS {} GiB / {} GiB · 重启 {} 次'.format(used if used is not None else '—',memory.get('limit_gib','—'),memory.get('restart_count',0)))
+                    if memory.get('trace_timeout_count'):
+                        self.memory_status.set(self.memory_status.get()+'\n{} 个例化 trace 超时 · 超时重启 {} 次'.format(memory['trace_timeout_count'],memory.get('timeout_restart_count',0)))
                     module=memory.get('last_checkpoint',{}).get('last_module')
                     if module:self.memory_status.set(self.memory_status.get()+'\n断点 {} · L{} {}'.format(module['index'],module['layer'],module['module'][-30:]))
             except (OSError,ValueError,KeyError):pass
@@ -1576,8 +1598,12 @@ class ClockTreeApp(tk.Tk):
                     ('输入口例化连接',connection_details(node,node['inputs'])),
                     ('输出口例化连接',connection_details(node,[node['output']])),
                     ('连接名来源','NPI 例化端口 npiHighConn；表达式由 elab 还原' if 'port_connections' in node else '该历史结果未采集例化连接名；使用新版重新提取后显示'),
-                    ('结构状态',' / '.join(x for value,x in [(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
+                    ('结构状态',' / '.join(x for value,x in [(node.get('trace_timeout'),'实例 trace 超时'),(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]
+            if node.get('trace_timeout'):
+                timeout=node['trace_timeout']
+                fields.insert(4,('trace 超时断点','{} / {} · 阈值 {:g} 秒\n已用 {:g} 秒；仅跳过本例化剩余端口'.format(
+                    timeout['pin'],timeout['direction'],timeout['limit_seconds'],timeout['elapsed_seconds'])))
             title=node['module']
             edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]
             members={node['id']}

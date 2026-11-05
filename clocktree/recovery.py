@@ -62,7 +62,7 @@ def engine_signature():
     root = Path(__file__).resolve().parents[1]
     digest = hashlib.sha256()
     for name in ('npi/extract.tcl', 'npi/target_trace.tcl', 'clocktree/config.py', 'clocktree/extract.py',
-                 'clocktree/memory.py', 'clocktree/graph.py', 'clocktree/storage.py', 'clocktree/recovery.py',
+                 'clocktree/memory.py', 'clocktree/trace_timeout.py', 'clocktree/graph.py', 'clocktree/storage.py', 'clocktree/recovery.py',
                  'clocktree/worker_launch.py', 'clocktree/runtime.py', 'clocktree/profiles.py', 'clocktree/devices.py'):
         digest.update((root / name).read_bytes())
     return digest.hexdigest()
@@ -196,6 +196,7 @@ def cause_text(report):
     cause = report.get('cause')
     if cause == 'memory_protection_stalled':return '内存保护连续重试仍无法推进；可调整资源或内存阈值后继续。'
     if cause == 'memory_protection':return '上次停在内存保护轮换中；已提交证据仍可恢复。'
+    if cause == 'port_trace_timeout':return '上次停在端口 trace 超时后的重启中；恢复后跳过超时例化的剩余端口，其他例化继续。'
     if failure.get('exit_signal'):
         return 'Verdi 被 {} 终止；日志未证明具体来源，需结合调度器/系统日志判断。'.format(failure['exit_signal'])
     if failure.get('returncode') is not None:
@@ -228,6 +229,13 @@ def inspect_recovery(directory):
         work = Path(manifest['work'])
         checkpoint = read_checkpoint(work / 'checkpoint.json', manifest['signature'],
                                      Path(manifest['raw']), work / 'targets.tcl', manifest['config'])
+        decisions = read_json(work/'trace-timeouts.json', {})
+        if decisions.get('signature') == manifest['signature']:
+            pending = [record for record in decisions.get('instances', {}).values()
+                       if record['trace_id'] > checkpoint['completed_traces']]
+            if pending:
+                result['pending_trace_timeouts'] = pending
+                result['reason'] += '\n已保存 {} 个例化的 trace 超时决定；继续后会跳过它们剩余的端口。'.format(len(pending))
         result.update(resumable=True, checkpoint=checkpoint,
                       next_step='重建拓扑、索引与结果（不再启动 Verdi）' if checkpoint['stage'] == 'complete'
                       else '重新导入 elab、恢复句柄后继续未提交的查找/追踪')

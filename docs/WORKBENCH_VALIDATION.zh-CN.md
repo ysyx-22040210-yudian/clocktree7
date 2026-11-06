@@ -114,11 +114,19 @@ OpenTitan/PULP 的既有层级规则与连接顺序存在上述诊断，本轮�
 
 此次独立测试验证的是提交前候选代码；最终归档在 GitHub Desktop 提交后由同一源码生成并另存校验记录。候选包证据见结构化数据中的 `portable` 项，原始报告在 `validation/workbench/portable-clocktree7-workbench-20261107-rc1/acceptance.json`。
 
+正式包 `clocktree7-workbench-20261107` 已由干净提交 `3e857582507144220183c03ac82e78f69bbe2a9d` 生成，并在 VM 另一个独立目录 `/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107` 重新完成相同 manifest、clock/reset golden、Tk 和子系统测试，全部通过。正式包证据为 `portable_final` 项；本次后续文档提交只补充正式包验收结果及复现命令，不改运行代码。安装包保存在共享目录 `validation/releases/`。
+
+| 正式归档 | SHA-256 |
+|---|---|
+| `clocktree7-workbench-20261107.zip` | `a1495c746bf09badd861dff290af770532404888b35abc896beb007fa85f27d7` |
+| `clocktree7-workbench-20261107.tar.gz` | `535948fa5be8f0942a329b2dd4a347b1750792e2bc21f4cd59e81ae84730f77b` |
+
 开发复现（在正确设置 EDA 环境的 Linux 上，输出目录建议独立）：
 
 ```bash
 python3 scripts/check_subsystem.py --out validation/recheck/subsystem
-python3 scripts/check_subsystem_edges.py --out validation/recheck/subsystem-edges
+python3 scripts/check_subsystem_edges.py --base validation/recheck/subsystem \
+  --out validation/recheck/subsystem-edges
 xvfb-run -a python3 scripts/check_workbench_gui.py --out validation/recheck/gui \
   --result validation/recheck/subsystem/target/clocktree.json
 xvfb-run -a python3 scripts/check_issue_gui.py --out validation/recheck/issues \

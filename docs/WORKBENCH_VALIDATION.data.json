@@ -2439,5 +2439,265 @@
         }
       ]
     }
+  },
+  "portable_final": {
+    "passed": true,
+    "folder": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107",
+    "isolated_user_site": true,
+    "manifest_files": 205,
+    "source_commit": "3e857582507144220183c03ac82e78f69bbe2a9d",
+    "source_dirty": false,
+    "doctor": {
+      "schema_version": 1,
+      "time": "2026-11-06T16:37:28.388311+00:00",
+      "platform": "Linux-3.10.0-1160.53.1.el7.x86_64-x86_64-with-centos-7.9.2009-Core",
+      "python": "3.6.8",
+      "executable": "/usr/bin/python3",
+      "tool_root": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107",
+      "checks": [
+        {
+          "name": "python",
+          "status": "pass",
+          "detail": "3.6.8"
+        },
+        {
+          "name": "filesystem_encoding",
+          "status": "pass",
+          "detail": "utf-8; use a UTF-8 locale for non-ASCII installation/project paths"
+        },
+        {
+          "name": "output",
+          "status": "pass",
+          "detail": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107/qa/doctor/doctor_20261107_003728_bbdf2ea7"
+        },
+        {
+          "name": "tkinter",
+          "status": "pass",
+          "detail": "Tk 8.5; Tcl 8.5.13"
+        },
+        {
+          "name": "bundled_results",
+          "status": "pass",
+          "detail": "Clock 13 instances / 11 edges; reset 12 instances / 12 edges"
+        },
+        {
+          "name": "verdi_npi",
+          "status": "pass",
+          "detail": "Installation files located; execution/license not yet verified",
+          "executable": "/home/synopsys/verdi/Verdi_O-2018.09-SP2/bin/verdi",
+          "home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2"
+        },
+        {
+          "name": "license_environment",
+          "status": "pass",
+          "detail": "License environment supplied by this device; validity requires self-test"
+        },
+        {
+          "name": "session_storage",
+          "status": "pass",
+          "detail": "Atomic clock/reset snapshots saved and restored in isolated test storage"
+        },
+        {
+          "name": "clock_eda_golden",
+          "status": "pass",
+          "detail": "Real Verdi extraction matches complete instance/edge/terminal sets",
+          "nodes": 13,
+          "edges": 11,
+          "terminals": 4
+        },
+        {
+          "name": "reset_eda_golden",
+          "status": "pass",
+          "detail": "Real Verdi extraction matches complete instance/edge/terminal sets",
+          "nodes": 12,
+          "edges": 12,
+          "terminals": 4
+        },
+        {
+          "name": "native_gui",
+          "status": "pass",
+          "detail": "Both architectures rendered in the native Tk workbench",
+          "tk": "8.5.13",
+          "graphs_rendered": 2,
+          "cjk_font": true,
+          "canvas": [
+            {
+              "instances": 13,
+              "edges": 11
+            },
+            {
+              "instances": 12,
+              "edges": 12
+            }
+          ]
+        }
+      ],
+      "eda_verified": true,
+      "gui_verified": true,
+      "self_test": true,
+      "fixture_directory": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107/qa/doctor/doctor_20261107_003728_bbdf2ea7/fixtures",
+      "status": "pass",
+      "report_file": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107/qa/doctor/doctor_20261107_003728_bbdf2ea7/doctor.json"
+    },
+    "subsystem": {
+      "discovery": {
+        "module": "wb_sub",
+        "hierarchy": "wb_top",
+        "instances": 2,
+        "ports": [
+          {
+            "event": "input_port",
+            "instance": "wb_top.s0",
+            "module": "wb_sub",
+            "name": "clk_bus",
+            "direction": "input",
+            "width": 2,
+            "left": "3",
+            "right": "2"
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s0",
+            "module": "wb_sub",
+            "name": "aux_clk",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s0",
+            "module": "wb_sub",
+            "name": "data",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s1",
+            "module": "wb_sub",
+            "name": "clk_bus",
+            "direction": "input",
+            "width": 3,
+            "left": "4",
+            "right": "2"
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s1",
+            "module": "wb_sub",
+            "name": "aux_clk",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s1",
+            "module": "wb_sub",
+            "name": "data",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          }
+        ],
+        "operation": "input-discovery-only",
+        "traced_ports": 0
+      },
+      "cases": [
+        {
+          "mode": "target",
+          "summary": {
+            "instances": 4,
+            "edges": 7,
+            "roots": 2,
+            "tree_type": "clock",
+            "extraction_mode": "target",
+            "physical_loads_checked": false,
+            "terminal_semantics": "selected_structure",
+            "validated_outputs": 2,
+            "terminals": 2,
+            "components": 2,
+            "clock_sources": 2,
+            "layers": {
+              "1": 2,
+              "2": 2
+            },
+            "terminal_layers": {
+              "2": 2
+            },
+            "expected_pin_traces": 9,
+            "observed_pin_traces": 9,
+            "unresolved": 0,
+            "diagnostics": 0,
+            "trace_timeout_instances": 0,
+            "trace_timeout_ports": 0,
+            "trace_skipped_ports": 0,
+            "trace_scope": "",
+            "scope_limited": false,
+            "scope_boundaries": 0,
+            "scope_output_instances": 0,
+            "extraction_finished": true,
+            "connectivity_complete": true,
+            "topology_valid": true
+          }
+        },
+        {
+          "mode": "full",
+          "summary": {
+            "instances": 4,
+            "edges": 7,
+            "roots": 2,
+            "tree_type": "clock",
+            "extraction_mode": "full",
+            "physical_loads_checked": true,
+            "terminal_semantics": "load_trace",
+            "validated_outputs": 0,
+            "terminals": 2,
+            "components": 2,
+            "clock_sources": 2,
+            "layers": {
+              "1": 2,
+              "2": 2
+            },
+            "terminal_layers": {
+              "2": 2
+            },
+            "expected_pin_traces": 11,
+            "observed_pin_traces": 11,
+            "unresolved": 0,
+            "diagnostics": 0,
+            "trace_timeout_instances": 0,
+            "trace_timeout_ports": 0,
+            "trace_skipped_ports": 0,
+            "trace_scope": "",
+            "scope_limited": false,
+            "scope_boundaries": 0,
+            "scope_output_instances": 0,
+            "extraction_finished": true,
+            "connectivity_complete": true,
+            "topology_valid": true
+          }
+        }
+      ]
+    }
+  },
+  "release_archives": {
+    "files": 206,
+    "archives": [
+      "D:\\VMshare\\clocktree7\\validation\\releases\\clocktree7-workbench-20261107.zip",
+      "D:\\VMshare\\clocktree7\\validation\\releases\\clocktree7-workbench-20261107.tar.gz"
+    ],
+    "source_commit": "3e857582507144220183c03ac82e78f69bbe2a9d",
+    "source_dirty": false,
+    "sha256": {
+      "clocktree7-workbench-20261107.zip": "a1495c746bf09badd861dff290af770532404888b35abc896beb007fa85f27d7",
+      "clocktree7-workbench-20261107.tar.gz": "535948fa5be8f0942a329b2dd4a347b1750792e2bc21f4cd59e81ae84730f77b"
+    }
   }
 }

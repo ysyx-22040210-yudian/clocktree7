@@ -256,6 +256,8 @@ def run_verdi(command, work, environment, raw, log_path, output, config,
                 shutil.copy2(str(work / 'clocktree-extract.tcl'), str(attempt_dir / 'clocktree-extract.tcl'))
                 if (work / 'target_trace.tcl').is_file():
                     shutil.copy2(str(work / 'target_trace.tcl'), str(attempt_dir / 'target_trace.tcl'))
+                if (work / 'input_ports.tcl').is_file():
+                    shutil.copy2(str(work / 'input_ports.tcl'), str(attempt_dir / 'input_ports.tcl'))
                 rollback_files(checkpoint, raw, targets, module_directory)
                 for path in (control, status, module_request, module_ack):
                     if path.exists():

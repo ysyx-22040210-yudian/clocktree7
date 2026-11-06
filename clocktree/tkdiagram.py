@@ -1,9 +1,10 @@
 """Native Tk Canvas clock architecture viewer with viewport clipping and a minimap."""
 import tkinter as tk
 from tkinter import font as tkfont
-from collections import Counter
+import time
+from collections import OrderedDict
 
-from .viewmodel import GraphView, clip_segment
+from .viewmodel import GraphView
 from .devices import DEVICE_TYPES, symbol_parts
 from .profiles import tree_type
 
@@ -37,10 +38,21 @@ def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cac
                 if font not in font_cache:font_cache[font]=tkfont.Font(root=canvas,font=font)
                 metric=font_cache[font]
                 maximum=max(8,p['max_width']*scale)
-                if metric.measure(text)>maximum:
-                    while text and metric.measure(text+'…')>maximum:text=text[:-1]
-                    text+='…'
-            item = canvas.create_text(x+p['x']*scale,y+p['y']*scale,text=text,fill=p['fill'],font=font,anchor=p['anchor'],tags=tags)
+                cache=getattr(canvas,'_text_cache',None)
+                if cache is None:cache={};canvas._text_cache=cache
+                key=(font,text,round(maximum))
+                if key in cache:text=cache[key]
+                else:
+                    if metric.measure(text)>maximum:
+                        lo,hi=0,len(text)
+                        while lo<hi:
+                            mid=(lo+hi+1)//2
+                            if metric.measure(text[:mid]+'…')<=maximum:lo=mid
+                            else:hi=mid-1
+                        text=text[:lo]+'…'
+                    if len(cache)>=8192:cache.clear()
+                    cache[key]=text
+            item = canvas.create_text(x+p['x']*scale,y+p['y']*scale,text=text,fill=p['fill'],font=font,anchor=p['anchor'],tags=tuple(tags)+('detail',))
             if p.get('tooltip'):tooltips[item] = p['tooltip']
         elif op in ('polygon','polyline'):
             points=[v for xx,yy in p['points'] for v in (x+xx*scale,y+yy*scale)]
@@ -73,6 +85,16 @@ class ClockDiagram(tk.Frame):
         self._record_first_paint=False
         self.visible_nodes = 0
         self._pending, self._drag = None, None
+        self.layout_mode = 'branch'
+        self.layout_pending = False
+        self._layout_job = None
+        self._layout_poll = None
+        self._committed_view = None
+        self._layout_cache=OrderedDict()
+        self._zoom_active = False
+        self._zoom_timer = None
+        self._branch_highlight = False
+        self._history, self._future = [], []
         self.canvas = tk.Canvas(self, bg='#101b2e', highlightthickness=0, borderwidth=0, cursor='arrow')
         self.canvas.pack(fill='both', expand=True)
         self.map_frame = tk.Frame(self, bg='#273a55', bd=1)
@@ -95,8 +117,79 @@ class ClockDiagram(tk.Frame):
         self.canvas.bind('<Motion>', self._hover)
         self.minimap.bind('<Button-1>', self._map_click)
         self.canvas.bind('<Leave>', lambda e: self.on_hover('滚轮缩放 · 拖动画布平移 · 双击聚合框展开'))
+        from .canvas_scene import CanvasScene
+        self.scene = CanvasScene(self)
+        self.bind('<Destroy>', self._destroyed, add='+')
+
+    def _destroyed(self,event):
+        if event.widget is self:self.cancel_layout(restore=False)
+
+    def cancel_layout(self, restore=True):
+        if self._layout_poll is not None:
+            self.after_cancel(self._layout_poll);self._layout_poll=None
+        if self._layout_job is not None:
+            self._layout_job.close();self._layout_job=None
+        self.layout_pending=False
+        if restore and self.model and self._committed_view and self._committed_view[0] is self.model:
+            for key,value in self._committed_view[1].items():setattr(self.model,key,value)
+            for key,value in self._committed_view[2].items():setattr(self,key,value)
+            self.canvas.delete('layout-progress');self.scene.reset();self.schedule();self.notify()
+        elif restore and self.model:
+            self.model.nodes,self.model.edges,self.model.positions,self.model.routes={},[],{},{}
+            for key in ('node_columns','component_tops','layer_spans','layer_columns'):setattr(self.model,key,{})
+            self.canvas.delete('layout-progress');self.scene.reset();self.schedule()
+        if restore:self._stage('end','layout','已取消当前布局计算')
+
+    def _calculate_layout(self, fit=True, after=None):
+        from .layout_job import LayoutJob
+        self.cancel_layout(restore=False)
+        self.model.layout_mode=self.layout_mode
+        cache_key=(self.mode,self.component,self.scope,self.depth,getattr(self.model,'page',0),getattr(self.model,'focus',None),
+                   self.layout_mode,getattr(self.model,'subsystem_references',True),tuple(sorted(getattr(self.model,'expanded_buses',()))))
+        def finish(data):
+            for key,value in data.items():setattr(self.model,key,value)
+            self.layout_pending=False
+            self._committed_view=(self.model,{key:getattr(self.model,key) for key in ('nodes','edges','positions','routes','bounds',
+                'node_columns','component_tops','layer_spans','layer_columns','actual_count','layout_mode')},
+                {key:getattr(self,key) for key in ('mode','component','scope','depth','layout_mode')})
+            for key in ('page','pages','focus','external_edges'):
+                if hasattr(self.model,key):self._committed_view[1][key]=getattr(self.model,key)
+            self.scene.reset();self._record_first_paint=True
+            self._stage('end','layout','架构布局已完成',boxes=len(self.model.nodes))
+            if fit:self.fit()
+            else:self.schedule()
+            if after:after()
+            self.notify()
+        if cache_key in self._layout_cache:
+            data=self._layout_cache.pop(cache_key);self._layout_cache[cache_key]=data
+            finish(data);return
+        self.layout_pending=True
+        self._layout_job=LayoutJob(self.model)
+        job=self._layout_job
+        self.canvas.delete('layout-progress')
+        self.canvas.create_text(18,52,text='正在计算布局… 可继续切换视图或取消',anchor='w',fill='#d4e4fb',tags=('layout-progress',))
+        def check():
+            self._layout_poll=None
+            if job is not self._layout_job:return
+            if job.poll() is None:
+                self._layout_poll=self.after(25,check);return
+            try:
+                data=job.result()
+            except Exception as error:
+                self.on_hover('布局失败：'+str(error))
+                self._stage('failed','layout',str(error))
+                self.cancel_layout();return
+            job.close();self._layout_job=None;self.layout_pending=False
+            self._layout_cache[cache_key]=data
+            while len(self._layout_cache)>3 or sum(len(v['positions'])+len(v['routes']) for v in self._layout_cache.values())>30000:
+                self._layout_cache.popitem(last=False)
+            finish(data)
+        self._layout_poll=self.after(25,check)
 
     def load(self, graph):
+        self.cancel_layout(restore=False)
+        self._committed_view=None
+        self._layout_cache.clear()
         self.tree_type = tree_type(graph.get('config', graph))
         from .storage import IndexedGraph
         from .indexed_view import IndexedGraphView
@@ -108,10 +201,17 @@ class ClockDiagram(tk.Frame):
         self.mode = 'hierarchy' if len(graph['nodes']) > 400 else 'instances'
         self.component, self.scope, self.depth = None, '', 5
         self.selected, self.highlights = None, set()
+        self._history,self._future=[],[]
+        self._branch_highlight=False
+        self.model.defer_layout=True
         self.rebuild(record=False)
         self._stage('end','layout','视图模型和初始布局已建立')
 
     def clear(self, mode='clock'):
+        self.cancel_layout(restore=False)
+        self._committed_view=None
+        self._layout_cache.clear()
+        self.scene.reset()
         self.tree_type=mode
         self.model=None
         self.selected,self.highlights=None,set()
@@ -134,18 +234,14 @@ class ClockDiagram(tk.Frame):
         except BaseException as error:
             if self.runtime_journal:self.runtime_journal.fail(error)
             raise
-        if record:self._stage('end','layout','架构布局已完成',boxes=len(self.model.nodes))
-        self._record_first_paint=True
         self.mode = getattr(self.model, 'effective_mode', self.mode)
-        if fit:
-            self.fit()
-        else:
-            self.schedule()
+        self._calculate_layout(fit)
         self.notify()
 
     def notify(self):
         if self.model:
             self.on_view({'mode': self.mode, 'scope': self.scope, 'component': self.component,
+                          'layout_mode': self.layout_mode,
                           'boxes': len(self.model.nodes), 'actual': self.model.actual_count,
                           'total': len(self.model.original), 'zoom': self.scale,
                           'focus': getattr(self.model, 'focus', None), 'page': getattr(self.model, 'page', 0),
@@ -154,7 +250,7 @@ class ClockDiagram(tk.Frame):
     def page_view(self, delta):
         if self.model and hasattr(self.model, 'page'):
             self.model.page += delta
-            self.selected, self.highlights = None, set()
+            self.selected = None
             self.rebuild()
 
     def fit(self):
@@ -178,8 +274,17 @@ class ClockDiagram(tk.Frame):
         factor = new/self.scale
         self.ox, self.oy = x-(x-self.ox)*factor, y-(y-self.oy)*factor
         self.scale = new
+        self._zoom_active=True
+        self._zoom_last=time.perf_counter()
+        if self._zoom_timer is not None:self.after_cancel(self._zoom_timer)
+        self._zoom_timer=self.after(110,self._settle_zoom)
         self.schedule()
         self.notify()
+
+    def _settle_zoom(self):
+        self._zoom_timer=None
+        self._zoom_active=False
+        self.schedule()
 
     def reset_scope(self):
         self.scope, self.depth = '', 5
@@ -187,56 +292,130 @@ class ClockDiagram(tk.Frame):
         self.rebuild()
 
     def expand(self, node):
+        if node.get('kind')=='subsystem':
+            actual=node.get('reference_of',node['id'])
+            values=getattr(self.model,'expanded_buses',set())
+            if actual in values:values.remove(actual)
+            else:values.add(actual)
+            self.model.expanded_buses=values
+            self.rebuild(fit=False)
+            return
         if not node.get('aggregate'):
             return
         self.scope = node['path']
         self.depth = len(self.scope.split('.')) + 1
         self.mode = 'instances' if len(node['members']) <= 160 else 'hierarchy'
-        self.selected, self.highlights = None, set()
+        self.selected = None
         self.rebuild()
 
-    def locate(self, node):
+    def locate(self, node, record=True):
         if not self.model:
             return
+        if record:self._remember_position()
+        actual=node.get('reference_of',node['id'])
+        keys=[key for key,n in self.model.nodes.items() if key == node['id'] or n.get('reference_of') == actual]
+        def center():
+            candidates=[key for key,n in self.model.nodes.items() if key == node['id'] or key == actual or n.get('reference_of') == actual]
+            if not candidates:return
+            key=candidates[0]
+            x,y,w,h=self.model.positions[key]
+            self.scale=min(1.05,max(.7,self.canvas.winfo_width()/1100))
+            self.ox=self.canvas.winfo_width()/2-(x+w/2)*self.scale
+            self.oy=self.canvas.winfo_height()/2-(y+h/2)*self.scale
+            self.select(self.model.nodes[key]);self.notify()
+        if keys and not self.layout_pending:
+            center();return
         self.mode, self.component, self.scope = 'instances', None, ''
         from .indexed_view import DETAIL_LIMIT
         if hasattr(self.model, 'project_focus') and len(self.model.original) > DETAIL_LIMIT:
             self._stage('begin','layout','定位实例并读取局部连接',instance=node['id'])
-            try:self.model.project_focus(node)
+            try:self.model.project_focus(self.model.original[actual])
             except BaseException as error:
                 if self.runtime_journal:self.runtime_journal.fail(error)
                 raise
             self._stage('end','layout','实例局部布局已完成',instance=node['id'])
-            self._record_first_paint=True
-            self.schedule()
         else:
-            self.rebuild(fit=False)
-        node = self.model.original[node['id']]
-        x, y, w, h = self.model.positions[node['id']]
-        self.scale = min(1.05, max(.7, self.canvas.winfo_width()/1100))
-        self.ox = self.canvas.winfo_width()/2 - (x+w/2)*self.scale
-        self.oy = self.canvas.winfo_height()/2 - (y+h/2)*self.scale
-        self.select(node)
-        self.notify()
+            self.model.project(self.mode,self.component,self.scope,self.depth)
+        self._calculate_layout(False,center)
+
+    def _position(self):
+        return dict(selected=self.selected,scale=self.scale,ox=self.ox,oy=self.oy,
+                    mode=self.mode,component=self.component,scope=self.scope,depth=self.depth,
+                    focus=getattr(self.model,'focus',None),page=getattr(self.model,'page',0))
+
+    def _remember_position(self):
+        if self.model and not self.layout_pending:
+            self._history.append(self._position());self._history=self._history[-100:];self._future=[]
+
+    def navigate_history(self,forward=False):
+        source,target=(self._future,self._history) if forward else (self._history,self._future)
+        if not source or not self.model:return
+        state=source.pop();target.append(self._position())
+        same=all(getattr(self,k)==state[k] for k in ('mode','component','scope','depth')) and getattr(self.model,'focus',None)==state['focus'] and getattr(self.model,'page',0)==state['page']
+        def restore():
+            for k in ('scale','ox','oy','selected'):setattr(self,k,state[k])
+            node=self.model.nodes.get(self.selected)
+            if node:self.on_node(node)
+            self.schedule();self.notify()
+        if same:restore();return
+        for k in ('mode','component','scope','depth'):setattr(self,k,state[k])
+        if hasattr(self.model,'page'):self.model.page=state['page']
+        if state['focus']:self.model.project_focus(self.model.original[state['focus']])
+        else:self.model.project(self.mode,self.component,self.scope,self.depth)
+        self._calculate_layout(False,restore)
 
     def select(self, node):
         self.selected = node['id']
-        self.highlights = set()
-        if hasattr(self.model, 'selection_edges'):
-            self.highlights = self.model.selection_edges(node)
-        else:
-            members = node.get('members', [node['id']])
-            for key in members:
-                self.highlights.update(e['id'] for e in self.model.incoming[key] + self.model.outgoing[key])
+        if not self._branch_highlight:
+            self.highlights = set()
+            actual=node.get('reference_of',node['id'])
+            if node.get('reference_of'):
+                self.highlights={edge['id'] for edge in self.model.edges if edge['target']==node['id']}
+            elif hasattr(self.model, 'selection_edges'):
+                self.highlights = self.model.selection_edges(self.model.original[actual] if node.get('reference_of') else node)
+            else:
+                members = node.get('members', [actual])
+                for key in members:
+                    self.highlights.update(e['id'] for e in self.model.incoming[key] + self.model.outgoing[key])
         self.schedule()
         self.on_node(node)
 
     def trace(self, direction):
-        if self.model and self.selected in self.model.original:
-            self.highlights = self.model.path_edges(self.selected, direction)
+        selected=self.model.nodes.get(self.selected,{}) if self.model else {}
+        actual=selected.get('reference_of',self.selected)
+        if self.model and actual in self.model.original:
+            self._branch_highlight=True
+            if selected.get('reference_of') and selected.get('kind')=='subsystem':
+                self.highlights = self.model.path_edges(actual,'upstream',seed_pins=selected['inputs']) if direction!='downstream' else set()
+            elif direction == 'branch':
+                if hasattr(self.model,'branch_edges'):self.highlights=self.model.branch_edges(actual)
+                else:self.highlights=self.model.path_edges(actual,'upstream') | self.model.path_edges(actual,'downstream')
+            else:self.highlights = self.model.path_edges(actual, direction)
             self.schedule()
             return len(self.highlights)
         return 0
+
+    def clear_highlight(self):
+        self._branch_highlight=False;self.highlights=set();self.schedule()
+
+    def fit_highlight(self, projected=False):
+        if self.layout_pending:return
+        if not projected and self.highlights and (getattr(self.model,'focus',None) or self.scope or getattr(self.model,'pages',1)>1):
+            self.component,self.scope,self.depth=None,'',5
+            self.mode='hierarchy' if len(self.model.original)>400 else 'instances'
+            self.model.project(self.mode,self.component,self.scope,self.depth)
+            self._calculate_layout(False,lambda:self.fit_highlight(True));return
+        self.scene.prepare();self.scene.highlights()
+        keys=set()
+        for e in self.model.edges:
+            if e['id'] in self.scene.highlighted:keys.update((e['source'],e['target']))
+        if not keys:return
+        boxes=[self.model.positions[k] for k in keys]
+        x1,y1=min(p[0] for p in boxes),min(p[1] for p in boxes)
+        x2,y2=max(p[0]+p[2] for p in boxes),max(p[1]+p[3] for p in boxes)
+        self.scale=min((self.canvas.winfo_width()-40)/(x2-x1),(self.canvas.winfo_height()-80)/(y2-y1))
+        self.ox=20-x1*self.scale;self.oy=54-y1*self.scale
+        self.schedule();self.notify()
 
     def schedule(self):
         if self._pending is None:
@@ -259,6 +438,14 @@ class ClockDiagram(tk.Frame):
 
     def _paint(self):
         self._pending = None
+        if self.layout_pending:return
+        if self.model:
+            self.scene.paint()
+            if not self._zoom_active and hasattr(self,'_zoom_last'):
+                self.canvas.update_idletasks()
+                self.last_detail_restore_ms=(time.perf_counter()-self._zoom_last)*1000
+                del self._zoom_last
+            return
         c = self.canvas
         c.delete('all')
         self.rendered_nodes, self.rendered_wires = {}, {}
@@ -268,90 +455,6 @@ class ClockDiagram(tk.Frame):
             c.create_text(cw/2, ch/2-24, text='RTL RESET ARCHITECTURE' if self.tree_type=='reset' else 'RTL CLOCK ARCHITECTURE', fill='#8ea9ce', font=(self.family, 18, 'bold'))
             c.create_text(cw/2, ch/2+14, text='默认两级 · 可添加层级 · 配置规则后开始提取', fill='#617d9f', font=(self.family, 11))
             return
-        scale = self.scale
-        bounds = ((-self.ox)/scale, (48-self.oy)/scale, (cw-self.ox)/scale, (ch-self.oy)/scale)
-        for layer in range(1, self.model.layer_count + 1):
-            band_x, band_width = self.model.layer_spans[layer]
-            x, _ = self.point(band_x, 0)
-            c.create_rectangle(x, 44, x+band_width*scale, ch, fill='#142138' if layer % 2 else '#122035', outline='',tags=('layer-band','layer:'+str(layer)))
-        # A clipped, deduplicated wire segment can stand for several actual
-        # edges sharing a trunk. Its click inspector preserves all edge IDs.
-        segments = {}
-        for edge in self.model.edges:
-            highlighted = bool(self.highlights) and bool(self.highlights.intersection(edge.get('members', [edge['id']])))
-            color = '#70bbff' if highlighted else ('#ee8783' if edge['layer_delta'] < 0 else '#4b6c96')
-            points = self.model.edge_points(edge)
-            for i, (a, b) in enumerate(zip(points, points[1:])):
-                segment = clip_segment(a, b, bounds)
-                if not segment:
-                    continue
-                start, end = self.point(*segment[0]), self.point(*segment[1])
-                if abs(start[0]-end[0]) + abs(start[1]-end[1]) < .6:
-                    continue
-                arrow = i == len(points)-2 and segment[1] == b
-                key = tuple(round(v, 1) for v in start+end) + (color, arrow)
-                entry = segments.setdefault(key, {'coords': start+end, 'color': color, 'arrow': arrow,
-                                                   'selected': highlighted, 'edges': []})
-                entry['edges'].append(edge)
-        for index, segment in enumerate(sorted(segments.values(), key=lambda x: x['selected'])):
-            tag = 'w:{}'.format(index)
-            self.rendered_wires[tag] = segment['edges']
-            c.create_line(*segment['coords'], fill=segment['color'], width=2.3 if segment['selected'] else 1.2,
-                          arrow=tk.LAST if segment['arrow'] else tk.NONE, arrowshape=(6, 7, 3), tags=('wire', tag))
-        visible = 0
-        for index, node in enumerate(self.model.nodes.values()):
-            x, y, w, h = self.model.positions[node['id']]
-            if x+w < bounds[0] or x > bounds[2] or y+h < bounds[1] or y > bounds[3]:
-                continue
-            visible += 1
-            px, py = self.point(x, y)
-            pw, ph = w*scale, h*scale
-            tag = 'n:{}'.format(index)
-            tags = ('node', tag)
-            self.rendered_nodes[tag] = node
-            selected = self.selected == node['id']
-            color = DEVICE_TYPES.get(node.get('kind'), {}).get('color', '#8199b9')
-            if scale < .22:
-                c.create_rectangle(px, py, px+max(2,pw), py+max(1.5,ph), fill=color, outline='', tags=tags)
-                continue
-            self.port_tooltips.update(draw_device(c,node,px,py,w,h,scale,self.family,selected,tags,self._font_cache))
-        self.visible_nodes = visible
-        # Fixed layer headers remain readable while panning and zooming.
-        c.create_rectangle(0, 0, cw, 44, fill='#17263e', outline='')
-        layer_counts = Counter(n['layer'] for n in self.model.nodes.values())
-        for layer in range(1, self.model.layer_count + 1):
-            band_x, band_width = self.model.layer_spans[layer]
-            left, _ = self.point(band_x, 0)
-            right = left + band_width * scale
-            visible_width = min(cw, right) - max(0, left)
-            xx = max(12, left + 12 * scale)
-            if visible_width > 35:
-                c.create_text(xx, 21, text='L{}'.format(layer), anchor='w', fill=COLORS[(layer-1) % len(COLORS)], font=(self.family, 10, 'bold'))
-                if visible_width > 145:
-                    caption='{} 图元{}'.format(layer_counts[layer], ' · 同层展开' if self.model.layer_columns[layer]>1 else '')
-                    c.create_text(xx+29, 21, text=caption, anchor='w', fill='#7f99bb', font=(self.family, 8))
-        if not self.model.nodes:
-            c.create_text(cw/2, ch/2, text='当前范围没有匹配实例', fill='#94abc9', font=(self.family, 13))
-        self._draw_map()
-
-    def _draw_map(self):
-        c = self.minimap
-        c.delete('all')
-        if not self.model:
-            return
-        width, height = 176, 98
-        _, _, ww, hh = self.model.bounds
-        ratio = min((width-16)/ww, (height-14)/hh)
-        self._map_transform = ratio, 8, 7
-        bins = Counter()
-        for x, y, w, h in self.model.positions.values():
-            bins[(round((x+w/2)*ratio/2), round((y+h/2)*ratio/2))] += 1
-        for (x, y), count in bins.items():
-            c.create_rectangle(8+x*2-1, 7+y*2-1, 8+x*2+2, 7+y*2+2, fill='#6a98cf' if count<10 else '#9cc3f0', outline='')
-        left, top = -self.ox/self.scale, (44-self.oy)/self.scale
-        right, bottom = (self.canvas.winfo_width()-self.ox)/self.scale, (self.canvas.winfo_height()-self.oy)/self.scale
-        c.create_rectangle(max(1,8+left*ratio),max(1,7+top*ratio),min(width-1,8+right*ratio),min(height-1,7+bottom*ratio), outline='#54b2ff', width=1.5)
-
     def _hit(self, x, y):
         candidates = self.canvas.find_overlapping(x-4, y-4, x+4, y+4)
         for item in reversed(candidates):
@@ -385,6 +488,7 @@ class ClockDiagram(tk.Frame):
             hit = self._hit(event.x, event.y)
             if hit:
                 if hit[0]=='node':
+                    self._remember_position()
                     self.select(hit[1])
                 else:
                     self.on_edge(hit[1])
@@ -392,7 +496,7 @@ class ClockDiagram(tk.Frame):
     def _double(self, event):
         hit = self._hit(event.x, event.y)
         if hit and hit[0]=='node':
-            if hit[1].get('aggregate'):
+            if hit[1].get('aggregate') or hit[1].get('kind')=='subsystem':
                 self.expand(hit[1])
             else:
                 self.locate(hit[1])

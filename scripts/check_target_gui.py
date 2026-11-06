@@ -28,8 +28,12 @@ def phase(out, fixtures, large, stage):
         assert '目标结构连接已解析' in app.state.get()
         edge=next(iter(app.graph['edges']));app._edge_evidence(edge)
         text=app.evidence_text.get('1.0','end')
-        assert '未执行输出全负载核验' in text and '此方向没有证据' not in text
+        assert '输入反查已找到此输出' in text and '输出全负载方向：未执行' in text
+        assert '验证结论' in text and 'npiPort' not in text
+        app.raw_evidence_var.set(True);app.toggle_raw_evidence()
+        text=app.evidence_text.get('1.0','end')
         assert '来源端例化连接' in text and 'npiPort' in text
+        app.raw_evidence_var.set(False);app.toggle_raw_evidence()
         app.inspector_tabs.select(1);pump(app)
         app.export_svg(out/'clock.svg');ET.parse(str(out/'clock.svg'))
         app.export_result(out/'clock.json')

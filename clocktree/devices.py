@@ -1,5 +1,6 @@
 """User-declared clock/reset device kinds and shared Tk/SVG geometry."""
 import math
+import re
 import unicodedata
 from xml.sax.saxutils import escape, quoteattr
 from .profiles import profile, rule_ports
@@ -11,6 +12,7 @@ DEVICE_TYPES = {
     'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
     'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#bb9bff', 'fill': '#302847'},
     'rsy_sync': {'label': 'RSY_SYNC', 'short': 'RSY_SYNC', 'color': '#f39bbd', 'fill': '#402939'},
+    'subsystem': {'label': '子系统 SUBSYSTEM', 'short': 'SUBSYS', 'color': '#80ceea', 'fill': '#193c4d'},
 }
 TYPE_LABELS = [DEVICE_TYPES[kind]['label'] for kind in profile({})['kinds']]
 LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
@@ -35,7 +37,7 @@ def matching_rule(node, layer, rule):
     inputs, output = rule_ports(rule)
     return (node['layer'] == layer['index'] and node['module'] == rule['module'] and
             scope_match(node['id'] if 'id' in node else node['path'], layer['hierarchy']) and
-            node['inputs'] == inputs and node['output'] == output)
+            node.get('configured_inputs', node['inputs']) == inputs and (node.get('output') or None) == (output or None))
 
 
 def resolve_kind(node, config):
@@ -76,18 +78,34 @@ def typed_nodes(graph):
 def node_height(node):
     if node.get('aggregate'):
         return 144
-    return max(152, 88 + 32 * len(node['inputs']))
+    return max(152, 88 + 32 * len(display_inputs(node)))
+
+
+def display_inputs(node):
+    if node.get('kind') != 'subsystem' or node.get('expand_bus'):return node['inputs']
+    result=[]
+    for pin in node['inputs']:
+        base=re.sub(r'\[-?\d+\]$','',pin)
+        if base not in result:result.append(base)
+    return result
+
+
+def pin_index(node,pin):
+    pins=display_inputs(node)
+    if pin in pins:return pins.index(pin)
+    base=re.sub(r'\[-?\d+\]$','',pin)
+    return pins.index(base) if base in pins else 0
 
 
 def port_offsets(node, width, height):
     """The sole source of pin anchors for symbols and all routed edges."""
     if node.get('aggregate'):
         return [(0, 110)], (width, 110)
-    count = len(node['inputs'])
+    count = len(display_inputs(node))
     middle = (50 + height - 18) / 2
     # Leave room beneath the last signal label for boundary/status markers.
     ys = [middle] if count == 1 else [60 + i * (height - 104) / (count - 1) for i in range(count)]
-    return [(0, y) for y in ys], (width, middle)
+    return [(0, y) for y in ys], ((width, middle) if node.get('output') else None)
 
 
 def _short(text, limit):
@@ -97,6 +115,8 @@ def _short(text, limit):
 def connection_label(node, pin):
     """Instantiation expression only; never substitute a traced net or driver."""
     connection = node.get('port_connections', {}).get(pin)
+    if not connection and node.get('kind')=='subsystem':
+        connection=next((value for key,value in node.get('port_connections',{}).items() if key.startswith(pin+'[')),None)
     if not connection:
         return '未采集'
     if connection.get('status') == 'unconnected':
@@ -159,7 +179,7 @@ def symbol_parts(node, width, height, selected=False):
         width=2 if selected else 1, dash=aggregate)
     path = node.get('path', node['id'])
     title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
-    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-(88 if kind=='rsy_sync' else 70))
+    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-(145 if kind=='rsy_sync' else 112))
     text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-(115 if node.get('trace_timeout') else 20))
     if node.get('trace_timeout'):
         text(width-11, 34, 'trace 超时', size=10, fill='#ffb27b', bold=True, anchor='e')
@@ -181,8 +201,22 @@ def symbol_parts(node, width, height, selected=False):
         line([(width-18, output[1]), output], fill='#8eabc8')
         text(22, 110, '输入', size=9)
         text(width-22, 110, '输出', size=9, anchor='e')
+    elif kind == 'subsystem':
+        text(width-11, 16, 'SUBSYS · L{}'.format(node.get('layer', '?')), size=9, fill=color, bold=True, anchor='e')
+        add('rect', x=width*.57, y=50, w=width*.38, h=height-70, radius=7,
+            fill=info['fill'], stroke=color, width=1.6)
+        text(width*.76, height/2+14, '子系统', size=13, fill=color, bold=True, anchor='center')
+        text(width*.76, height-33, '器件引用' if node.get('reference_of') else '输入终点', size=9, fill='#9bc6db', anchor='center')
+        for pin, (px, py) in zip(display_inputs(node), inputs):
+            line([(px, py), (width*.57, py)])
+            detail = '{} · {}'.format(node.get('reference_of', path), connection_details(node, [pin]))
+            members=[p for p in node['inputs'] if p==pin or p.startswith(pin+'[')]
+            label=trace_pin_label(node,pin)
+            if members!=[pin]:label+=' · {} 位 ▸'.format(len(members))
+            text(7, py-11, label, size=11, max_width=width*.55, tooltip=detail+'\n'+', '.join(members))
+            text(7, py+11, connection_label(node,pin), size=10, fill='#9fcfc3', max_width=width*.55, tooltip=detail)
     elif kind in DEVICE_TYPES:
-        text(width-11, 16, info['short'], size=9, fill=color, bold=True, anchor='e')
+        text(width-11, 16, info['short']+(' · L{}'.format(node['layer']) if 'layer' in node else ''), size=9, fill=color, bold=True, anchor='e')
         symbol_begin = len(parts)
         cy = output[1]
         if kind == 'mux':
@@ -252,7 +286,7 @@ def symbol_parts(node, width, height, selected=False):
             text(10,py+7,connection_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
         text(width-10,output[1]-7,trace_pin_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
         text(width-10,output[1]+7,connection_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
-    for px, py in inputs+[output]:
+    for px, py in inputs+([output] if output else []):
         add('circle', x=px, y=py, r=3, fill='#14253a', stroke=color, width=1.3)
     status_x = width-12
     scope_labels = [label for value, label in [(node.get('scope_input_boundary'), '范围入口'),

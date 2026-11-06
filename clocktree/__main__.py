@@ -8,6 +8,9 @@ from .memory import MemoryResumeError
 def main():
     parser = argparse.ArgumentParser(description="ClockTree7 full RTL clock/reset network extraction")
     commands = parser.add_subparsers(dest="command")
+    inputs = commands.add_parser('discover-inputs', help='Read subsystem formal input ports without tracing')
+    inputs.add_argument('--request', required=True)
+    inputs.add_argument('--out', required=True)
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
     run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
@@ -37,6 +40,12 @@ def main():
     where.add_argument('--gui-latest',action='store_true',help='Inspect this user\'s latest and previous GUI sessions')
     diagnosis.add_argument('--json',action='store_true')
     args = parser.parse_args()
+    if args.command == 'discover-inputs':
+        from .input_ports import discover
+        try: result = discover(args.request, args.out)
+        except Exception as error: parser.exit(1, 'ClockTree7 input discovery: ' + str(error) + '\n')
+        print('CT7_INPUT_READY instances={} ports={}'.format(result['instances'], len(result['ports'])))
+        return 0
     if args.command == 'resume':
         from .recovery import resume, RecoveryError
         try:graph = resume(args.run, args.memory_limit_gib)

@@ -5,6 +5,11 @@ import xml.etree.ElementTree as ET
 from clocktree.viewmodel import GraphView, clip_segment, NODE_WIDTH, COLUMN_STEP
 from clocktree.indexed_view import IndexedGraphView
 from clocktree.storage import index_graph, new_store
+from functools import partial
+
+# These are regression checks for the retained, explicitly selectable layer layout.
+GraphView = partial(GraphView, layout_mode='layers')
+IndexedGraphView = partial(IndexedGraphView, layout_mode='layers')
 
 
 def graph(specs,links):

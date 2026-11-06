@@ -15,7 +15,7 @@ import threading
 import uuid
 
 
-INDEX_VERSION = 1
+INDEX_VERSION = 2
 ARRAY_KEYS = ('nodes', 'edges', 'boundaries', 'components', 'clock_sources', 'reset_sources', 'diagnostics')
 INDEX_THRESHOLD = 8 * 1024 * 1024
 
@@ -84,6 +84,16 @@ class EvidencePath(Sequence):
     def __getitem__(self, key):
         return list(self)[key]
 
+    def tail(self, limit=8):
+        """Read a bounded preview without expanding the complete parent chain."""
+        chain,key=[],self.key
+        conn=self.store.connection()
+        while key and len(chain)<limit:
+            row=conn.execute('SELECT parent,data FROM path_nodes WHERE id=?',(key,)).fetchone()
+            if row is None:raise ValueError('Missing evidence path {}'.format(key))
+            key,data=row;chain.append(json.loads(data))
+        return list(reversed(chain))
+
     def __eq__(self, other):
         return list(self) == other
 
@@ -113,6 +123,8 @@ class ResultStore:
                 CREATE INDEX boundaries_instance ON boundaries(instance);
                 CREATE TABLE records(field TEXT,seq INTEGER,data TEXT,PRIMARY KEY(field,seq));
                 CREATE TABLE header(key TEXT PRIMARY KEY,value TEXT);
+                CREATE TABLE memberships(instance TEXT,component INTEGER,PRIMARY KEY(instance,component));
+                CREATE INDEX memberships_component ON memberships(component);
             ''')
 
     def connection(self):
@@ -207,6 +219,8 @@ class ResultStore:
         data = self.encode(record)
         conn = self.connection()
         if field == 'nodes':
+            conn.executemany('INSERT INTO memberships VALUES (?,?)',
+                             ((record['id'], component) for component in record.get('components', [record['component']])))
             conn.execute('INSERT INTO nodes VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                          (seq, record['id'], record['layer'], record['component'], record['module'], record.get('kind'),
                           bool(record.get('root')), bool(record.get('terminal')), bool(record.get('has_unresolved_output')),
@@ -334,12 +348,12 @@ class ComponentSequence(Sequence):
 
     def __len__(self):
         if self.count is None:
-            self.count = self.store.connection().execute('SELECT COUNT(DISTINCT component) FROM nodes').fetchone()[0]
+            self.count = self.store.connection().execute('SELECT COUNT(DISTINCT component) FROM memberships').fetchone()[0]
         return self.count
 
     def __iter__(self):
-        for component, in self.store.connection().execute('SELECT DISTINCT component FROM nodes ORDER BY component'):
-            yield {'id': component, 'nodes': RecordSequence(self.store, 'nodes', 'component=?', (component,), ids=True)}
+        for component, in self.store.connection().execute('SELECT DISTINCT component FROM memberships ORDER BY component'):
+            yield {'id': component, 'nodes': RecordSequence(self.store, 'nodes', 'id IN (SELECT instance FROM memberships WHERE component=?)', (component,), ids=True)}
 
     def __getitem__(self, key):
         from itertools import islice
@@ -459,7 +473,7 @@ def snapshot_index(path, graph):
 
 
 def _open_pointer(path, pointer):
-    if pointer.get('ct7_index') != INDEX_VERSION or not isinstance(pointer.get('database'), str):
+    if pointer.get('ct7_index') not in (1, INDEX_VERSION) or not isinstance(pointer.get('database'), str):
         raise ValueError('Invalid result index')
     database = (Path(path).parent / pointer['database']).resolve()
     # Sidecars/snapshots are local to their result; never interpret arbitrary URIs.
@@ -467,7 +481,29 @@ def _open_pointer(path, pointer):
         database.relative_to(Path(path).parent.resolve())
     except ValueError:
         raise ValueError('Result index is outside its result directory')
-    graph = ResultStore(database).graph()
+    store = ResultStore(database)
+    if pointer.get('ct7_index') == 1:
+        # Old session snapshots can contain only an index pointer, without a
+        # complete JSON fallback. Migrate a private copy; leave history intact.
+        from .paths import user_state_root
+        identity=str(database)+json.dumps(fingerprint(database),sort_keys=True)
+        key=hashlib.sha256(identity.encode('utf-8')).hexdigest()
+        cache=user_state_root()/'index-upgrades';cache.mkdir(parents=True,exist_ok=True)
+        migrated=cache/(key+'.sqlite3')
+        if not migrated.is_file():
+            temporary=cache/(key+'.'+uuid.uuid4().hex+'.tmp')
+            shutil.copyfile(str(database),str(temporary))
+            conn=sqlite3.connect(str(temporary))
+            try:
+                conn.execute('CREATE TABLE IF NOT EXISTS memberships(instance TEXT,component INTEGER,PRIMARY KEY(instance,component))')
+                conn.execute('CREATE INDEX IF NOT EXISTS memberships_component ON memberships(component)')
+                conn.execute('INSERT OR IGNORE INTO memberships SELECT id,component FROM nodes')
+                conn.execute('INSERT OR REPLACE INTO header VALUES (?,?)',('ct7_index_version',str(INDEX_VERSION)))
+                conn.commit()
+            finally:conn.close()
+            os.replace(str(temporary),str(migrated))
+        store=ResultStore(migrated)
+    graph = store.graph()
     graph.update(pointer.get('overrides', {}))
     return graph
 

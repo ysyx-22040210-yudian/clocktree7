@@ -21,7 +21,7 @@ from capture_x11 import x11_image
 def pump(app, predicate=lambda: True, timeout=180):
     # QA-only deadline detects a broken test. The product has no run timeout.
     started = time.monotonic()
-    while not predicate():
+    while not predicate() or (not app._destroying and app.diagram.layout_pending):
         app.update()
         if time.monotonic() - started > timeout:
             raise AssertionError('GUI test did not finish: ' + app.status.get())

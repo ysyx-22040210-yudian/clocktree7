@@ -43,8 +43,11 @@ def _check_gui(graphs, directory):
         app.update()
         for graph in graphs:
             app.show_graph(graph)
-            app.update_idletasks()
-            app.update()
+            import time
+            while app.diagram.layout_pending:
+                app.update()
+                time.sleep(.01)
+            app.update_idletasks();app.update()
             assert len(app.diagram.model.original) == len(graph['nodes'])
             assert len(app.diagram.model.original_edges) == len(graph['edges'])
             app.diagram.fit()

@@ -44,7 +44,7 @@ def test_positions_and_svg_include_layers_beyond_seven_and_empty_columns():
               'layer_delta': b['layer'] - a['layer']} for i, (a, b) in enumerate(zip(nodes, nodes[1:]))]
     graph = {'nodes': nodes, 'edges': edges, 'config': cfg}
     saved = copy.deepcopy(graph)
-    view = GraphView(graph).project()
+    view = GraphView(graph, layout_mode='layers').project()
     assert view.layer_count == 12 and len(view.positions) == 3
     assert view.positions['top.u10'][0] > view.positions['top.u8'][0]
     xml = ET.fromstring(view.svg())

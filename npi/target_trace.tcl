@@ -21,7 +21,7 @@ proc ct_l_ev {h {name ""}} {
 }
 proc ct_l_port {path pin} {
     set base $pin; set bit ""
-    regexp {^(.*)\[([0-9]+)\]$} $pin -> base bit
+    regexp {^(.*)\[(-?[0-9]+)\]$} $pin -> base bit
     set inst [npi_handle_by_name -name $path -scope ""]
     set result [dict create status missing_pin low "" high "" port ""]
     if {$inst eq ""} {return $result}
@@ -61,8 +61,12 @@ proc ct_l_init {} {
 }
 proc ct_l_register {path inputs output emit} {
     global ct_pins_to_trace ct_pin_count ct_l_outputs ct_l_output_rules
-    dict set ct_l_output_rules $path $output
-    foreach pin [concat $inputs [list $output]] {
+    set pins $inputs
+    if {$output ne ""} {
+        dict set ct_l_output_rules $path $output
+        lappend pins $output
+    }
+    foreach pin $pins {
         set role [expr {$pin eq $output ? "output" : "input"}]
         set data [ct_l_port $path $pin]
         set status [dict get $data status]

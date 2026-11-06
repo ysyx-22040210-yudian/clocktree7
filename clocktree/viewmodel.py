@@ -1,7 +1,7 @@
 """Presentation of the complete graph; aggregation never changes the source graph."""
 from collections import Counter, defaultdict, deque
 from xml.sax.saxutils import escape, quoteattr
-from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg
+from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg, pin_index
 from .profiles import tree_type
 
 
@@ -9,7 +9,7 @@ NODE_WIDTH = 382
 COLUMN_STEP = 442
 
 
-def horizontal_ranks(nodes, edges):
+def horizontal_ranks(nodes, edges, same_layer=True):
     """Rank only same-layer connections; keep cycles in one vertical column.
 
     Iterative SCC condensation handles long chains without recursion and keeps
@@ -18,7 +18,7 @@ def horizontal_ranks(nodes, edges):
     successors, predecessors = defaultdict(set), defaultdict(set)
     for edge in edges:
         source, target = edge['source'], edge['target']
-        if nodes[source]['layer'] == nodes[target]['layer']:
+        if not same_layer or nodes[source]['layer'] == nodes[target]['layer']:
             successors[source].add(target)
             predecessors[target].add(source)
     seen, finished = set(), []
@@ -64,8 +64,9 @@ def horizontal_ranks(nodes, edges):
 
 
 class GraphView:
-    def __init__(self, graph):
+    def __init__(self, graph, layout_mode='branch'):
         self.graph = graph
+        self.layout_mode=layout_mode
         self.tree_type = tree_type(graph.get('config',graph))
         self.original = typed_nodes(graph)
         self.layer_count = max([2 if not graph.get('config', {}).get('layers') else len(graph['config']['layers'])] +
@@ -81,7 +82,7 @@ class GraphView:
 
     def project(self, mode='instances', component=None, scope='', depth=5):
         actual = [n for n in self.original.values() if
-                  (component is None or n['component'] == component) and
+                  (component is None or component in n.get('components', [n['component']])) and
                   (not scope or n['id'] == scope or n['id'].startswith(scope + '.') or n['id'].startswith(scope + '['))]
         self.actual_count = len(actual)
         ids = {n['id'] for n in actual}
@@ -132,10 +133,29 @@ class GraphView:
                                         target=dst['id'], target_pin=dp, layer_delta=dst['layer'] - src['layer'], members=[])
                 bundles[key]['members'].append(edge['id'])
             self.edges = list(bundles.values())
+        self._references(component)
         self._layout()
         return self
 
     def _layout(self):
+        if getattr(self, 'defer_layout', False): return
+        from .layout import branch_layout, route_edges
+        if getattr(self, 'layout_mode', 'branch') == 'branch':
+            for key,value in branch_layout(self.nodes,self.edges).items(): setattr(self,key,value)
+            self.layer_columns = dict.fromkeys(range(1,self.layer_count+1),1)
+            self.layer_spans = {layer:(18+(layer-1)*COLUMN_STEP,COLUMN_STEP-24) for layer in self.layer_columns}
+        else: self._layer_layout()
+        self.routes = route_edges(self.nodes,self.edges,self.positions,self.node_columns)
+
+    def _references(self, component=None):
+        from .networks import subsystem_references
+        self.nodes, self.edges = subsystem_references(self.nodes,self.edges,
+            getattr(self,'subsystem_references',True),component)
+        for key,node in list(self.nodes.items()):
+            if node.get('kind')=='subsystem':
+                self.nodes[key]=dict(node,expand_bus=node.get('reference_of',key) in getattr(self,'expanded_buses',set()))
+
+    def _layer_layout(self):
         self.positions = {}
         self.component_tops = {}
         ranks = horizontal_ranks(self.nodes, self.edges)
@@ -155,7 +175,8 @@ class GraphView:
         for key, node in self.nodes.items():
             components[node['component']][self.node_columns[key]].append(key)
             heights[key] = node_height(node)
-            anchors[key] = port_offsets(node, NODE_WIDTH, heights[key])
+            ins, out = port_offsets(node, NODE_WIDTH, heights[key])
+            anchors[key] = ins, out or (NODE_WIDTH, heights[key]/2)
         for edge in self.edges:
             incoming[edge['target']].append(edge)
             if self.node_columns[edge['target']] > self.node_columns[edge['source']]:fanout[edge['source']] += 1
@@ -172,7 +193,7 @@ class GraphView:
                     for edge in incoming[key]:
                         source = edge['source']
                         if source not in self.positions or self.node_columns[source] >= column:continue
-                        index = node['inputs'].index(edge['target_pin']) if edge['target_pin'] in node['inputs'] else 0
+                        index = pin_index(node,edge['target_pin'])
                         desired.append(self.positions[source][1] + anchors[source][1][1] - anchors[key][0][index][1])
                     preferred[key] = sum(desired) / len(desired) if desired else baseline - anchors[key][1][1]
                 next_y = offset
@@ -186,6 +207,7 @@ class GraphView:
         self.bounds = (0, 0, width, max(500, offset))
 
     def edge_points(self, edge):
+        if hasattr(self, 'routes'): return self.routes[edge['id']]
         sx, sy, sw, sh = self.positions[edge['source']]
         tx, ty, tw, th = self.positions[edge['target']]
         source, target = self.nodes[edge['source']], self.nodes[edge['target']]
@@ -216,15 +238,17 @@ class GraphView:
         return exact or [n for n in self.original.values() if query in n['id'].lower() or query in n['module'].lower()]
 
     def actual_edges(self, edge):
-        return [self.original_edges[k] for k in edge['members']] if 'members' in edge else [edge]
+        return [self.original_edges[k] for k in edge['members']] if 'members' in edge else [self.original_edges[edge['id']]]
 
-    def path_edges(self, instance, direction):
+    def path_edges(self, instance, direction, seed_pins=None):
         """All upstream/downstream selected edges, without duplicating shared nodes."""
         queue, seen, result = deque([instance]), {instance}, set()
         adjacency = self.incoming if direction == 'upstream' else self.outgoing
         endpoint = 'source' if direction == 'upstream' else 'target'
         while queue:
-            for edge in adjacency[queue.popleft()]:
+            current=queue.popleft()
+            for edge in adjacency[current]:
+                if current==instance and direction=='upstream' and seed_pins is not None and edge['target_pin'] not in seed_pins:continue
                 result.add(edge['id'])
                 other = edge[endpoint]
                 if other not in seen:
@@ -238,7 +262,7 @@ class GraphView:
         lines = ['<svg xmlns="http://www.w3.org/2000/svg" data-tree-type="{}" width="{}" height="{}" viewBox="0 0 {} {}">'.format(self.tree_type, width, height, width, height),
                  '<rect width="100%" height="100%" fill="#101b2e"/>',
                  '<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6c94c8"/></marker></defs>']
-        for layer in range(1, self.layer_count + 1):
+        for layer in (range(1, self.layer_count + 1) if getattr(self,'layout_mode','branch') == 'layers' else []):
             x, band_width = self.layer_spans[layer]
             lines.append('<rect class="layer-band" data-layer="{}" x="{}" y="12" width="{}" height="{}" rx="10" fill="#152239"/>'.format(layer, x, band_width, height - 24))
             lines.append('<text x="{}" y="46" fill="#a7bfe1" font-size="17" font-family="sans-serif">L{}</text>'.format(x + 13, layer))

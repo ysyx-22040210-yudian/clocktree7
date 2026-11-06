@@ -1,11 +1,11 @@
 """Explicit analysis profiles; clock configurations remain backward compatible."""
 TREE_PROFILES = {
     'clock': {'label': '时钟树', 'signal': '时钟', 'network': '时钟网络',
-              'kinds': ('mux', 'gate', 'occ', 'div'),
+              'kinds': ('mux', 'gate', 'occ', 'div', 'subsystem'),
               'inputs': 'clock_inputs', 'output': 'clock_output',
               'sources': 'clock_sources', 'result': 'clocktree.json'},
     'reset': {'label': '复位树', 'signal': '复位', 'network': '复位网络',
-              'kinds': ('mux', 'rsy_sync'),
+              'kinds': ('mux', 'rsy_sync', 'subsystem'),
               'inputs': 'reset_inputs', 'output': 'reset_output',
               'sources': 'reset_sources', 'result': 'resettree.json'},
 }

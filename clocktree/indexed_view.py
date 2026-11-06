@@ -105,8 +105,9 @@ class SQLSelection:
 
 
 class IndexedGraphView(GraphView):
-    def __init__(self, graph):
+    def __init__(self, graph, layout_mode='branch'):
         self.graph, self.store = graph, graph.store
+        self.layout_mode=layout_mode
         self.tree_type = tree_type(graph.get('config', graph))
         self.original, self.original_edges = RecordMap(graph, 'nodes'), RecordMap(graph, 'edges')
         self.incoming, self.outgoing = Adjacency(self.store, 'target'), Adjacency(self.store, 'source')
@@ -123,7 +124,7 @@ class IndexedGraphView(GraphView):
         prefix = alias + '.' if alias else ''
         clauses, params = [], []
         if component is not None:
-            clauses.append(prefix + 'component=?')
+            clauses.append(prefix + 'id IN (SELECT instance FROM memberships WHERE component=?)')
             params.append(component)
         if scope:
             clauses.append('ct7_scope(' + prefix + 'id,?)')
@@ -150,6 +151,7 @@ class IndexedGraphView(GraphView):
         else:
             self.effective_mode = 'hierarchy'
             self._overview(component, scope, max(1, depth))
+        self._references(component)
         self._layout()
         return self
 
@@ -288,7 +290,7 @@ class IndexedGraphView(GraphView):
 
     def actual_edges(self, edge):
         if 'members' not in edge:
-            return [edge]
+            return [self.original_edges[edge['id']]]
         members = edge['members']
         return QuerySequence(self.store, 'SELECT data FROM edges WHERE id IN (' + members.sql + ')', members.params,
                              decode=True, count=len(members))
@@ -311,9 +313,20 @@ class IndexedGraphView(GraphView):
         self.actual_count, self.focus = len(ids), node['id']
         self.page, self.pages, self.external_edges = 0, 1, 0
         self.effective_mode = 'instances'
+        self._references()
         self._layout()
 
-    def path_edges(self, instance, direction):
+    def branch_edges(self, instance):
+        upstream=self.path_edges(instance,'upstream')
+        downstream=self.path_edges(instance,'downstream')
+        name='ct7_branch_'+uuid.uuid4().hex
+        conn=self.store.connection()
+        conn.execute('CREATE TEMP TABLE '+name+'(id TEXT PRIMARY KEY)')
+        for selection in (upstream,downstream):
+            conn.execute('INSERT OR IGNORE INTO '+name+' '+selection.sql,selection.params)
+        return SQLSelection(self.store,'SELECT id FROM '+name,temporary=name)
+
+    def path_edges(self, instance, direction, seed_pins=None):
         # BFS frontier, visited vertices and selected edges all live in TEMP
         # SQLite tables (temp_store=FILE). No full-design Python ID sets.
         conn = self.store.connection()
@@ -324,6 +337,12 @@ class IndexedGraphView(GraphView):
         conn.execute('INSERT INTO ' + name + '_front VALUES (?)', (instance,))
         match, other = ('target', 'source') if direction == 'upstream' else ('source', 'target')
         try:
+            if seed_pins is not None and direction=='upstream':
+                conn.execute('DELETE FROM '+name+'_front')
+                for pin in seed_pins:
+                    conn.execute('INSERT OR IGNORE INTO '+name+' SELECT id FROM edges WHERE target=? AND target_pin=?',(instance,pin))
+                    conn.execute('INSERT OR IGNORE INTO '+name+'_front SELECT source FROM edges WHERE target=? AND target_pin=?',(instance,pin))
+                conn.execute('INSERT OR IGNORE INTO '+name+'_seen SELECT id FROM '+name+'_front')
             while True:
                 join = ' FROM edges e JOIN ' + name + '_front f ON e.' + match + '=f.id'
                 conn.execute('INSERT OR IGNORE INTO ' + name + ' SELECT e.id' + join)

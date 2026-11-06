@@ -52,6 +52,11 @@ class RuleDialog(tk.Toplevel):
     def __init__(self, app, layer, rule, callback):
         super().__init__(app)
         self.app, self.callback = app, callback
+        self.layer_index=layer
+        self.hierarchy=app.get_config(validate=False)['layers'][layer-1]['hierarchy']
+        self.input_regex=rule.get('input_regex','.*')
+        self._confirmed=None
+        self._old_selection=copy.deepcopy(rule.get('port_selection',{}))
         self.tree_type = app._active_tree_type
         self.info = TREE_PROFILES[self.tree_type]
         self.input_key, self.output_key = self.info['inputs'], self.info['output']
@@ -71,6 +76,7 @@ class RuleDialog(tk.Toplevel):
                                          if self.tree_type=='reset' else '选择器可多输入；门控、OCC、DIV 均为单输入，四类都只有一个关注输出。'))
         ttk.Label(frame,textvariable=self.type_hint,style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=(6,5))
         self.fields = {}
+        self.entries={}
         for key, label, value in [('module','Module 定义名',rule.get('module','')),
                                   (self.input_key,'关注的{}输入口（多个以逗号分隔）'.format(self.info['signal']),', '.join(rule.get(self.input_key,[]))),
                                   (self.output_key,'唯一关注的{}输出口'.format(self.info['signal']),rule.get(self.output_key,''))]:
@@ -79,8 +85,13 @@ class RuleDialog(tk.Toplevel):
             entry = ttk.Entry(frame, textvariable=variable, width=46)
             entry.pack(fill='x', ipady=3)
             self.fields[key] = variable
+            self.entries[key]=entry
             if key=='module':
                 self.first = entry
+        self.preprocess_button=ttk.Button(frame,text='读取 elab 输入端口 → 正则筛选 → 勾选确认',command=self.edit_inputs)
+        self.preprocess_button.pack(fill='x',pady=8)
+        self.selection_status=tk.StringVar(value='子系统需在编辑期间确认 input 名单；主提取不会运行正则。')
+        ttk.Label(frame,textvariable=self.selection_status,style='Muted.TLabel',wraplength=430).pack(anchor='w')
         ttk.Label(frame,text='器件外观预览',style='Small.TLabel').pack(anchor='w',pady=(12,6))
         self.preview=tk.Canvas(frame,width=440,height=158,bg='#101b2e',highlightthickness=0)
         self.preview.pack(fill='x')
@@ -93,6 +104,9 @@ class RuleDialog(tk.Toplevel):
         ttk.Button(actions, text='保存规则', style='Accent.TButton', command=self.save).pack(side='right', padx=8)
         self.kind_var.trace('w',self.update_preview)
         for variable in self.fields.values():variable.trace('w',self.update_preview)
+        self.fields['module'].trace('w',self.invalidate_ports)
+        if rule.get('kind')=='subsystem' and self._old_selection.get('module')==rule.get('module') and self._old_selection.get('hierarchy')==self.hierarchy:
+            self._confirmed=(rule['module'],self.hierarchy,self.input_regex,tuple(rule.get(self.input_key,[])))
         self.update_preview()
         self.bind('<Return>', lambda e:self.save())
         self.bind('<Escape>', lambda e:self.destroy())
@@ -111,7 +125,13 @@ class RuleDialog(tk.Toplevel):
                 self.input_key:[x.strip() for x in self.fields[self.input_key].get().replace('，',',').split(',') if x.strip()],
                 self.output_key:self.fields[self.output_key].get().strip(),'kind':kind}
         inputs,output=rule_ports(rule,self.tree_type)
-        if not rule['module'] or not inputs or not output:
+        if kind=='subsystem':
+            if self._confirmed != (rule['module'],self.hierarchy,self.input_regex,tuple(inputs)):
+                self.error.set('请先读取 elab 输入端口，正则筛选并勾选确认后再保存。');return
+            rule.pop(self.output_key,None)
+            rule['input_regex']=self.input_regex
+            rule['port_selection']={'module':rule['module'],'hierarchy':self.hierarchy,'regex':self.input_regex,'confirmed':True}
+        if not rule['module'] or not inputs or (kind!='subsystem' and not output):
             self.error.set('请填写 module 名、至少一个输入口和唯一输出口。')
             return
         if len(set(inputs))!=len(inputs) or output in inputs:
@@ -123,17 +143,40 @@ class RuleDialog(tk.Toplevel):
         self.callback(rule)
         self.destroy()
 
+    def edit_inputs(self):
+        from .input_view import InputPortDialog
+        module=self.fields['module'].get().strip()
+        if not module:self.error.set('请先填写 module 名。');return
+        def confirmed(names,expression,rows):
+            self.input_regex=expression
+            self.fields[self.input_key].set(', '.join(names))
+            self._confirmed=(module,self.hierarchy,expression,tuple(names))
+            self.selection_status.set('已确认 {} 个 input 端口；正则：{}'.format(len(names),expression))
+            self.error.set('')
+        InputPortDialog(self,self.app.get_config(validate=False),module,self.hierarchy,self.input_regex,
+                        [p.strip() for p in self.fields[self.input_key].get().split(',') if p.strip()],confirmed)
+
+    def invalidate_ports(self,*args):
+        self._confirmed=None
+        if LABEL_TO_KIND.get(self.kind_var.get())=='subsystem':self.selection_status.set('Module 已修改，请重新读取、筛选并确认输入口。')
+
     def update_preview(self,*args):
         c=self.preview
         c.delete('all')
         kind=LABEL_TO_KIND.get(self.kind_var.get())
+        subsystem=kind=='subsystem'
+        self.preprocess_button.configure(state='normal' if subsystem else 'disabled')
+        self.entries[self.input_key].configure(state='readonly' if subsystem else 'normal')
+        self.entries[self.output_key].configure(state='disabled' if subsystem else 'normal')
+        if subsystem:self.type_hint.set('子系统只有输入终点。直接父层：'+(self.hierarchy or '设计顶层'))
+        else:self.type_hint.set('MUX 可多输入；其他器件为一个关注输入和一个关注输出。')
         if kind not in self.info['kinds']:
             c.create_text(220,78,text='选择器件类型后预览外观',fill='#8da7ca',font=(self.app.family,11))
             return
         pins=[v.strip() for v in self.fields[self.input_key].get().replace('，',',').split(',') if v.strip()]
         pins=pins or (['输入 1','输入 2'] if kind=='mux' else ['输入'])
         node={'id':'u_instance','module':self.fields['module'].get().strip() or 'module_name',
-              'kind':kind,'inputs':pins,'output':self.fields[self.output_key].get().strip() or '输出'}
+              'kind':kind,'inputs':pins,'output':None if subsystem else self.fields[self.output_key].get().strip() or '输出'}
         h=node_height(node)
         scale=min(1.,142/h)
         draw_device(c,node,(440-242*scale)/2,8,242,h,scale,self.app.family,font_cache=self.preview_fonts)
@@ -175,6 +218,8 @@ class ClockTreeApp(tk.Tk):
         self.runs.mkdir(parents=True, exist_ok=True)
         self.events = queue.Queue()
         self._session_store=SessionStore(self.runs,session_dir) if remember else None
+        from .ui_state import UIState
+        self.ui_state=UIState((Path(session_dir) if session_dir else user_state_root())/'ui-preferences.json')
         self._session_writer=SessionWriter(self._session_store,lambda error:self.events.put(('session_save_error',error))) if remember else None
         self._session_ready=False
         self._session_restoring=False
@@ -510,14 +555,26 @@ class ClockTreeApp(tk.Tk):
         searchrow.pack(fill='x')
         ttk.Label(searchrow,text='定位',style='Small.TLabel').pack(side='left',padx=(0,8))
         self.search_var=tk.StringVar()
-        self.search_entry=ttk.Entry(searchrow,textvariable=self.search_var)
+        self.search_entry=ttk.Combobox(searchrow,textvariable=self.search_var)
         self.search_entry.pack(side='left',fill='x',expand=True)
         self.search_entry.bind('<Return>',lambda e:self.locate_query())
+        self.search_entry.bind('<<ComboboxSelected>>',lambda e:self.locate_query())
+        ttk.Button(searchrow,text='清空历史',command=self.clear_search_history).pack(side='right',padx=4)
         self.locate_button=ttk.Button(searchrow,text='查找实例',command=self.locate_query)
         self.locate_button.pack(side='left',padx=6)
         ttk.Button(searchrow,text='下一个',command=lambda:self.locate_query(True)).pack(side='left')
         self.match_label=ttk.Label(searchrow,text='路径 / module',style='Muted.TLabel',width=15,anchor='e')
         self.match_label.pack(side='left',padx=(6,0))
+        navigation=ttk.Frame(self.center,padding=(14,0,14,7),style='White.TFrame');navigation.pack(fill='x')
+        ttk.Button(navigation,text='← 后退',command=lambda:self.diagram.navigate_history()).pack(side='left')
+        ttk.Button(navigation,text='前进 →',command=lambda:self.diagram.navigate_history(True)).pack(side='left',padx=4)
+        self.layout_var=tk.StringVar(value='分支紧凑布局')
+        layout_combo=ttk.Combobox(navigation,textvariable=self.layout_var,values=['分支紧凑布局','按层排列'],state='readonly',width=13)
+        layout_combo.pack(side='left',padx=6);layout_combo.bind('<<ComboboxSelected>>',self.change_layout)
+        ttk.Button(navigation,text='取消布局',command=lambda:self.diagram.cancel_layout()).pack(side='left')
+        self.references_var=tk.BooleanVar(value=True)
+        ttk.Checkbutton(navigation,text='子系统分支引用',variable=self.references_var,command=self.change_layout).pack(side='left',padx=7)
+        ttk.Button(navigation,text='问题表 / CSV',command=self.open_issues).pack(side='right')
         scopebar=tk.Frame(self.center,bg='#edf2fa',height=31)
         scopebar.pack(fill='x')
         scopebar.pack_propagate(False)
@@ -588,8 +645,14 @@ class ClockTreeApp(tk.Tk):
         self.expand_button.pack(fill='x',pady=(6,6))
         paths=ttk.Frame(prop,style='White.TFrame')
         paths.pack(fill='x')
-        ttk.Button(paths,text='上游全路径',command=lambda:self.highlight_path('upstream')).pack(side='left',fill='x',expand=True,padx=(0,4))
-        ttk.Button(paths,text='下游全路径',command=lambda:self.highlight_path('downstream')).pack(side='left',fill='x',expand=True)
+        self.upstream_button=ttk.Button(paths,text='上游 (0)',command=lambda:self.jump_neighbour('upstream'))
+        self.upstream_button.pack(side='left',fill='x',expand=True,padx=(0,4))
+        self.downstream_button=ttk.Button(paths,text='下游 (0)',command=lambda:self.jump_neighbour('downstream'))
+        self.downstream_button.pack(side='left',fill='x',expand=True)
+        ttk.Button(prop,text='高亮整个分支（全部上游 + 全部下游）',command=lambda:self.highlight_path('branch')).pack(fill='x',pady=5)
+        highlight_actions=ttk.Frame(prop);highlight_actions.pack(fill='x')
+        ttk.Button(highlight_actions,text='适配高亮范围',command=lambda:self.diagram.fit_highlight()).pack(side='left',expand=True,fill='x')
+        ttk.Button(highlight_actions,text='清除高亮',command=lambda:self.diagram.clear_highlight()).pack(side='left',expand=True,fill='x')
         self.connection_title=ttk.Label(prop,text='相关端口连接',style='Small.TLabel')
         self.connection_title.pack(anchor='w',pady=(16,5))
         self.connections=ttk.Treeview(prop,columns=('direction','pin'),show='tree headings',height=5,selectmode='browse')
@@ -609,7 +672,10 @@ class ClockTreeApp(tk.Tk):
         self.connection_next=ttk.Button(connection_pager,text='下一页',command=lambda:self.connection_page(1),state='disabled')
         self.connection_next.pack(side='right')
         ttk.Label(prop,text='单击连线查看证据 · 双击对端定位',style='Muted.TLabel').pack(anchor='w',pady=(6,0))
-        self.evidence_text=self._scroll_text(ev,self.mono,8)
+        self.raw_evidence_var=tk.BooleanVar(value=False)
+        ttk.Checkbutton(ev,text='展开原始证据（按需读取 NPI 路径）',variable=self.raw_evidence_var,command=self.toggle_raw_evidence).pack(anchor='w',padx=10,pady=7)
+        self.evidence_text=self._scroll_text(ev,self.family,9)
+        ttk.Button(diag,text='打开完整问题表 · 筛选 / 定位 / 导出',command=self.open_issues).pack(fill='x',padx=8,pady=8)
         self.diag_text=self._scroll_text(diag,self.family,9)
         self._properties('全量时钟树架构', [('选择节点','查看真实 RTL 实例、输入输出端口和上下游连接。'),('选择连线','查看本次提取的 NPI 连接证据。'),('层次概览','虚线框表示多个真实实例的聚合，双击展开。')])
 
@@ -849,6 +915,9 @@ class ClockTreeApp(tk.Tk):
             elif kind=='rsy_sync':
                 c.create_rectangle(x,8,x+24,25,fill='#ffe6ef',outline='#c86c93')
                 c.create_line(x+7,12,x+7,21,x+17,21,x+17,12,fill='#c86c93')
+            elif kind=='subsystem':
+                c.create_rectangle(x+5,8,x+24,25,fill='#e3f4fa',outline=color)
+                for yy in (12,20):c.create_line(x,yy,x+5,yy,fill=color)
             else:
                 c.create_polygon(x+4,8,x+20,8,x+24,12,x+24,21,x+20,25,x+4,25,x,21,x,12,fill='#eee5ff' if kind=='div' else '#fff0d7',outline=color)
             label={'mux':'MUX' if self._active_tree_type=='reset' else '选择器','gate':'门控'}.get(kind,DEVICE_TYPES[kind]['short'])
@@ -932,7 +1001,7 @@ class ClockTreeApp(tk.Tk):
         self.rules_tree.configure(height=min(6,max(3,len(rules))))
         for i,rule in enumerate(rules):
             inputs,output=rule_ports(rule,self._active_tree_type)
-            self.rules_tree.insert('', 'end',iid=str(i),text=rule['module'],values=(kind_label(rule.get('kind'),self._active_tree_type),', '.join(inputs),output))
+            self.rules_tree.insert('', 'end',iid=str(i),text=rule['module'],values=(kind_label(rule.get('kind'),self._active_tree_type),', '.join(inputs),output or '—'))
 
     def add_rule(self,rule=None):
         if rule is not None:
@@ -1101,15 +1170,15 @@ class ClockTreeApp(tk.Tk):
         row.pack(fill='x')
         for index,kind in enumerate(info['kinds']):
             card=ttk.Frame(row,style='White.TFrame',padding=(0,0,12,0))
-            card.grid(row=index//2,column=index%2,sticky='nsew',pady=(0,12))
+            card.grid(row=index//3,column=index%3,sticky='nsew',pady=(0,12))
             ttk.Label(card,text=kind_label(kind,self._active_tree_type),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
-            ttk.Label(card,text='多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出',style='Muted.TLabel').pack(anchor='w',pady=(0,9))
-            canvas=tk.Canvas(card,width=270,height=164,bg='#101b2e',highlightthickness=0)
+            ttk.Label(card,text='多个独立输入 · 无输出' if kind=='subsystem' else ('多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出'),style='Muted.TLabel').pack(anchor='w',pady=(0,9))
+            canvas=tk.Canvas(card,width=270,height=178,bg='#101b2e',highlightthickness=0)
             canvas.pack()
             is_reset=self._active_tree_type=='reset'
             node={'id':'u_'+self._active_tree_type+'_'+kind,'module':self._active_tree_type+'_'+kind,'kind':kind,
                   'inputs':(['rst0_ni','rst1_ni'] if kind=='mux' else ['rst_ni']) if is_reset else (['clk0_i','clk1_i'] if kind=='mux' else ['clk_i']),
-                  'output':'rst_no' if is_reset else 'clk_o'}
+                  'output':None if kind=='subsystem' else 'rst_no' if is_reset else 'clk_o'}
             draw_device(canvas,node,14,14,242,node_height(node),1.,self.family)
         ttk.Label(frame,text=('RSY_SYNC 仅展示复位输入/输出；图内同步标记不增加外部时钟连线。' if self._active_tree_type=='reset' else '模型展示关注端口；DIV 的 ÷N 为类型标记，未推断实际分频比。'),style='Muted.TLabel').pack(anchor='w',pady=(18,0))
         ttk.Button(frame,text='关闭',command=dialog.destroy).pack(anchor='e',pady=(18,0))
@@ -1183,6 +1252,7 @@ class ClockTreeApp(tk.Tk):
         threading.Thread(target=worker,daemon=True).start()
 
     def show_graph(self,graph,path=None,graph_token=None):
+        self._latest_job_failure=None
         runtime=graph.get('metadata',{}).get('runtime',{})
         if runtime.get('journal_directory') and Path(runtime['journal_directory']).is_dir():
             self._runtime_directory=Path(runtime['journal_directory'])
@@ -1215,6 +1285,13 @@ class ClockTreeApp(tk.Tk):
         self.component_combo.configure(values=values)
         self.component_combo.current(0)
         self.diagram.load(graph)
+        preferences=self.ui_state.get(graph['config'])
+        self.diagram.layout_mode=preferences.get('layout','branch')
+        self.layout_var.set('按层排列' if self.diagram.layout_mode=='layers' else '分支紧凑布局')
+        self.references_var.set(preferences.get('subsystem_references',True))
+        self.diagram.model.subsystem_references=self.references_var.get()
+        if preferences:self.diagram.rebuild()
+        self.search_entry.configure(values=preferences.get('searches',[]))
         self.match_query,self.match_index='',-1
         self.match_label.configure(text='路径 / module')
         self.selected_object=None
@@ -1232,7 +1309,7 @@ class ClockTreeApp(tk.Tk):
             ('提取方式',EXTRACTION_MODES[summary.get('extraction_mode','full')]),
             ('完整性','全部关注输入反查驱动；末端表示没有已配置的下游器件。普通负载未核验。' if summary.get('extraction_mode')=='target' else '全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
-        self._replace_text(self.diag_text,json.dumps({'summary':summary,'diagnostics':graph.get('diagnostics',[])[:500],'diagnostic_rows_shown':min(500,len(graph.get('diagnostics',[]))),'metadata':graph.get('metadata',{})},ensure_ascii=False,indent=2))
+        self._replace_text(self.diag_text,'{} 个诊断 · {} 个未解析端点\n\n打开完整问题表，可筛选、搜索、分页、定位和导出全部记录。\n正常范围边界不作为未解析错误。'.format(len(graph.get('diagnostics',[])),summary.get('unresolved',0)))
         self.refresh_nodes()
         self.refresh_runs()
         self.set_status('架构图就绪 · {:,} 实例 / {:,} 连接 · 滚轮缩放，拖动画布平移'.format(summary['instances'],summary['edges']))
@@ -1256,6 +1333,7 @@ class ClockTreeApp(tk.Tk):
         self._launch_extraction(directory,result_path,command)
 
     def _launch_extraction(self,directory,result_path,command,resuming=False):
+        self._latest_job_failure=None
         self.job_dir=directory
         if self._session_store:
             write_json(self._session_store.directory/'active-job.json',{'directory':str(directory),'command':command})
@@ -1408,6 +1486,7 @@ class ClockTreeApp(tk.Tk):
                     self.error_messages.append(item[2])
                     if was_extract and self.job_dir:
                         write_json(self.job_dir/'gui-job.json',{'state':'failed','error':item[2]})
+                        self._latest_job_failure={'code':'fatal','message':item[2],'run_directory':str(self.job_dir)}
                     if not self._closing:self.show_error(item[1],item[2])
                 elif kind=='cancelled':
                     self._set_busy(None)
@@ -1524,6 +1603,9 @@ class ClockTreeApp(tk.Tk):
     def locate_query(self,next_match=False):
         if not self.graph:return
         query=self.search_var.get().strip()
+        if not next_match and query:
+            self.ui_state.search(self.graph['config'],query)
+            self.search_entry.configure(values=self.ui_state.get(self.graph['config']).get('searches',[]))
         matches=self.diagram.model.find(query)
         if not matches:
             self.match_label.configure(text='没有匹配实例')
@@ -1532,6 +1614,67 @@ class ClockTreeApp(tk.Tk):
         self.match_query=query
         self.match_label.configure(text='{} / {} 匹配'.format(self.match_index+1,len(matches)))
         self.diagram.locate(matches[self.match_index])
+
+    def clear_search_history(self):
+        config=self.graph['config'] if self.graph else self.get_config(False)
+        self.ui_state.update(config,searches=[]);self.search_entry.configure(values=[])
+
+    def change_layout(self,event=None):
+        if not self.graph:return
+        self.diagram.layout_mode='layers' if self.layout_var.get()=='按层排列' else 'branch'
+        self.diagram.model.subsystem_references=self.references_var.get()
+        self.ui_state.update(self.graph['config'],layout=self.diagram.layout_mode,subsystem_references=self.references_var.get())
+        self.diagram.rebuild()
+
+    def open_issues(self):
+        extra=[]
+        directory=getattr(self,'_runtime_directory',None)
+        if directory:
+            report=diagnose(directory)
+            if report.get('state') in ('failed','interrupted'):
+                failure=report.get('last_failure') or {}
+                extra.append({'code':'fatal','message':'{}：{}'.format(report.get('label','运行阶段'),
+                    failure.get('detail') or report.get('detail') or failure.get('error') or '任务未正常结束，请查看阶段日志'),
+                    'run_directory':str(directory),'stage':report.get('stage')})
+        if not extra and getattr(self,'_latest_job_failure',None):extra.append(self._latest_job_failure)
+        from .issue_view import IssueDialog
+        IssueDialog(self,extra)
+
+    def locate_issue_object(self,instance,pin=''):
+        if self.diagram.model and instance in self.diagram.model.original:
+            self.diagram.issue_port=(instance,pin)
+            self.diagram.locate(self.diagram.model.original[instance])
+            self.set_status('问题端口：{}.{}'.format(instance,pin))
+
+    def locate_issue(self,row):
+        if row[5] and self.diagram.model and row[5] in self.diagram.model.original:self.locate_issue_object(row[5],row[6]);return
+        detail=json.loads(row[-1]);layer=detail.get('layer')
+        if layer and 1<=int(layer)<=len(self.layers):
+            self.select_layer(int(layer));self.set_status('已定位 L{} 规则：{}'.format(layer,detail.get('module','')))
+            for key in self.rules_tree.get_children():
+                if self.rules_tree.item(key,'text')==detail.get('module'):
+                    self.rules_tree.selection_set(key);self.rules_tree.see(key);break
+        else:
+            if detail.get('run_directory'):self._runtime_directory=Path(detail['run_directory']);self._runtime_stamp=None
+            self.show_log(True);self.log_source.set('阶段日志');self.set_status(row[8]+' · '+row[9])
+
+    def jump_neighbour(self,direction):
+        if not self.selected_object or self.selected_object.get('aggregate'):return
+        node=self.selected_object;model=self.diagram.model
+        if node.get('reference_of'):
+            if direction=='upstream' and node.get('reference_source'):self.diagram.locate(model.original[node['reference_source']])
+            return
+        edges=model.incoming[node['id']] if direction=='upstream' else model.outgoing[node['id']]
+        endpoint='source' if direction=='upstream' else 'target'
+        if not edges:self.set_status('当前器件没有已解析的'+('上游' if direction=='upstream' else '下游')+'连接。');return
+        if hasattr(model,'store'):
+            match='target' if direction=='upstream' else 'source'
+            neighbours=[r[0] for r in model.store.connection().execute('SELECT DISTINCT '+endpoint+' FROM edges WHERE '+match+'=? LIMIT 2',(node['id'],))]
+        else:neighbours=list({e[endpoint] for e in edges})
+        if len(neighbours)==1:self.diagram.locate(model.original[neighbours[0]])
+        else:
+            from .navigation import NeighbourDialog
+            NeighbourDialog(self,node['id'],direction)
 
     def change_mode(self,event=None):
         self.diagram.mode='hierarchy' if self.view_mode.get()=='RTL 层次概览' else 'instances'
@@ -1545,6 +1688,7 @@ class ClockTreeApp(tk.Tk):
 
     def view_changed(self,info):
         self.view_mode.set('RTL 层次概览' if info['mode']=='hierarchy' else '实例明细')
+        self.layout_var.set('按层排列' if info.get('layout_mode')=='layers' else '分支紧凑布局')
         if hasattr(self,'component_ids'):
             if info['component'] not in self.component_ids:
                 self.component_ids.append(info['component'])
@@ -1576,8 +1720,11 @@ class ClockTreeApp(tk.Tk):
         text.yview_moveto(0)
 
     def inspect_node(self,node):
+        if node.get('reference_of'):
+            node=dict(node,id=node['reference_of'])
         self.selected_object=node
-        self.expand_button.configure(state='normal' if node.get('aggregate') else 'disabled')
+        self.expand_button.configure(state='normal' if node.get('aggregate') or node.get('kind')=='subsystem' else 'disabled',
+                                     text='展开 / 收起总线各位' if node.get('kind')=='subsystem' else '展开此 RTL 层次')
         if node.get('aggregate'):
             fields=[('RTL 范围',node['path']),('显示类型','层次聚合（不是新增的 RTL 实例）'),
                     ('归属层','L{}'.format(node['layer'])),('实际实例数',len(node['members'])),
@@ -1594,9 +1741,9 @@ class ClockTreeApp(tk.Tk):
         else:
             boundaries=self.graph.boundaries_for(node['id']) if isinstance(self.graph,IndexedGraph) else [b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
             fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'),self._active_tree_type)),('传播层次','L{}'.format(node['layer'])),
-                    ('关注输入','\n'.join(node['inputs'])),('关注输出',node['output']),
+                    ('关注输入','\n'.join(node['inputs'])),('关注输出',node.get('output') or '无 · 子系统输入终点'),
                     ('输入口例化连接',connection_details(node,node['inputs'])),
-                    ('输出口例化连接',connection_details(node,[node['output']])),
+                    ('输出口例化连接',connection_details(node,[node['output']]) if node.get('output') else '无输出口'),
                     ('连接名来源','NPI 例化端口 npiHighConn；表达式由 elab 还原' if 'port_connections' in node else '该历史结果未采集例化连接名；使用新版重新提取后显示'),
                     ('结构状态',' / '.join(x for value,x in [(node.get('trace_timeout'),'实例 trace 超时'),(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]
@@ -1605,8 +1752,21 @@ class ClockTreeApp(tk.Tk):
                 fields.insert(4,('trace 超时断点','{} / {} · 阈值 {:g} 秒\n已用 {:g} 秒；仅跳过本例化剩余端口'.format(
                     timeout['pin'],timeout['direction'],timeout['limit_seconds'],timeout['elapsed_seconds'])))
             title=node['module']
-            edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]
+            if node.get('reference_of'):
+                if isinstance(self.graph,IndexedGraph):
+                    edges=RecordSequence(self.graph.store,'edges','target=? AND source=?',(node['id'],node.get('reference_source') or ''))
+                else:edges=[edge for edge in self.diagram.model.incoming[node['id']] if edge['target_pin'] in node['inputs']]
+                fields.insert(1,('器件引用','同一个真实子系统；此引用只显示当前分支相关输入。'))
+            else:edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]
             members={node['id']}
+        for direction,button,endpoint in [('upstream',self.upstream_button,'source'),('downstream',self.downstream_button,'target')]:
+            if node.get('reference_of'):count=1 if direction=='upstream' and node.get('reference_source') else 0
+            elif node.get('aggregate'):count=0
+            elif isinstance(self.graph,IndexedGraph):
+                match='target' if direction=='upstream' else 'source'
+                count=self.graph.store.connection().execute('SELECT COUNT(DISTINCT '+endpoint+') FROM edges WHERE '+match+'=?',(node['id'],)).fetchone()[0]
+            else:count=len({e[endpoint] for e in (self.diagram.model.incoming[node['id']] if direction=='upstream' else self.diagram.model.outgoing[node['id']])})
+            button.configure(text='{} ({})'.format('上游' if direction=='upstream' else '下游',count),state='normal' if count else 'disabled')
         self._properties(title,fields)
         self._fill_connections(edges,members)
         self.inspector_tabs.select(0)
@@ -1663,6 +1823,26 @@ class ClockTreeApp(tk.Tk):
         self.inspector_tabs.select(1)
 
     def _edge_evidence(self,edge):
+        from .devices import connection_label
+        source=self.diagram.model.original[edge['source']];target=self.diagram.model.original[edge['target']]
+        directions=edge.get('evidence',{})
+        lines=['{}.{}（{}）'.format(edge['source'],edge['source_pin'],connection_label(source,edge['source_pin'])),
+               '  → {}.{}（{}）'.format(edge['target'],edge['target_pin'],connection_label(target,edge['target_pin'])),'']
+        if directions.get('load') and directions.get('driver'):
+            lines.append('验证结论：输入反查与输出负载双向证据一致。')
+        elif directions.get('driver'):
+            lines.append('验证结论：输入反查已找到此输出。')
+            lines.append('输出全负载方向：未执行。' if self.graph['summary'].get('extraction_mode')=='target' else '输出方向缺少证据，请查看问题表。')
+        else:lines.append('验证结论：缺少输入反查证据，请查看问题表。')
+        lines.append('规则层次：L{} → L{}{}'.format(source['layer'],target['layer'],' · 逆序层连接' if edge['layer_delta']<0 else ''))
+        if edge['source'].rsplit('.',1)[0]!=edge['target'].rsplit('.',1)[0]:lines.append('连接跨越不同 RTL 父层；展开原始证据可回查跨层及别名映射。')
+        from .evidence import mapping_excerpt
+        mapping=mapping_excerpt(edge)
+        if mapping:lines+=['',mapping]
+        self._inspected_edge=edge
+        if not self.raw_evidence_var.get():
+            self._replace_text(self.evidence_text,'\n'.join(lines));return
+        summary_lines=lines+['','原始证据（保留全部 NPI 类型及逐步路径）','']
         lines=['实际端口连接','═'*24,'来源实例',edge['source'],'输出口  '+edge['source_pin'],'',
                '目标实例',edge['target'],'输入口  '+edge['target_pin'],'','层差  {}'.format(edge['layer_delta'])]
         for endpoint,pin_key,label in [('source','source_pin','来源端例化连接'),('target','target_pin','目标端例化连接')]:
@@ -1679,8 +1859,11 @@ class ClockTreeApp(tk.Tk):
                 lines+=['{}. {}'.format(i,step.get('type','')),step.get('name','')]
                 if step.get('net'):lines.append('NET  '+step['net'])
                 lines.append('')
-        self._replace_text(self.evidence_text,'\n'.join(lines))
+        self._replace_text(self.evidence_text,'\n'.join(summary_lines+lines))
         self._inspected_edge=edge
+
+    def toggle_raw_evidence(self):
+        if getattr(self,'_inspected_edge',None):self._edge_evidence(self._inspected_edge)
 
     def inspect_related(self,event=None):
         selection=self.connections.selection()
@@ -1701,7 +1884,7 @@ class ClockTreeApp(tk.Tk):
 
     def highlight_path(self,direction):
         count=self.diagram.trace(direction)
-        self.set_status('{}已高亮 {:,} 条真实连接。'.format('上游' if direction=='upstream' else '下游',count))
+        self.set_status('{}已高亮 {:,} 条真实连接。'.format({'upstream':'上游','downstream':'下游','branch':'整个分支'}[direction],count))
 
     def _replace_text(self,text,value):
         text.configure(state='normal')
@@ -1819,6 +2002,8 @@ class ClockTreeApp(tk.Tk):
 
     def export_svg(self,path=None):
         if not self.graph:return
+        if self.diagram.layout_pending:
+            self.set_status('正在计算布局；完成后即可导出 SVG。');return
         path=path or filedialog.asksaveasfilename(parent=self,title='导出当前范围架构图',defaultextension='.svg',initialfile=self._active_tree_type+'-architecture.svg',filetypes=[('SVG','*.svg')])
         if path:
             try:

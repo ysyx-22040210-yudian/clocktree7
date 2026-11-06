@@ -71,9 +71,17 @@ def validate_config(config, allow_incomplete=False):
             inputs, output = rule_ports(rule, mode)
             if not inputs or not isinstance(inputs, list) or not all(isinstance(p, str) and p for p in inputs):
                 raise ValueError(info['inputs'] + " must be a nonempty list of port names")
-            if not isinstance(output, str) or not output or output in inputs or len(set(inputs)) != len(inputs):
-                raise ValueError('Provide distinct inputs and one distinct ' + info['output'])
             kind = rule.get('kind')
+            if kind == 'subsystem' and output not in (None, ''):
+                raise ValueError('SUBSYSTEM has input terminals only; omit its output')
+            selection = rule.get('port_selection')
+            if kind == 'subsystem' and selection and not allow_incomplete:
+                if (selection.get('module') != rule['module'] or selection.get('hierarchy') != layer['hierarchy'] or
+                        selection.get('regex',rule.get('input_regex')) != rule.get('input_regex')):
+                    raise ValueError('SUBSYSTEM module / hierarchy / regex changed; reopen its editor and confirm input ports again')
+            if len(set(inputs)) != len(inputs) or (kind != 'subsystem' and
+                    (not isinstance(output, str) or not output or output in inputs)):
+                raise ValueError('Provide distinct inputs and one distinct ' + info['output'])
             if (kind is not None or mode == 'reset') and (not isinstance(kind, str) or kind not in info['kinds']):
                 raise ValueError('kind must be ' + ', '.join(info['kinds']) + ' for ' + mode + ' analysis')
             if kind in ('gate', 'occ', 'div', 'rsy_sync') and len(inputs) != 1:
@@ -124,7 +132,7 @@ def write_tcl_config(config, path, output):
             pins, output_pin = rule_ports(rule, tree_type(config))
             inputs = "[list " + " ".join(tcl_string(p) for p in pins) + "]"
             fields = [str(layer["index"]), tcl_string(layer["hierarchy"]),
-                      tcl_string(rule["module"]), inputs, tcl_string(output_pin), tcl_string(rule.get('kind') or '')]
+                      tcl_string(rule["module"]), inputs, tcl_string(output_pin or ''), tcl_string(rule.get('kind') or '')]
             lines.append("lappend ct_rules [list " + " ".join(fields) + "]")
     for key, value in config["design"].items():
         if key in ("elab", "filelist", "top"):

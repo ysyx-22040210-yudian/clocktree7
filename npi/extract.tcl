@@ -106,7 +106,7 @@ proc ct_port_connections {instance pins} {
     set result [dict create]
     foreach pin $pins {
         set base $pin
-        regexp {^(.*)\[([0-9]+)\]$} $pin -> base bit
+        regexp {^(.*)\[(-?[0-9]+)\]$} $pin -> base bit
         dict lappend wanted $base $pin
         dict set result $pin [ct_object status [ct_js unavailable] reason [ct_js port_not_found]]
     }
@@ -163,7 +163,7 @@ proc ct_scope_boundary {path endpoint direction} {
 proc ct_pin {path pin} {
     set base $pin
     set bit ""
-    regexp {^(.*)\[([0-9]+)\]$} $pin -> base bit
+    regexp {^(.*)\[(-?[0-9]+)\]$} $pin -> base bit
     set split [string last . $path]
     set result ""
     if {$split >= 0} {
@@ -637,12 +637,18 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
     set register_context [ct_object instance [ct_js $path] module [ct_js $module] layer $layer]
     ct_journal item_begin $register_stage $register_context "bind instance ports"
     dict set ct_instances $path $layer
+    set configured_inputs $inputs
+    if {$kind eq "subsystem" && $emit && $language_handle ne ""} {
+        set inputs [ct_expand_subsystem $language_handle $inputs]
+    }
+    set pins $inputs
+    if {$output ne ""} {lappend pins $output}
     if {$emit} {
         set connection_fields {}
         if {$language_handle ne ""} {
-            if {[catch {ct_port_connections $language_handle [concat $inputs [list $output]]} connections]} {
+            if {[catch {ct_port_connections $language_handle $pins} connections]} {
                 set connections {}
-                foreach pin [concat $inputs [list $output]] {
+                foreach pin $pins {
                     lappend connections $pin [ct_object status [ct_js unavailable] reason [ct_js connection_query_failed]]
                 }
                 set connections [ct_object {*}$connections]
@@ -650,7 +656,7 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
             set connection_fields [list port_connections $connections]
         }
         ct_emit [ct_object event [ct_js instance] path [ct_js $path] module [ct_js $module] layer $layer \
-            inputs [ct_strings $inputs] output [ct_js $output] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
+            inputs [ct_strings $inputs] configured_inputs [ct_strings $configured_inputs] output [expr {$output eq "" ? "null" : [ct_js $output]}] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
         if {$ct_context} {puts $ct_target_stream [list ct_target $path $module $layer $inputs $output $kind $source]}
     }
     if {$::ct_extraction_mode eq "target"} {
@@ -658,7 +664,7 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
         ct_journal item_end $register_stage $register_context "language ports indexed"
         return
     }
-    foreach pin [concat $inputs [list $output]] {
+    foreach pin $pins {
         set role [expr {$pin eq $output ? "output" : "input"}]
         set direction [expr {$role eq "output" ? "load" : "driver"}]
         set p ""
@@ -779,6 +785,7 @@ proc ct_main {} {
     ct_journal end worker {} "worker configuration ready"
     ct_journal begin import [ct_object top [ct_js $ct_top]] "import elab / RTL"
     source $env(VERDI_HOME)/share/NPI/L1/TCL/npi_L1.tcl
+    source [file join [file dirname [info script]] input_ports.tcl]
     if {$ct_extraction_mode eq "full"} {schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on}
     if {$ct_extraction_mode eq "target"} {
         source [file join [file dirname [info script]] target_trace.tcl]
@@ -955,6 +962,7 @@ proc ct_main {} {
     ct_close_streams
     puts "CT7_COMPLETE instances=[dict size $ct_instances] traces=$count"
 }
+if {[info exists env(CT7_LIBRARY_ONLY)]} {return}
 if {[catch {ct_main} message]} {
     puts stderr "CT7_FATAL: $message\n$::errorInfo"
     catch {ct_journal failed $ct_journal_stage [ct_object operation $ct_journal_context error [ct_js [string range $message 0 4095]]] "Verdi extraction error"}

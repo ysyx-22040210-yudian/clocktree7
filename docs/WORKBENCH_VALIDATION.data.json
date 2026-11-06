@@ -1,0 +1,2443 @@
+{
+  "date": "2026-11-07",
+  "environment": {
+    "os": "CentOS 7.9",
+    "python": "3.6.8",
+    "tk": "8.5.13",
+    "verdi": "O-2018.09-SP2",
+    "vm_memory_gib": 16,
+    "window": [
+      1840,
+      1000
+    ]
+  },
+  "host_tests": {
+    "passed": 189,
+    "skipped": 1,
+    "log": "validation/workbench-tests-release.log"
+  },
+  "layout_fixture": {
+    "legacy_horizontal_distance": 7514,
+    "branch_horizontal_distance": 2796
+  },
+  "baseline": {
+    "source": "validation/resilience/portable/clocktree7-resilience-20261106",
+    "result": "validation/resilience/scales/fanout/run/clocktree.json",
+    "instances": 8195,
+    "window": [
+      1840,
+      1000
+    ],
+    "tk": "8.5.13",
+    "load_seconds": 0.7895918780000102,
+    "rss": "VmRSS:\t  105600 kB",
+    "measurements": {
+      "pan": {
+        "frames": 79,
+        "p50_ms": 2265.88579700001,
+        "p95_ms": 2738.0610529999103,
+        "max_ms": 2878.281973999947,
+        "items": 80,
+        "visible_nodes": 4,
+        "detail_restore_ms": null
+      },
+      "zoom": {
+        "frames": 81,
+        "p50_ms": 2156.66150800007,
+        "p95_ms": 2617.3682670000744,
+        "max_ms": 3182.071614999586,
+        "items": 80,
+        "visible_nodes": 4,
+        "detail_restore_ms": null
+      }
+    }
+  },
+  "canvas": {
+    "source": "/mnt/hgfs/VMshare/clocktree7",
+    "result": "validation/resilience/scales/fanout/run/clocktree.json",
+    "instances": 8195,
+    "window": [
+      1840,
+      1000
+    ],
+    "tk": "8.5.13",
+    "load_seconds": 2.9610403389997373,
+    "rss": "VmRSS:\t  131628 kB",
+    "measurements": {
+      "pan": {
+        "frames": 79,
+        "p50_ms": 22.01700399928086,
+        "p95_ms": 25.04555799987429,
+        "max_ms": 28.851873999883537,
+        "items": 8332,
+        "visible_nodes": 8,
+        "detail_restore_ms": null
+      },
+      "zoom": {
+        "frames": 82,
+        "p50_ms": 19.79065300020011,
+        "p95_ms": 26.402930999211094,
+        "max_ms": 38.59488600028271,
+        "items": 8332,
+        "visible_nodes": 8,
+        "detail_restore_ms": 147.69970900033513
+      }
+    }
+  },
+  "gui": {
+    "passed": true,
+    "phases": {
+      "write": {
+        "input_discovery_cancelled": true,
+        "real_eda_editor_confirmed": true,
+        "searches": [
+          "explicit-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "physical_instances": 4,
+        "display_boxes": 6,
+        "callback_errors": []
+      },
+      "read": {
+        "tree_type": "clock",
+        "searches": [
+          "explicit-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "restored": true,
+        "callback_errors": []
+      },
+      "reset-write": {
+        "searches": [
+          "explicit-reset-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "physical_instances": 4,
+        "display_boxes": 6,
+        "callback_errors": []
+      },
+      "reset-read": {
+        "tree_type": "reset",
+        "searches": [
+          "explicit-reset-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "restored": true,
+        "callback_errors": []
+      },
+      "stress": {
+        "stale_layout_discarded": true,
+        "layout_cancelled_and_view_restored": true,
+        "instances": 100000,
+        "highlight_edges": 99999,
+        "items": [
+          35,
+          35,
+          35,
+          35,
+          35,
+          35
+        ],
+        "rss_kib": [
+          57664,
+          57664,
+          57664,
+          57664,
+          57664,
+          57664
+        ],
+        "text_cache": 19,
+        "font_cache": 7,
+        "callback_errors": []
+      }
+    }
+  },
+  "issues": {
+    "passed": true,
+    "problems": 704,
+    "affected_instances": 3,
+    "csv_rows": 704,
+    "page_size": 100,
+    "no_result_failure_located": true,
+    "errors": []
+  },
+  "subsystem": {
+    "discovery": {
+      "module": "wb_sub",
+      "hierarchy": "wb_top",
+      "instances": 2,
+      "ports": [
+        {
+          "event": "input_port",
+          "instance": "wb_top.s0",
+          "module": "wb_sub",
+          "name": "clk_bus",
+          "direction": "input",
+          "width": 2,
+          "left": "3",
+          "right": "2"
+        },
+        {
+          "event": "input_port",
+          "instance": "wb_top.s0",
+          "module": "wb_sub",
+          "name": "aux_clk",
+          "direction": "input",
+          "width": 1,
+          "left": "",
+          "right": ""
+        },
+        {
+          "event": "input_port",
+          "instance": "wb_top.s0",
+          "module": "wb_sub",
+          "name": "data",
+          "direction": "input",
+          "width": 1,
+          "left": "",
+          "right": ""
+        },
+        {
+          "event": "input_port",
+          "instance": "wb_top.s1",
+          "module": "wb_sub",
+          "name": "clk_bus",
+          "direction": "input",
+          "width": 3,
+          "left": "4",
+          "right": "2"
+        },
+        {
+          "event": "input_port",
+          "instance": "wb_top.s1",
+          "module": "wb_sub",
+          "name": "aux_clk",
+          "direction": "input",
+          "width": 1,
+          "left": "",
+          "right": ""
+        },
+        {
+          "event": "input_port",
+          "instance": "wb_top.s1",
+          "module": "wb_sub",
+          "name": "data",
+          "direction": "input",
+          "width": 1,
+          "left": "",
+          "right": ""
+        }
+      ],
+      "operation": "input-discovery-only",
+      "traced_ports": 0
+    },
+    "cases": [
+      {
+        "mode": "target",
+        "summary": {
+          "instances": 4,
+          "edges": 7,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 2,
+          "terminals": 2,
+          "components": 2,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 9,
+          "observed_pin_traces": 9,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        }
+      },
+      {
+        "mode": "full",
+        "summary": {
+          "instances": 4,
+          "edges": 7,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 2,
+          "components": 2,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 11,
+          "observed_pin_traces": 11,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        }
+      }
+    ]
+  },
+  "subsystem_edges": {
+    "passed": true,
+    "real_verdi": true,
+    "timeout_injection": "blocking sleep in scratch NPI worker; production timer and rollback",
+    "cases": [
+      {
+        "case": "reset-target",
+        "summary": {
+          "instances": 4,
+          "edges": 7,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 2,
+          "terminals": 2,
+          "components": 2,
+          "reset_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 9,
+          "observed_pin_traces": 9,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        }
+      },
+      {
+        "case": "reset-full",
+        "summary": {
+          "instances": 4,
+          "edges": 7,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 2,
+          "components": 2,
+          "reset_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 11,
+          "observed_pin_traces": 11,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        }
+      },
+      {
+        "case": "manual-subset",
+        "summary": {
+          "instances": 4,
+          "edges": 2,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 2,
+          "terminals": 2,
+          "components": 2,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 4,
+          "observed_pin_traces": 4,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        }
+      },
+      {
+        "case": "missing-port",
+        "summary": {
+          "instances": 4,
+          "edges": 2,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 2,
+          "terminals": 2,
+          "components": 4,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 6,
+          "observed_pin_traces": 6,
+          "unresolved": 2,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        }
+      },
+      {
+        "case": "unconnected",
+        "summary": {
+          "instances": 5,
+          "edges": 7,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 2,
+          "terminals": 3,
+          "components": 5,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 3
+          },
+          "terminal_layers": {
+            "2": 3
+          },
+          "expected_pin_traces": 12,
+          "observed_pin_traces": 12,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        }
+      },
+      {
+        "case": "subsystem-timeout",
+        "summary": {
+          "instances": 4,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 2,
+          "terminals": 1,
+          "components": 5,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2
+          },
+          "terminal_layers": {
+            "2": 1
+          },
+          "expected_pin_traces": 9,
+          "observed_pin_traces": 9,
+          "unresolved": 3,
+          "diagnostics": 1,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 2,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        }
+      }
+    ]
+  },
+  "native_regression": {
+    "passed": true,
+    "complete": true,
+    "cases": [
+      {
+        "case": "clock-2-target",
+        "passed": true,
+        "seconds": 4.367,
+        "summary": {
+          "instances": 13,
+          "edges": 11,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 13,
+          "terminals": 4,
+          "components": 2,
+          "clock_sources": 3,
+          "layers": {
+            "1": 2,
+            "2": 11
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 3
+          },
+          "expected_pin_traces": 15,
+          "observed_pin_traces": 15,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.217,
+        "language_stats": {
+          "driver_queries": 12,
+          "cache_hits": 3,
+          "output_index_hits": 9
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "clock-full-equivalence",
+        "passed": true,
+        "seconds": 3.578,
+        "summary": {
+          "instances": 13,
+          "edges": 11,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 4,
+          "components": 2,
+          "clock_sources": 3,
+          "layers": {
+            "1": 2,
+            "2": 11
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 3
+          },
+          "expected_pin_traces": 28,
+          "observed_pin_traces": 28,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.221,
+        "language_stats": {},
+        "elaborated_probes": []
+      },
+      {
+        "case": "clock-10-target",
+        "passed": true,
+        "seconds": 4.934,
+        "summary": {
+          "instances": 13,
+          "edges": 11,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 13,
+          "terminals": 4,
+          "components": 2,
+          "clock_sources": 3,
+          "layers": {
+            "1": 2,
+            "2": 3,
+            "3": 1,
+            "4": 1,
+            "5": 1,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 1,
+            "10": 1
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 1,
+            "8": 1,
+            "10": 1
+          },
+          "expected_pin_traces": 15,
+          "observed_pin_traces": 15,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 12,
+          "cache_hits": 3,
+          "output_index_hits": 9
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "reset-2-target",
+        "passed": true,
+        "seconds": 3.954,
+        "summary": {
+          "instances": 12,
+          "edges": 12,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 12,
+          "terminals": 4,
+          "components": 2,
+          "reset_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 9
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 3
+          },
+          "expected_pin_traces": 16,
+          "observed_pin_traces": 16,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.219,
+        "language_stats": {
+          "driver_queries": 11,
+          "cache_hits": 5,
+          "output_index_hits": 8
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "reset-full-equivalence",
+        "passed": true,
+        "seconds": 3.55,
+        "summary": {
+          "instances": 12,
+          "edges": 12,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 4,
+          "components": 2,
+          "reset_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 9
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 3
+          },
+          "expected_pin_traces": 28,
+          "observed_pin_traces": 28,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.223,
+        "language_stats": {},
+        "elaborated_probes": []
+      },
+      {
+        "case": "reset-10-target",
+        "passed": true,
+        "seconds": 4.225,
+        "summary": {
+          "instances": 12,
+          "edges": 12,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 12,
+          "terminals": 4,
+          "components": 2,
+          "reset_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3,
+            "3": 1,
+            "4": 1,
+            "5": 1,
+            "8": 1,
+            "9": 1,
+            "10": 1
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 1,
+            "8": 1,
+            "10": 1
+          },
+          "expected_pin_traces": 16,
+          "observed_pin_traces": 16,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.219,
+        "language_stats": {
+          "driver_queries": 11,
+          "cache_hits": 5,
+          "output_index_hits": 8
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-False-clock-True",
+        "passed": true,
+        "seconds": 3.692,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 2,
+          "clock_sources": 3,
+          "layers": {
+            "1": 1,
+            "2": 2,
+            "3": 2,
+            "4": 1
+          },
+          "terminal_layers": {
+            "2": 1,
+            "4": 1
+          },
+          "expected_pin_traces": 7,
+          "observed_pin_traces": 7,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "scope_top.domain",
+          "scope_limited": true,
+          "scope_boundaries": 3,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 7,
+          "cache_hits": 0,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-False-clock-False",
+        "passed": true,
+        "seconds": 3.67,
+        "summary": {
+          "instances": 6,
+          "edges": 5,
+          "roots": 1,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 1,
+            "2": 2,
+            "3": 2,
+            "4": 1
+          },
+          "terminal_layers": {
+            "2": 1,
+            "4": 1
+          },
+          "expected_pin_traces": 7,
+          "observed_pin_traces": 7,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.222,
+        "language_stats": {
+          "driver_queries": 14,
+          "cache_hits": 1,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-False-reset-True",
+        "passed": true,
+        "seconds": 3.009,
+        "summary": {
+          "instances": 5,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 5,
+          "terminals": 2,
+          "components": 2,
+          "reset_sources": 3,
+          "layers": {
+            "1": 1,
+            "2": 4
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 6,
+          "observed_pin_traces": 6,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "scope_top.domain",
+          "scope_limited": true,
+          "scope_boundaries": 3,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.219,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 0,
+          "output_index_hits": 3
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-False-reset-False",
+        "passed": true,
+        "seconds": 3.121,
+        "summary": {
+          "instances": 5,
+          "edges": 4,
+          "roots": 1,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 5,
+          "terminals": 2,
+          "components": 1,
+          "reset_sources": 2,
+          "layers": {
+            "1": 1,
+            "2": 4
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 6,
+          "observed_pin_traces": 6,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.222,
+        "language_stats": {
+          "driver_queries": 13,
+          "cache_hits": 1,
+          "output_index_hits": 3
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-True-clock-True",
+        "passed": true,
+        "seconds": 3.693,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 2,
+          "clock_sources": 3,
+          "layers": {
+            "1": 1,
+            "2": 2,
+            "3": 2,
+            "4": 1
+          },
+          "terminal_layers": {
+            "2": 1,
+            "4": 1
+          },
+          "expected_pin_traces": 7,
+          "observed_pin_traces": 7,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "scope_top.g[0].domain",
+          "scope_limited": true,
+          "scope_boundaries": 3,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 7,
+          "cache_hits": 0,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-True-clock-False",
+        "passed": true,
+        "seconds": 3.591,
+        "summary": {
+          "instances": 6,
+          "edges": 5,
+          "roots": 1,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 1,
+            "2": 2,
+            "3": 2,
+            "4": 1
+          },
+          "terminal_layers": {
+            "2": 1,
+            "4": 1
+          },
+          "expected_pin_traces": 7,
+          "observed_pin_traces": 7,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 14,
+          "cache_hits": 1,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-True-reset-True",
+        "passed": true,
+        "seconds": 3.502,
+        "summary": {
+          "instances": 5,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 5,
+          "terminals": 2,
+          "components": 2,
+          "reset_sources": 3,
+          "layers": {
+            "1": 1,
+            "2": 4
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 6,
+          "observed_pin_traces": 6,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "scope_top.g[0].domain",
+          "scope_limited": true,
+          "scope_boundaries": 3,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 0,
+          "output_index_hits": 3
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "scope-True-reset-False",
+        "passed": true,
+        "seconds": 3.499,
+        "summary": {
+          "instances": 5,
+          "edges": 4,
+          "roots": 1,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 5,
+          "terminals": 2,
+          "components": 1,
+          "reset_sources": 2,
+          "layers": {
+            "1": 1,
+            "2": 4
+          },
+          "terminal_layers": {
+            "2": 2
+          },
+          "expected_pin_traces": 6,
+          "observed_pin_traces": 6,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 13,
+          "cache_hits": 1,
+          "output_index_hits": 3
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "port-labels-expressions-constants-open-bits",
+        "passed": true,
+        "seconds": 3.959,
+        "summary": {
+          "instances": 8,
+          "edges": 0,
+          "roots": 7,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 8,
+          "terminals": 0,
+          "components": 8,
+          "clock_sources": 6,
+          "layers": {
+            "1": 6,
+            "2": 2
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 8,
+          "observed_pin_traces": 8,
+          "unresolved": 1,
+          "diagnostics": 2,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.226,
+        "language_stats": {
+          "driver_queries": 11,
+          "cache_hits": 0,
+          "output_index_hits": 0
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "bits-alias-inversion-wrappers-multiple-drivers-open",
+        "passed": true,
+        "seconds": 3.912,
+        "summary": {
+          "instances": 16,
+          "edges": 13,
+          "roots": 5,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 16,
+          "terminals": 12,
+          "components": 2,
+          "clock_sources": 2,
+          "layers": {
+            "1": 4,
+            "2": 11,
+            "3": 1
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 10,
+            "3": 1
+          },
+          "expected_pin_traces": 16,
+          "observed_pin_traces": 16,
+          "unresolved": 0,
+          "diagnostics": 3,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.224,
+        "language_stats": {
+          "driver_queries": 17,
+          "cache_hits": 11,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "missing-output-rejected",
+        "passed": true,
+        "seconds": 3.648,
+        "summary": {
+          "instances": 16,
+          "edges": 1,
+          "roots": 15,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 12,
+          "terminals": 0,
+          "components": 4,
+          "clock_sources": 5,
+          "layers": {
+            "1": 4,
+            "2": 11,
+            "3": 1
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 16,
+          "observed_pin_traces": 16,
+          "unresolved": 0,
+          "diagnostics": 15,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.224,
+        "language_stats": {
+          "driver_queries": 17,
+          "cache_hits": 11,
+          "output_index_hits": 1
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "generate-symbolic-bit-cache-isolation",
+        "passed": true,
+        "seconds": 3.223,
+        "summary": {
+          "instances": 4,
+          "edges": 2,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 4,
+          "terminals": 2,
+          "components": 2,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 1,
+            "3": 1
+          },
+          "terminal_layers": {
+            "2": 1,
+            "3": 1
+          },
+          "expected_pin_traces": 4,
+          "observed_pin_traces": 4,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.225,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 0,
+          "output_index_hits": 2
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "dynamic-index-and-unknown-logic-not-guessed",
+        "passed": true,
+        "seconds": 3.444,
+        "summary": {
+          "instances": 7,
+          "edges": 2,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 7,
+          "terminals": 0,
+          "components": 5,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 1,
+            "3": 1,
+            "4": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 7,
+          "observed_pin_traces": 7,
+          "unresolved": 3,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.225,
+        "language_stats": {
+          "driver_queries": 7,
+          "cache_hits": 0,
+          "output_index_hits": 2
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "instance-arrays-complex-mapping-target",
+        "passed": true,
+        "seconds": 3.138,
+        "summary": {
+          "instances": 11,
+          "edges": 1,
+          "roots": 0,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 11,
+          "terminals": 0,
+          "components": 10,
+          "clock_sources": 0,
+          "layers": {
+            "1": 2,
+            "2": 9
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 11,
+          "observed_pin_traces": 11,
+          "unresolved": 10,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.224,
+        "language_stats": {
+          "driver_queries": 1,
+          "cache_hits": 0,
+          "output_index_hits": 1
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "instance-arrays-complex-mapping-full",
+        "passed": true,
+        "seconds": 3.112,
+        "summary": {
+          "instances": 11,
+          "edges": 9,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 8,
+          "components": 2,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 9
+          },
+          "terminal_layers": {
+            "2": 8
+          },
+          "expected_pin_traces": 22,
+          "observed_pin_traces": 22,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.226,
+        "language_stats": {},
+        "elaborated_probes": []
+      }
+    ]
+  },
+  "soc": {
+    "passed": true,
+    "cases": [
+      {
+        "project": "opentitan",
+        "passed": true,
+        "reference": "opentitan-clkmgr-01",
+        "reference_nodes_and_edges_equal": true,
+        "scope": "all targets in recorded block configuration",
+        "seconds": 4.757,
+        "summary": {
+          "instances": 15,
+          "edges": 10,
+          "roots": 5,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 15,
+          "terminals": 8,
+          "components": 3,
+          "clock_sources": 3,
+          "layers": {
+            "1": 10,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 1,
+            "6": 1
+          },
+          "terminal_layers": {
+            "1": 8
+          },
+          "expected_pin_traces": 15,
+          "observed_pin_traces": 15,
+          "unresolved": 0,
+          "diagnostics": 11,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.226,
+        "language_stats": {
+          "driver_queries": 20,
+          "cache_hits": 8,
+          "output_index_hits": 7
+        },
+        "elaborated_probes": []
+      },
+      {
+        "project": "pulp",
+        "passed": true,
+        "reference": "pulp-soc-kdb-02",
+        "reference_nodes_and_edges_equal": true,
+        "scope": "all targets in recorded block configuration",
+        "seconds": 13.997,
+        "summary": {
+          "instances": 62,
+          "edges": 48,
+          "roots": 18,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 62,
+          "terminals": 39,
+          "components": 3,
+          "clock_sources": 3,
+          "layers": {
+            "1": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 1,
+            "10": 1,
+            "11": 3,
+            "12": 1,
+            "13": 1,
+            "14": 2,
+            "15": 1,
+            "16": 1,
+            "17": 1,
+            "18": 1,
+            "19": 1,
+            "20": 1,
+            "21": 1,
+            "22": 1,
+            "23": 1,
+            "24": 1,
+            "25": 1,
+            "26": 1,
+            "27": 1,
+            "28": 1,
+            "29": 1,
+            "30": 1,
+            "31": 1,
+            "32": 1,
+            "33": 1,
+            "34": 1,
+            "35": 1,
+            "36": 1,
+            "37": 1,
+            "38": 1,
+            "39": 1,
+            "40": 1,
+            "41": 1,
+            "42": 3,
+            "43": 1,
+            "44": 1,
+            "45": 6,
+            "46": 1,
+            "47": 1,
+            "48": 1,
+            "49": 1
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 1,
+            "10": 1,
+            "12": 1,
+            "14": 1,
+            "15": 1,
+            "16": 1,
+            "17": 1,
+            "18": 1,
+            "19": 1,
+            "20": 1,
+            "21": 1,
+            "29": 1,
+            "32": 1,
+            "33": 1,
+            "34": 1,
+            "35": 1,
+            "36": 1,
+            "38": 1,
+            "39": 1,
+            "40": 1,
+            "41": 1,
+            "43": 1,
+            "44": 1,
+            "45": 1,
+            "46": 1,
+            "47": 1,
+            "48": 1,
+            "49": 1
+          },
+          "expected_pin_traces": 67,
+          "observed_pin_traces": 67,
+          "unresolved": 0,
+          "diagnostics": 44,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.336,
+        "language_stats": {
+          "driver_queries": 152,
+          "cache_hits": 130,
+          "output_index_hits": 23
+        },
+        "elaborated_probes": []
+      },
+      {
+        "project": "openc910",
+        "passed": true,
+        "reference": "openc910-ordered7-01",
+        "reference_nodes_and_edges_equal": true,
+        "scope": "selected direct-parent subnetwork",
+        "seconds": 6.916,
+        "summary": {
+          "instances": 30,
+          "edges": 29,
+          "roots": 1,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 30,
+          "terminals": 28,
+          "components": 1,
+          "clock_sources": 1,
+          "layers": {
+            "1": 1,
+            "2": 5,
+            "3": 1,
+            "4": 1,
+            "5": 22
+          },
+          "terminal_layers": {
+            "2": 5,
+            "4": 1,
+            "5": 22
+          },
+          "expected_pin_traces": 30,
+          "observed_pin_traces": 30,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.588,
+        "language_stats": {
+          "driver_queries": 25,
+          "cache_hits": 148,
+          "output_index_hits": 2
+        },
+        "elaborated_probes": []
+      }
+    ]
+  },
+  "timeout": {
+    "passed": true,
+    "cases": [
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "b",
+        "direction": "driver",
+        "limit_seconds": 1,
+        "elapsed_seconds": 1.0000938700004554,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 0,
+          "components": 1,
+          "clock_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 12,
+          "observed_pin_traces": 12,
+          "unresolved": 2,
+          "diagnostics": 1,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 1,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 7,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "clock-target-input",
+        "seconds": 6.998
+      },
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "b",
+        "direction": "driver",
+        "limit_seconds": 1.25,
+        "elapsed_seconds": 1.2501251719995707,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": false,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 0,
+          "components": 1,
+          "clock_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 18,
+          "observed_pin_traces": 18,
+          "unresolved": 3,
+          "diagnostics": 2,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 2,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 10,
+          "scope_output_instances": 3,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "clock-full-input",
+        "seconds": 7.326
+      },
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "y",
+        "direction": "load",
+        "limit_seconds": 1.75,
+        "elapsed_seconds": 1.7501113440002882,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": false,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 0,
+          "components": 1,
+          "clock_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 18,
+          "observed_pin_traces": 18,
+          "unresolved": 1,
+          "diagnostics": 2,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 0,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 12,
+          "scope_output_instances": 3,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "clock-full-output",
+        "seconds": 7.913
+      },
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "b",
+        "direction": "driver",
+        "limit_seconds": 1.5,
+        "elapsed_seconds": 1.5001690790004432,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 0,
+          "components": 1,
+          "reset_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 12,
+          "observed_pin_traces": 12,
+          "unresolved": 2,
+          "diagnostics": 1,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 1,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 7,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "reset-target-input",
+        "seconds": 8.178
+      },
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "b",
+        "direction": "driver",
+        "limit_seconds": 1.25,
+        "elapsed_seconds": 1.2501979069993467,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "full",
+          "physical_loads_checked": false,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 0,
+          "components": 1,
+          "reset_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 18,
+          "observed_pin_traces": 18,
+          "unresolved": 3,
+          "diagnostics": 2,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 2,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 10,
+          "scope_output_instances": 3,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "reset-full-input",
+        "seconds": 7.519
+      },
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "y",
+        "direction": "load",
+        "limit_seconds": 1.75,
+        "elapsed_seconds": 1.7501870589994724,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "full",
+          "physical_loads_checked": false,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 0,
+          "components": 1,
+          "reset_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 18,
+          "observed_pin_traces": 18,
+          "unresolved": 1,
+          "diagnostics": 2,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 0,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 12,
+          "scope_output_instances": 3,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "reset-full-output",
+        "seconds": 8.026
+      },
+      {
+        "passed": true,
+        "timeout_instances": 0,
+        "attempts": 1,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 3,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 3,
+          "components": 1,
+          "clock_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {
+            "2": 3
+          },
+          "expected_pin_traces": 12,
+          "observed_pin_traces": 12,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 9,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "case": "disabled",
+        "seconds": 3.511
+      },
+      {
+        "passed": true,
+        "timeout_instances": 0,
+        "attempts": 1,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 3,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 3,
+          "components": 1,
+          "clock_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {
+            "2": 3
+          },
+          "expected_pin_traces": 12,
+          "observed_pin_traces": 12,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 9,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "case": "fanout-512",
+        "seconds": 3.512
+      },
+      {
+        "passed": true,
+        "instance": "timeout_top.m0",
+        "pin": "b",
+        "direction": "driver",
+        "limit_seconds": 1.5,
+        "elapsed_seconds": 1.5001962899996215,
+        "attempts": 2,
+        "same_module_continued": true,
+        "partial_trace_rolled_back": true,
+        "summary": {
+          "instances": 6,
+          "edges": 3,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 0,
+          "components": 1,
+          "clock_sources": 3,
+          "layers": {
+            "1": 3,
+            "2": 3
+          },
+          "terminal_layers": {},
+          "expected_pin_traces": 12,
+          "observed_pin_traces": 12,
+          "unresolved": 2,
+          "diagnostics": 1,
+          "trace_timeout_instances": 1,
+          "trace_timeout_ports": 1,
+          "trace_skipped_ports": 1,
+          "trace_scope": "timeout_top",
+          "scope_limited": true,
+          "scope_boundaries": 7,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": false,
+          "topology_valid": true
+        },
+        "case": "decision-crash",
+        "fresh_process_resumed": true,
+        "old_worker_stopped": true
+      }
+    ],
+    "native_verdi": true,
+    "blocked_native_surrogate": "synchronous exec sleep"
+  },
+  "legacy_gui": {
+    "passed": true,
+    "phases": [
+      "write",
+      "read"
+    ],
+    "fresh_process": true
+  },
+  "portable": {
+    "passed": true,
+    "folder": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107-rc1",
+    "isolated_user_site": true,
+    "manifest_files": 205,
+    "source_commit": "51a5b568d7b82f6d70d2cdb7611fba6e03e1a297",
+    "source_dirty": true,
+    "doctor": {
+      "schema_version": 1,
+      "time": "2026-11-06T16:32:44.445938+00:00",
+      "platform": "Linux-3.10.0-1160.53.1.el7.x86_64-x86_64-with-centos-7.9.2009-Core",
+      "python": "3.6.8",
+      "executable": "/usr/bin/python3",
+      "tool_root": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107-rc1",
+      "checks": [
+        {
+          "name": "python",
+          "status": "pass",
+          "detail": "3.6.8"
+        },
+        {
+          "name": "filesystem_encoding",
+          "status": "pass",
+          "detail": "utf-8; use a UTF-8 locale for non-ASCII installation/project paths"
+        },
+        {
+          "name": "output",
+          "status": "pass",
+          "detail": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107-rc1/qa/doctor/doctor_20261107_003244_eb917ad4"
+        },
+        {
+          "name": "tkinter",
+          "status": "pass",
+          "detail": "Tk 8.5; Tcl 8.5.13"
+        },
+        {
+          "name": "bundled_results",
+          "status": "pass",
+          "detail": "Clock 13 instances / 11 edges; reset 12 instances / 12 edges"
+        },
+        {
+          "name": "verdi_npi",
+          "status": "pass",
+          "detail": "Installation files located; execution/license not yet verified",
+          "executable": "/home/synopsys/verdi/Verdi_O-2018.09-SP2/bin/verdi",
+          "home": "/home/synopsys/verdi/Verdi_O-2018.09-SP2"
+        },
+        {
+          "name": "license_environment",
+          "status": "pass",
+          "detail": "License environment supplied by this device; validity requires self-test"
+        },
+        {
+          "name": "session_storage",
+          "status": "pass",
+          "detail": "Atomic clock/reset snapshots saved and restored in isolated test storage"
+        },
+        {
+          "name": "clock_eda_golden",
+          "status": "pass",
+          "detail": "Real Verdi extraction matches complete instance/edge/terminal sets",
+          "nodes": 13,
+          "edges": 11,
+          "terminals": 4
+        },
+        {
+          "name": "reset_eda_golden",
+          "status": "pass",
+          "detail": "Real Verdi extraction matches complete instance/edge/terminal sets",
+          "nodes": 12,
+          "edges": 12,
+          "terminals": 4
+        },
+        {
+          "name": "native_gui",
+          "status": "pass",
+          "detail": "Both architectures rendered in the native Tk workbench",
+          "tk": "8.5.13",
+          "graphs_rendered": 2,
+          "cjk_font": true,
+          "canvas": [
+            {
+              "instances": 13,
+              "edges": 11
+            },
+            {
+              "instances": 12,
+              "edges": 12
+            }
+          ]
+        }
+      ],
+      "eda_verified": true,
+      "gui_verified": true,
+      "self_test": true,
+      "fixture_directory": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107-rc1/qa/doctor/doctor_20261107_003244_eb917ad4/fixtures",
+      "status": "pass",
+      "report_file": "/home/host/clocktree7-portable-qa/clocktree7-workbench-20261107-rc1/qa/doctor/doctor_20261107_003244_eb917ad4/doctor.json"
+    },
+    "subsystem": {
+      "discovery": {
+        "module": "wb_sub",
+        "hierarchy": "wb_top",
+        "instances": 2,
+        "ports": [
+          {
+            "event": "input_port",
+            "instance": "wb_top.s0",
+            "module": "wb_sub",
+            "name": "clk_bus",
+            "direction": "input",
+            "width": 2,
+            "left": "3",
+            "right": "2"
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s0",
+            "module": "wb_sub",
+            "name": "aux_clk",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s0",
+            "module": "wb_sub",
+            "name": "data",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s1",
+            "module": "wb_sub",
+            "name": "clk_bus",
+            "direction": "input",
+            "width": 3,
+            "left": "4",
+            "right": "2"
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s1",
+            "module": "wb_sub",
+            "name": "aux_clk",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          },
+          {
+            "event": "input_port",
+            "instance": "wb_top.s1",
+            "module": "wb_sub",
+            "name": "data",
+            "direction": "input",
+            "width": 1,
+            "left": "",
+            "right": ""
+          }
+        ],
+        "operation": "input-discovery-only",
+        "traced_ports": 0
+      },
+      "cases": [
+        {
+          "mode": "target",
+          "summary": {
+            "instances": 4,
+            "edges": 7,
+            "roots": 2,
+            "tree_type": "clock",
+            "extraction_mode": "target",
+            "physical_loads_checked": false,
+            "terminal_semantics": "selected_structure",
+            "validated_outputs": 2,
+            "terminals": 2,
+            "components": 2,
+            "clock_sources": 2,
+            "layers": {
+              "1": 2,
+              "2": 2
+            },
+            "terminal_layers": {
+              "2": 2
+            },
+            "expected_pin_traces": 9,
+            "observed_pin_traces": 9,
+            "unresolved": 0,
+            "diagnostics": 0,
+            "trace_timeout_instances": 0,
+            "trace_timeout_ports": 0,
+            "trace_skipped_ports": 0,
+            "trace_scope": "",
+            "scope_limited": false,
+            "scope_boundaries": 0,
+            "scope_output_instances": 0,
+            "extraction_finished": true,
+            "connectivity_complete": true,
+            "topology_valid": true
+          }
+        },
+        {
+          "mode": "full",
+          "summary": {
+            "instances": 4,
+            "edges": 7,
+            "roots": 2,
+            "tree_type": "clock",
+            "extraction_mode": "full",
+            "physical_loads_checked": true,
+            "terminal_semantics": "load_trace",
+            "validated_outputs": 0,
+            "terminals": 2,
+            "components": 2,
+            "clock_sources": 2,
+            "layers": {
+              "1": 2,
+              "2": 2
+            },
+            "terminal_layers": {
+              "2": 2
+            },
+            "expected_pin_traces": 11,
+            "observed_pin_traces": 11,
+            "unresolved": 0,
+            "diagnostics": 0,
+            "trace_timeout_instances": 0,
+            "trace_timeout_ports": 0,
+            "trace_skipped_ports": 0,
+            "trace_scope": "",
+            "scope_limited": false,
+            "scope_boundaries": 0,
+            "scope_output_instances": 0,
+            "extraction_finished": true,
+            "connectivity_complete": true,
+            "topology_valid": true
+          }
+        }
+      ]
+    }
+  }
+}

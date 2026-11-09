@@ -6,6 +6,7 @@ No unknown connectivity, bit ordering, or ambiguous register is invented.
 from collections import defaultdict,deque
 from contextlib import closing,contextmanager
 import hashlib
+import copy
 import json
 import os
 from pathlib import Path
@@ -19,9 +20,10 @@ from .register_expr import Expressions,MappingError
 from .register_worker import RegisterWorker
 from .storage import write_graph,IndexedGraph,ResultStore,ARRAY_KEYS
 from .ui_state import design_key
+from .layer_reset import branch_reset_binding,without_resets
 
 ROLES={'var_pllsel':'pll_sel','var_div':'div','var_swdone':'sw_done','var_gt0':'gt','var_gt1':'gt','var_gt2':'gt','var_gt':'gt'}
-CLOCK_VARS={'var_pll0','var_pll1','var_pll2','var_pll3','var_clkip'}
+CLOCK_VARS={'var_pll0','var_pll1','var_pll2','var_pll3','var_clkip','var_rst'}
 TOKEN=re.compile(r'(?<!\$)\$(var_[A-Za-z0-9_]+)\b')
 SIGNAL=re.compile(r'[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*(?:\.[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*)*\Z')
 
@@ -30,7 +32,20 @@ def identity(*parts):return hashlib.sha256(json.dumps(parts,ensure_ascii=False).
 
 
 def architecture_signature(graph):
-    return identity(graph.get('config'),graph.get('metadata'),graph.get('summary'))
+    return identity('branch-origin-reset-v1',graph.get('config'),graph.get('metadata'),graph.get('summary'))
+
+
+def graph_for_templates(graph,draft):
+    """Use edited reset metadata without mutating or copying proven graph arrays."""
+    from .session import same_config
+    if not same_config(without_resets(graph['config']),without_resets(draft)):
+        raise ValueError('当前设计或层次/module 规则与结果不一致，请先重新提取；仅修改复位信号可直接重新分析 SV 分支')
+    result=IndexedGraph(graph.store,graph) if isinstance(graph,IndexedGraph) else dict(graph)
+    result['config']=copy.deepcopy(graph['config'])
+    for old,new in zip(result['config'].get('layers',[]),draft.get('layers',[])):
+        old.pop('reset_signal',None)
+        if new.get('reset_signal'):old['reset_signal']=new['reset_signal']
+    return result
 
 
 def write_source(path,graph):
@@ -210,7 +225,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
             ''')
             outgoing=defaultdict(list);degree={}
             for n in graph['nodes']:
-                small={k:n.get(k) for k in ('id','kind','inputs','port_connections','aux_ports')}
+                small={k:n.get(k) for k in ('id','kind','layer','inputs','port_connections','aux_ports')}
                 db.execute('INSERT INTO nodes VALUES(?,?,?,?,?)',(n['id'],n['kind'],int(bool(n.get('terminal'))),0,json.dumps(small)))
                 degree[n['id']]=0
             for edge in graph['edges']:
@@ -240,6 +255,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
                     roots=[dict(r) for r in db.execute('''SELECT n.* FROM walk JOIN nodes n ON n.id=walk.id
                         WHERE n.id!=? AND NOT EXISTS(SELECT 1 FROM edges WHERE target=n.id)''',(inst,))]
                     if not roots:roots=[dict(row)] if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(inst,pin)).fetchone() else []
+                    bindings['var_rst']=branch_reset_binding([json.loads(root['data']) for root in roots],graph['config'])
                     modes={r['kind']=='mux' for r in roots}
                     mode='with_mux' if modes=={True} else 'without_mux' if modes=={False} else 'mixed'
                     devices=defaultdict(list)
@@ -306,6 +322,8 @@ class SVPlan:
         with connection(self.path,_db) as db:
             for var in sorted(needed):
                 binding=bindings.get(var,{})
+                if var=='var_rst' and binding.get('basis')!='branch_origin':
+                    issues.append('$var_rst：历史计划未包含起始层复位配置，请填写最初器件所属层复位信号后重新分析');continue
                 if 'value' in binding:values[var]=binding['value'];continue
                 if binding.get('error'):issues.append('$'+var+'：'+binding['error']);continue
                 if var not in ROLES:issues.append('$'+var+' 未解析');continue
@@ -325,7 +343,7 @@ class SVPlan:
                 if actual.get(role)!=row['pin']:issues.append('$'+var+' 与当前器件辅助配置不一致');continue
                 values[var]=row['expression'];chosen[var]=dict(row)
         result={'id':branch['id'],'instance':branch['instance'],'pin':branch['pin'],'clkip':branch['clkip'],
-                'mode':mode,'values':values,'selected':chosen,'issues':issues,'ready':not issues}
+                'mode':mode,'values':values,'selected':chosen,'issues':issues,'ready':not issues,'reset':bindings.get('var_rst',{})}
         result['code']=render(template,values) if not issues else ''
         return result
     def export(self,templates,path,selections=None):

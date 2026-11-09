@@ -25,6 +25,7 @@ from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule, connection_details
 from .auxiliary import AUX_ROLES, DIRECTIONS, validate_aux_ports
+from .layer_reset import without_resets
 from .devices import auxiliary_details
 from .viewmodel import GraphView
 from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
@@ -427,6 +428,7 @@ class ClockTreeApp(tk.Tk):
         self.port_timeout_var=tk.StringVar(value='0')
         self.memory_status=tk.StringVar(value='等待提取 · RSS 监测在 Linux 上启用')
         self.hierarchy_var=tk.StringVar()
+        self.layer_reset_var=tk.StringVar()
         top_label=ttk.Frame(settings,style='White.TFrame')
         top_label.pack(fill='x')
         ttk.Label(top_label,text='设计顶层',style='Small.TLabel').pack(side='left')
@@ -479,6 +481,10 @@ class ClockTreeApp(tk.Tk):
         self.layer_title.pack(anchor='w')
         ttk.Entry(settings,textvariable=self.hierarchy_var).pack(fill='x',pady=(5,10))
         ttk.Label(settings,text='填写父层路径，仅查本层直接例化\n不递归查找子层次中的 module',style='Muted.TLabel').pack(anchor='w',pady=(0,8))
+        ttk.Label(settings,text='该层复位信号 · $var_rst',style='Small.TLabel').pack(anchor='w')
+        self.layer_reset_entry=ttk.Entry(settings,textvariable=self.layer_reset_var)
+        self.layer_reset_entry.pack(fill='x',pady=(5,4))
+        ttk.Label(settings,text='信号名或完整 RTL 路径；短名相对该父层\nSV 每个分支取最初器件所属层的复位',style='Muted.TLabel').pack(anchor='w',pady=(0,10))
         self.rules_tree=ttk.Treeview(settings,columns=('kind','inputs','output'),show='tree headings',height=3,selectmode='browse')
         self.rules_tree.heading('#0',text='Module')
         self.rules_tree.heading('kind',text='类型')
@@ -508,6 +514,7 @@ class ClockTreeApp(tk.Tk):
         for variable in [self.top_var,self.mode_var,self.path_var,self.hierarchy_var,self.trace_scope_var,self.extraction_mode_var]:
             variable.trace('w',self.mark_dirty)
         self.memory_limit_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
+        self.layer_reset_var.trace('w',self.mark_reset_dirty)
         self.port_timeout_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
         self.runs_tree.heading('#0',text='运行记录')
@@ -757,6 +764,14 @@ class ClockTreeApp(tk.Tk):
         if not self._filling and self.graph and not self.busy:
             self._badge('规则已修改 · 待重新提取','warn')
 
+    def mark_reset_dirty(self,*args):
+        if self._filling:return
+        if self.graph and not self.busy:
+            self._config_dirty=not same_config(without_resets(self.get_config(validate=False)),without_resets(self.graph['config']))
+            if not self._config_dirty:self._badge('复位配置已更新','idle')
+        self._schedule_session_save()
+        if self.graph and not self.busy:self.set_status('复位配置已修改；重新分析 SV 分支后生效。仅修改复位无需重提取时钟树或寄存器。')
+
     def _badge(self,text,kind='idle'):
         colors={'pass':('#e2f4ec','#217d5b'),'warn':('#fff0da','#a36a17'),'busy':('#e6efff','#2868df'),'idle':('#edf2fa','#70819a')}
         bg,fg=colors[kind]
@@ -769,7 +784,7 @@ class ClockTreeApp(tk.Tk):
         deferred=self._workspaces.get(self._active_tree_type,{}).get('deferred_result') if self.graph is None else None
         self._workspaces[self._active_tree_type]={
             'config':config,'graph':self.graph,'path':self.graph_file,
-            'dirty':self._config_dirty or bool(self.graph and not same_config(config,self.graph['config'])),
+            'dirty':self._config_dirty or bool(self.graph and not same_config(without_resets(config),without_resets(self.graph['config']))),
             'active_layer':self.active_layer,'graph_token':self._graph_token,'deferred_result':deferred}
 
     def _load_previous_session(self,config_path=None,result_path=None):
@@ -980,7 +995,7 @@ class ClockTreeApp(tk.Tk):
         self.layer_count_var.set('传播规则 · {} 级'.format(len(self.layers)))
 
     def add_layer(self):
-        self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
+        self._save_layer_inputs()
         self.layers.append({'index':len(self.layers)+1,'hierarchy':'','modules':[]})
         self.rebuild_layer_buttons()
         self.select_layer(len(self.layers),save=False)
@@ -1009,17 +1024,24 @@ class ClockTreeApp(tk.Tk):
         self.load_result(ROOT/('examples/reset_tree/resettree.json' if self._active_tree_type=='reset' else 'examples/flexible_layers/clocktree.json'))
 
     def select_layer(self,index,save=True):
-        if save:
-            self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
+        if save:self._save_layer_inputs()
         self.active_layer=index
         self._filling=True
         self.hierarchy_var.set(self.layers[index-1].get('hierarchy',''))
+        self.layer_reset_var.set(self.layers[index-1].get('reset_signal',''))
         self._filling=False
         self.layer_title.configure(text='L{} · RTL 父层路径'.format(index))
         for i,button in enumerate(self.layer_buttons,1):
             button.configure(style='LayerActive.TButton' if i==index else 'Layer.TButton')
         self.refresh_rules()
         self._schedule_session_save()
+
+    def _save_layer_inputs(self):
+        layer=self.layers[self.active_layer-1]
+        layer['hierarchy']=self.hierarchy_var.get().strip()
+        reset=self.layer_reset_var.get().strip()
+        if reset:layer['reset_signal']=reset
+        else:layer.pop('reset_signal',None)
 
     def refresh_rules(self):
         self.rules_tree.delete(*self.rules_tree.get_children())
@@ -1117,7 +1139,7 @@ class ClockTreeApp(tk.Tk):
         self._schedule_session_save()
 
     def get_config(self,validate=True):
-        self.layers[self.active_layer-1]['hierarchy']=self.hierarchy_var.get().strip()
+        self._save_layer_inputs()
         data=copy.deepcopy(self._base_config)
         design=data.setdefault('design',{})
         design.pop('elab',None)
@@ -2024,7 +2046,8 @@ class ClockTreeApp(tk.Tk):
         if self.graph.get('tree_type',self.graph['config'].get('tree_type','clock'))!='clock':
             self.status.set('分支 SV 模板当前用于时钟树。');return
         from .sv_view import SVDialog
-        SVDialog(self)
+        try:SVDialog(self)
+        except ValueError as error:self.status.set(str(error))
 
     def export_menu(self):
         menu=tk.Menu(self,tearoff=False)

@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.3 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.4 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -2132,6 +2132,11 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <td>总线按已提取的实际 bit 分开生成；未知连接不补值</td>
 </tr>
 <tr>
+<td><code>$var_rst</code></td>
+<td>该分支最初器件所属层配置的复位信号，短名补上起始器件的实际 RTL 父层路径</td>
+<td>引用但未填写时跳过该分支并提示层号；不会补 <code>1'b1</code>，不自动取反</td>
+</tr>
+<tr>
 <td><code>$var_gt</code></td>
 <td>兼容早期单门控写法，等同 <code>$var_gt0</code></td>
 <td>新模板建议统一使用编号变量</td>
@@ -2182,4 +2187,60 @@ python3 -m clocktree sv-export \
 </code></pre>
 <p>CLI 返回 JSON 中的 <code>blocks</code>、<code>skipped</code>、<code>terminals</code> 和 <code>sv_written</code> 是实际结果。正常完成但部分跳过仍返回退出码 0；自动流程必须同时检查 <code>skipped==0</code>，不能只看退出码。模板选择通过可选 <code>selections</code> 字段保存，GUI 任务目录的 <code>templates.json</code> 含当前全部选择，可用于重跑。</p>
 <p>分析及导出均在后台进程中运行。“取消当前任务”终止当前工作；导出使用临时文件，完成后替换目标。分析取消后可再次分析，会用新的目录。取消未完成导出时保留原文件。任务日志、分支计划及模板请求在 <code>&lt;runs&gt;/.sv-templates/&lt;任务 ID&gt;/</code>，可据 <code>status.json</code>、<code>plan.log</code>、<code>export.log</code> 定位失败阶段。</p>
-<p>实际 KDB、Tk、万分支、取消与便携验收结果见 <a href="SV_TEMPLATES_VALIDATION.zh-CN.md">SV 模板验收报告</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>实际 KDB、Tk、万分支、取消与便携验收结果见 <a href="SV_TEMPLATES_VALIDATION.zh-CN.md">SV 模板验收报告</a>。</p>
+<p><a id="layer-reset"></a></p>
+<h3 id="336-var_rst">33.6 填写每层复位信号与 <code>$var_rst</code></h3>
+<p>在左侧选择 L1、L2 等层级，填写 <strong>“RTL 父层路径”</strong> 后，在紧邻的 <strong>“该层复位信号 · $var_rst”</strong> 输入框填写该层复位。每层独立保存；切换层、添加/删除层级、导入/保存配置，以及退出后恢复均保留对应关系。时钟/复位两种工作区独立保存此字段，SV 模板入口仍用于时钟树。</p>
+<p><a class="figure" href="images/layer-reset-input.png" target="_blank"><img alt="层次路径下的复位信号输入框" src="images/layer-reset-input.png" /></a></p>
+<p><strong><code>$var_rst</code> 只取该分支最初器件所属规则层的复位。</strong> 最初器件按实际连接确定，不按层号大小或画布位置判断。分支从 L2 开始，经过 L3、L5 并在 L6 结束，始终使用 L2 的复位；并不固定取 L1。有选择器起始时使用该选择器所属层，无选择器起始时使用最前面的门控、DIV 或其他关注器件所属层。</p>
+<p>同一个 SUBSYSTEM 的不同输入仍各自生成一段代码；这些分支的起始器件不同，<code>$var_rst</code> 可以不同。一个分支若有多个最初器件，只有全部起始复位解析后相同时才使用这个共同值；值不同或其中未填写时明确提示，不能任取一个。</p>
+<p>例如最初器件所属层路径为 <code>chip.u_domain</code>、起始实例为 <code>chip.u_domain.u_mux</code>：</p>
+<table>
+<thead>
+<tr>
+<th>输入框内容</th>
+<th><code>$var_rst</code> 实际替换值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>rst_n</code></td>
+<td><code>chip.u_domain.rst_n</code></td>
+</tr>
+<tr>
+<td><code>u_reset.rst_n</code></td>
+<td><code>chip.u_domain.u_reset.rst_n</code></td>
+</tr>
+<tr>
+<td><code>resets[3]</code></td>
+<td><code>chip.u_domain.resets[3]</code></td>
+</tr>
+<tr>
+<td><code>chip.u_reset.domain_rst_n</code></td>
+<td><code>chip.u_reset.domain_rst_n</code>（完整路径原样使用）</td>
+</tr>
+<tr>
+<td><code>$root.tb.rst_n</code></td>
+<td><code>$root.tb.rst_n</code>（显式仿真根路径原样使用）</td>
+</tr>
+</tbody>
+</table>
+<p>以设计顶层/实际实例根开头，或以 <code>$root.</code> 开头的路径按完整路径处理；其他名称按相对路径处理。当层次规则匹配多个实际父层时，相对名称分别绑定到各起始实例的实际父层，不能将规则中的通配符拼入 SV。</p>
+<p>该字段记录的是<strong>用户提供的复位信号</strong>，不额外执行复位 driver/load 追踪，也不宣称其存在性已经由 NPI 核验。可在模板中使用：</p>
+<pre><code class="language-systemverilog">initial begin
+  $display(&quot;clock=%b reset=%b&quot;, $var_clkip, $var_rst);
+end
+</code></pre>
+<p>复位的有效电平由模板决定。低有效复位需要取反时在模板中写 <code>!$var_rst</code>；输入框只填信号路径，不填 <code>!rst_n</code> 等表达式。不会根据 <code>_n</code> 后缀自动取反。</p>
+<p>配置保存格式为每层的可选 <code>reset_signal</code>：</p>
+<pre><code class="language-json">{
+  &quot;index&quot;: 3,
+  &quot;hierarchy&quot;: &quot;chip.u_domain&quot;,
+  &quot;reset_signal&quot;: &quot;rst_n&quot;,
+  &quot;modules&quot;: []
+}
+</code></pre>
+<p>旧配置没有此字段可正常加载、提取和生成不引用 <code>$var_rst</code> 的模板。模板引用 <code>$var_rst</code> 但最初器件所属层未填写时，该分支显示 <code>L2 未填写复位信号</code> 等原因并跳过；其他配置完整的分支继续。中间层和末端层的复位不参与此变量。补填后重新“分析全部分支”再生成同一个文件。</p>
+<p><strong>仅修改复位信号不需要重提取时钟树，也不需要重做辅助寄存器追踪。</strong> 打开“分支 SV 模板”时会采用当前表单的复位配置，原架构的节点/边保持不变；新分支计划与模板历史保留修改后的值。若同时改了层次、module 或设计入口，则必须先重新提取，以免把新规则套到旧结果。分支分析若仍需补齐旧结果的总线 bit 连接，仍可能读取原 elab，详见 33.1。</p>
+<p>修改复位后旧分支计划不会自动当作最新计划使用，窗口会提示重新分析。升级后首次使用 <code>$var_rst</code> 也需重新分析，以记录起始器件。预览显示复位值、起始实例、来源层号、填写的原值；<code>.mapping.json</code> 的 <code>reset</code> 字段记录 <code>origin: user_config</code>、<code>basis: branch_origin</code>、实例、层号、层次和替换值，便于回查。复位配置不完整不会影响未引用该变量的旧模板。</p>
+<p>本功能验收见 <a href="SV_RESET_VALIDATION.zh-CN.md">层次复位与 SV 变量报告</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

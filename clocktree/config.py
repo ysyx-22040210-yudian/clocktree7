@@ -4,6 +4,7 @@ import math
 from pathlib import Path
 from .profiles import TREE_PROFILES, tree_type, profile, rule_ports
 from .auxiliary import AUX_ROLES, validate_aux_ports
+from .layer_reset import validate_reset_signal
 
 EXTRACTION_MODES = {'target': '目标结构提取（大设计推荐）', 'full': '全负载核验'}
 
@@ -63,6 +64,7 @@ def validate_config(config, allow_incomplete=False):
     for layer in layers:
         if not isinstance(layer.get("hierarchy"), str):
             raise ValueError("Each layer needs an RTL hierarchy string")
+        validate_reset_signal(layer.get('reset_signal',''),allow_incomplete)
         for rule in layer.get("modules", []):
             if not rule.get("module") or not isinstance(rule["module"], str):
                 raise ValueError("Each rule needs a module definition name")

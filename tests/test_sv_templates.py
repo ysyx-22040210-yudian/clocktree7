@@ -69,6 +69,78 @@ def test_bus_order_noncontiguous_and_repeated_mapping():
     assert vector_expression(['top.C[7]','top.C[7]'])=='{top.C[7], top.C[7]}'
 
 
+@pytest.mark.parametrize('configured,expected',[
+    ('rst_n','chip.domain.rst_n'),('u_reset.rst_n','chip.domain.u_reset.rst_n'),
+    ('chip.ctrl.rst_n','chip.ctrl.rst_n'),('$root.tb.rst_n','$root.tb.rst_n'),
+    ('resets[3]','chip.domain.resets[3]')])
+def test_reset_paths_use_concrete_first_device_parent(configured,expected):
+    from clocktree.layer_reset import reset_binding
+    config={'design':{'top':'chip'},'layers':[{'index':1,'hierarchy':'chip.*','reset_signal':configured}]}
+    binding=reset_binding({'id':'chip.domain.first','layer':1},config)
+    assert binding['value']==expected and binding['origin']=='user_config' and binding['layer']==1
+
+
+def test_reset_uses_first_device_layer_and_leaves_missing_branches_out(tmp_path):
+    graph,reg=setup(tmp_path)
+    graph['config']['layers']=[{'index':i,'hierarchy':'chip','modules':[],'reset_signal':rst}
+                               for i,rst in enumerate(('unused_l1_rst','mux_rst','middle_rst','','terminal_rst'),1)]
+    for node in graph['nodes']:node['layer']=3
+    graph['nodes'][0]['layer']=2;graph['nodes'][2]['layer']=4;graph['nodes'][-1]['layer']=5
+    plan=prepare(graph,reg,tmp_path/'plan',False);templates=dict(with_mux='$var_rst $var_clkip',without_mux='$var_rst $var_clkip')
+    result=plan.export(templates,tmp_path/'rst.sv');assert result['blocks']==1 and result['skipped']==1
+    content=(tmp_path/'rst.sv').read_text();assert content.count('chip.mux_rst')==1 and 'unused_l1_rst' not in content and 'terminal_rst' not in content
+    records=json.loads((tmp_path/'rst.sv.mapping.json').read_text())['branches']
+    blocked=next(r for r in records if not r['ready']);assert 'L4' in ' '.join(blocked['issues'])
+    assert all(r['reset']['layer']==2 for r in records if r['ready'])
+    assert plan.export(dict(with_mux='$var_clkip',without_mux='$var_clkip'),tmp_path/'legacy.sv')['blocks']==2
+    graph['config']['layers'][3]['reset_signal']='gate_rst'
+    updated=prepare(graph,reg,tmp_path/'new-plan',False)
+    resolved=[updated.resolve(row,templates) for row in updated.branches()[1]]
+    assert all(row['ready'] for row in resolved)
+    assert {row['values']['var_rst'] for row in resolved}=={'chip.mux_rst','chip.gate_rst'}
+
+
+def test_multiple_first_devices_require_same_complete_reset():
+    from clocktree.layer_reset import branch_reset_binding
+    roots=[{'id':'chip.a.first','layer':1},{'id':'chip.b.first','layer':2}]
+    config={'design':{'top':'chip'},'layers':[{'index':i,'reset_signal':'rst_n'} for i in (1,2)]}
+    result=branch_reset_binding(roots,config)
+    assert 'value' not in result and 'chip.a.rst_n' in result['error'] and 'chip.b.rst_n' in result['error']
+    for layer in config['layers']:layer['reset_signal']='chip.global_rst_n'
+    result=branch_reset_binding(roots,config)
+    assert result['value']=='chip.global_rst_n' and len(result['origins'])==2 and result['basis']=='branch_origin'
+
+
+def test_editing_only_reset_reuses_graph_arrays_and_invalidates_saved_plan_signature(tmp_path):
+    from clocktree.sv_templates import graph_for_templates,architecture_signature
+    graph,reg=setup(tmp_path);graph['config']['layers']=[{'index':1,'hierarchy':'chip','modules':[]}]
+    draft=copy.deepcopy(graph['config']);draft['layers'][0]['reset_signal']='rst_n'
+    updated=graph_for_templates(graph,draft)
+    assert updated['nodes'] is graph['nodes'] and updated['edges'] is graph['edges']
+    assert 'reset_signal' not in graph['config']['layers'][0]
+    assert updated['config']['layers'][0]['reset_signal']=='rst_n'
+    assert architecture_signature(updated)!=architecture_signature(graph)
+    draft['layers'][0]['hierarchy']='different'
+    with pytest.raises(ValueError,match='重新提取'):graph_for_templates(graph,draft)
+
+
+def test_invalid_reset_and_old_plan_report_instead_of_filling_one(tmp_path):
+    from clocktree.config import validate_config
+    from clocktree.profiles import empty_config
+    for mode in ('clock','reset'):
+        config=empty_config(mode);config['layers'][0]['reset_signal']=17
+        with pytest.raises(ValueError,match='字符串'):validate_config(config,allow_incomplete=True)
+        config['layers'][0]['reset_signal']='rst_n['
+        validate_config(config,allow_incomplete=True)  # unfinished input survives a GUI draft
+    graph,reg=setup(tmp_path);graph['config']['layers']=[{'index':1,'reset_signal':'!rst_n'}]
+    for node in graph['nodes']:node['layer']=1
+    plan=prepare(graph,reg,tmp_path/'plan',False);row=next(r for r in plan.branches()[1] if r['mode']=='with_mux')
+    result=plan.resolve(row,{'with_mux':'$var_rst'})
+    assert not result['ready'] and '有效' in ' '.join(result['issues']) and 'var_rst' not in result['values']
+    bindings=json.loads(row['bindings']);bindings.pop('var_rst');row['bindings']=json.dumps(bindings)
+    assert '重新分析' in ' '.join(plan.resolve(row,{'with_mux':'$var_rst'})['issues'])
+
+
 def test_subsystem_inputs_have_separate_upstreams_and_exactly_one_block_each(tmp_path):
     graph,reg=setup(tmp_path);plan=prepare(graph,reg,tmp_path/'plan',False)
     total,rows=plan.branches();assert total==2

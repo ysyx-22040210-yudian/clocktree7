@@ -9,7 +9,7 @@ import uuid
 
 from .storage import write_graph
 from .register_view import RegisterDialog,RELATIONS
-from .sv_templates import SVPlan,ROLES,architecture_signature,write_source
+from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates
 from .runtime import tail_text
 
 
@@ -46,12 +46,13 @@ class CandidateDialog(tk.Toplevel):
 
 class SVDialog(tk.Toplevel):
     def __init__(self,app):
-        super().__init__(app);self.app=app;self.graph=app.graph;self.plan=None;self.directory=None;self.process=None;self.stream=None;self.offset=0;self.closed=False;self.rows={}
+        graph=graph_for_templates(app.graph,app.get_config(validate=False))
+        super().__init__(app);self.app=app;self.graph=graph;self.plan=None;self.directory=None;self.process=None;self.stream=None;self.offset=0;self.closed=False;self.rows={}
         saved=app.ui_state.get(self.graph['config']);self.selections=dict(saved.get('sv_branch_selections',{}))
         self.title('时钟树分支 · 用户模板生成 SV');self.geometry('1400x900');self.minsize(1050,700);self.transient(app)
         frame=ttk.Frame(self,padding=14);frame.pack(fill='both',expand=True)
         ttk.Label(frame,text='每个真实末端输入生成一段模板代码，全部写入一个 SV 文件',font=(app.family,14,'bold')).pack(anchor='w')
-        ttk.Label(frame,text='$var_pllsel · $var_div · $var_swdone · $var_gt0～2 · $var_pll0～3 · $var_clkip  |  门控按连接顺序编号，缺位补 1\'b1；$display 原样保留').pack(anchor='w',pady=6)
+        ttk.Label(frame,text='$var_pllsel · $var_div · $var_swdone · $var_gt0～2 · $var_pll0～3 · $var_clkip · $var_rst  |  $var_rst 取最初器件所属层复位；门控/PLL 缺位补 1\'b1',wraplength=1330).pack(anchor='w',pady=6)
         bar=ttk.Frame(frame);bar.pack(fill='x',pady=5)
         self.registers=tk.StringVar(value=saved.get('register_trace_directory',''))
         ttk.Label(bar,text='寄存器结果目录').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
@@ -102,6 +103,7 @@ class SVDialog(tk.Toplevel):
                 plan=SVPlan(previous)
                 if plan.source().get('architecture_signature')==architecture_signature(self.graph):
                     self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh();self.export_button.configure(state='normal')
+                else:self.status.set('架构或复位配置已改变，请重新分析全部分支；模板和候选选择已保留。')
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
     def templates(self):return {k:e.get('1.0','end-1c') for k,e in self.editors.items()}
     def remember(self):
@@ -164,6 +166,10 @@ class SVDialog(tk.Toplevel):
         if not row:return
         result=self.plan.resolve(row,self.templates(),self.selections.get(row['id']));self.mode.set(self.selections.get(row['id'],{}).get('mode','自动'))
         text='\n'.join('$'+k+' = '+v for k,v in result['values'].items())
+        reset=result.get('reset',{})
+        if 'var_rst' in result['values']:
+            for origin in reset.get('origins',[reset]):
+                text+='\n复位来源：起始器件 {} · L{}（用户配置：{}）'.format(origin.get('instance','?'),origin.get('layer','?'),origin.get('configured',''))
         if result['issues']:text+='\n\n需要处理：\n'+'\n'.join(result['issues'])
         else:text+='\n\n该分支生成预览：\n'+result['code']
         self.preview.delete('1.0','end');self.preview.insert('1.0',text)

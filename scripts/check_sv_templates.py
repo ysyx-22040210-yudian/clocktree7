@@ -17,8 +17,8 @@ from check_target_mode import run as extract
 
 
 TEMPLATES={
- 'with_mux':'initial begin\n  $display("MUX branch", $var_pllsel, $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip);\nend',
- 'without_mux':'initial begin\n  $display("NO MUX branch", $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip);\nend'}
+ 'with_mux':'initial begin\n  $display("MUX branch", $var_pllsel, $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip, $var_rst);\nend',
+ 'without_mux':'initial begin\n  $display("NO MUX branch", $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip, $var_rst);\nend'}
 
 
 def native(out):
@@ -26,7 +26,7 @@ def native(out):
     rtl='''module ctl_mux(input a,b,input [7:4] select_i,output o);assign o=select_i[4]?a:b;endmodule
 module ctl_div(input i,input [3:0] ratio_i,output o,done_o);assign o=i;assign done_o=i;endmodule
 module clock_sink(input [3:2] clocks);endmodule
-module sv_top(input clk,dft_mode,a,b,input [15:0] data);
+module sv_top(input clk,dft_mode,a,b,rst_n,rst_alt_n,rst_upstream_n,input [15:0] data);
 reg [15:0] C,D,E;always @(posedge clk) begin C<=data;D<=data;end
 wire cm,cg,cd,ng,nd,ng2,ng3,done0,done1;
 ctl_mux m(.a(a),.b(b),.select_i(dft_mode?C[15:12]:D[5:2]),.o(cm));
@@ -53,18 +53,20 @@ endmodule
            {'module':'ctl_gate3','kind':'gate','clock_inputs':['i'],'clock_output':'o','aux_ports':{'gt':'enable_i'}},
            {'module':'clock_sink','kind':'subsystem','clock_inputs':['clocks']}]
     cfg={'design':{'top':'sv_top','elab':str(build/'simv.daidir/kdb.elab++')},'memory_limit_gib':4,
-         'layers':[{'index':i+1,'hierarchy':'sv_top','modules':[rule]} for i,rule in enumerate(rules)]}
+         'layers':[{'index':i+1,'hierarchy':'sv_top','reset_signal':'rst_n' if i==0 else 'rst_alt_n' if i==1 else 'rst_upstream_n','modules':[rule]} for i,rule in enumerate(rules)]}
     graph,tree_report=extract(cfg,out/'tree');assert graph['summary']['connectivity_complete']
     request={'config':graph['config'],'seeds':list(seeds_from_graph(graph))};write_graph(out/'register-request.json',request)
     result=trace(out/'register-request.json',out/'registers');assert result['summary']['complete']
     plan=prepare(graph,out/'registers',out/'plan');total,branches=plan.branches();assert total==2
     mux=next(b for b in branches if b['mode']=='with_mux');other=next(b for b in branches if b['mode']=='without_mux')
     first=plan.resolve(mux,TEMPLATES);assert first['ready'],first['issues']
-    assert first['values']=={'var_clkip':'sv_top.cd','var_pllsel':'sv_top.D[5:2]','var_div':'sv_top.D[9:6]','var_swdone':'sv_top.E[10]',
+    assert first['values']=={'var_rst':'sv_top.rst_n','var_clkip':'sv_top.cd','var_pllsel':'sv_top.D[5:2]','var_div':'sv_top.D[9:6]','var_swdone':'sv_top.E[10]',
                             'var_gt0':'sv_top.C[7]','var_gt1':"1'b1",'var_gt2':"1'b1",'var_pll0':'sv_top.a','var_pll1':'sv_top.b','var_pll2':"1'b1",'var_pll3':"1'b1"},first['values']
     second=plan.resolve(other,TEMPLATES);assert not second['ready'] and any('多组' in p for p in second['issues'])
     assert [second['values']['var_gt'+str(i)] for i in range(3)]==['sv_top.C[6]','sv_top.C[5]','sv_top.C[4]']
     assert second['values']['var_pll0']=='sv_top.a' and second['values']['var_clkip']=='sv_top.ng3'
+    assert first['reset']['layer']==1 and first['reset']['instance']=='sv_top.m'
+    assert second['values']['var_rst']=='sv_top.rst_alt_n' and second['reset']['layer']==2 and second['reset']['instance']=='sv_top.z_first'
     output=out/'all-branches.sv';partial=plan.export(TEMPLATES,output);assert partial['blocks']==partial['skipped']==1
     write_graph(out/'partial-report.json',json.loads((out/'all-branches.sv.mapping.json').read_text()))
     choices=plan.candidates(other,'var_swdone');assert {c['expression'] for c in choices}=={'sv_top.E[11]','sv_top.E[12]'}
@@ -92,6 +94,21 @@ def gui(out,phase,screenshots):
     app.show_error=lambda title,error:errors.append(title+': '+str(error));pump(app,lambda:not app.busy)
     if phase=='gui-write':
         app.show_graph(read_graph(out/'tree/clocktree.json'));pump(app)
+        app.select_layer(1);assert app.layer_reset_var.get()=='rst_n'
+        app.layer_reset_var.set('rst_alt_n');app.select_layer(2);assert app.layer_reset_var.get()=='rst_alt_n'
+        app.layer_reset_var.set('rst_n');app.select_layer(6);assert app.layer_reset_var.get()=='rst_upstream_n'
+        app.add_layer();assert app.layer_reset_var.get()==''
+        app.layer_reset_var.set('temporary_rst');app.remove_layer();assert app.active_layer==6 and app.layer_reset_var.get()=='rst_upstream_n'
+        app.select_layer(1);assert app.layer_reset_var.get()=='rst_alt_n'
+        app.layer_reset_var.set('rst_alt_n');assert not app._config_dirty
+        app.switch_tree_type('reset');pump(app);app.select_layer(2);app.layer_reset_var.set('reset_workspace_n')
+        app.switch_tree_type('clock');pump(app);assert app.active_layer==1 and app.layer_reset_var.get()=='rst_alt_n'
+        write_graph(out/'gui-reset-config.json',app.get_config())
+        from clocktree.config import load_config
+        assert load_config(out/'gui-reset-config.json')['layers'][0]['reset_signal']=='rst_alt_n'
+        assert app.graph['config']['layers'][0]['reset_signal']=='rst_n'  # original evidence stays immutable
+        app.settings_canvas.yview_moveto(1.0);pump(app)
+        if screenshots:capture(app,out/'layer-reset-input.png')
         app.ui_state.update(app.graph['config'],register_trace_directory=str(out/'registers'))
         dialog=SVDialog(app)
         for key,editor in dialog.editors.items():editor.delete('1.0','end');editor.insert('1.0',TEMPLATES[key])
@@ -105,16 +122,22 @@ def gui(out,phase,screenshots):
         item=next(k for k,r in picker.items.items() if r['expression']=='sv_top.E[11]');picker.table.selection_set(item);picker.choose();pump(app)
         dialog.export(out/'gui-generated.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
         assert json.loads((out/'gui-generated.sv.mapping.json').read_text())['block_count']==2
+        content=(out/'gui-generated.sv').read_text();assert content.count('sv_top.rst_alt_n')==1 and content.count('sv_top.rst_n')==1 and 'sv_top.rst_upstream_n' not in content
         dialog.table.selection_set(other['id']);dialog.detail();pump(app)
         assert dialog.export_button.winfo_y()+dialog.export_button.winfo_height()<=dialog.export_button.master.winfo_height()
         assert dialog.export_button.winfo_rooty()+dialog.export_button.winfo_height()<=dialog.winfo_rooty()+dialog.winfo_height()
         if screenshots:capture(dialog,out/'sv-template-workbench.png')
         dialog.close();app._save_session_now();pump(app)
     else:
+        assert app.active_layer==1 and app.layer_reset_var.get()=='rst_alt_n'
+        assert app._workspaces['reset']['config']['layers'][1]['reset_signal']=='reset_workspace_n'
         dialog=SVDialog(app);pump(app);assert dialog.plan and dialog.templates()==TEMPLATES and dialog.selections
         assert all(dialog.plan.resolve(r,TEMPLATES,dialog.selections.get(r['id']))['ready'] for r in dialog.rows.values())
+        for row in dialog.rows.values():
+            expected='sv_top.rst_alt_n' if row['mode']=='with_mux' else 'sv_top.rst_n'
+            assert dialog.plan.resolve(row,TEMPLATES,dialog.selections.get(row['id']))['values']['var_rst']==expected
         dialog.close()
-    assert not errors,errors;write_graph(out/(phase+'.json'),{'passed':True,'errors':errors});app.close()
+    assert not errors,errors;write_graph(out/(phase+'.json'),{'passed':True,'errors':errors,'layer_reset_config':True,'post_extraction_edit':True,'reset_values':{'with_mux':'sv_top.rst_alt_n','without_mux':'sv_top.rst_n'},'reset_basis':'branch_origin'});app.close()
     deadline=time.monotonic()+30
     while not app._destroying and time.monotonic()<deadline:app.update();time.sleep(.01)
 

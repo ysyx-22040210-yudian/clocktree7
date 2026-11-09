@@ -80,6 +80,8 @@ def build_graph(events, config, evidence_store=None):
                 diagnostics.append({"code": "layer_conflict", "instance": key, "layers": [nodes[key]["layer"], item["layer"]]})
                 continue
             nodes[key] = dict(item, id=key)
+            from .auxiliary import aux_diagnostics
+            diagnostics.extend(aux_diagnostics(nodes[key]))
         elif kind == "trace":
             trace = begin(item)
             for result in item.get('results', []):

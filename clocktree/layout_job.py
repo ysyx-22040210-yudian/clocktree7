@@ -17,7 +17,7 @@ class LayoutJob:
                  'layer_count':model.layer_count,'layout_mode':getattr(model,'layout_mode','branch')}
         # Aggregate membership sequences and evidence stay in the parent index;
         # the layout worker only needs shape geometry and connectivity.
-        payload['nodes']={key:{k:v for k,v in n.items() if k in ('id','inputs','output','kind','layer','component','aggregate','expand_bus')}
+        payload['nodes']={key:{k:v for k,v in n.items() if k in ('id','inputs','output','kind','layer','component','aggregate','expand_bus','aux_ports')}
                           for key,n in model.nodes.items()}
         (base/'request.json').write_text(json.dumps(payload),encoding='utf-8')
         kwargs={'cwd':str(Path(__file__).resolve().parents[1]),'stdout':self.log,'stderr':self.log}

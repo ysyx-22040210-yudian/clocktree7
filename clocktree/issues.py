@@ -35,6 +35,10 @@ LABELS={
     'module_checkpoint_sequence':('模块断点次序异常','核对原任务实现版本和断点数据'),
     'missing_module_checkpoint':('缺少模块断点','查看查找阶段是否正常提交'),
     'unknown_target':('连接端点不存在','核对实例查找结果与原始追踪记录'),
+    'aux_port_missing':('辅助端口不存在','核对该 module 的实际接口名；修正规则后重新提取'),
+    'aux_port_direction':('辅助端口方向不符','pll_sel / div / gt 应为输入，sw_done 应为输出'),
+    'aux_port_unconnected':('辅助端口未连接','核对 RTL 例化绑定；此端口仅用于展示'),
+    'aux_connection_unavailable':('辅助端口未取得','查看 NPI 端口绑定信息或重新提取；不推测信号'),
 }
 COLUMNS=('category','severity','layer','module','instance','pin','signal','reason','hint')
 HEADINGS=('类别','严重程度','层级','Module','实例','端口','实际信号','原因','处理提示')

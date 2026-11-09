@@ -147,10 +147,15 @@ class CanvasScene:
             else:
                 d.port_tooltips.update(draw_device(c,node,x*scale+ox,y*scale+oy,w,h,scale,d.family,selected,tags,d._font_cache))
                 if issue_pin:
-                    from .devices import port_offsets,pin_index
+                    from .devices import port_offsets,pin_index,auxiliary_port_y
                     pin=issue_pin
-                    offset=port_offsets(node,w,h)[0][pin_index(node,pin)] if pin in node['inputs'] else port_offsets(node,w,h)[1]
-                    if offset:
+                    auxiliary_y=auxiliary_port_y(node,h,pin)
+                    offset=port_offsets(node,w,h)[0][pin_index(node,pin)] if pin in node['inputs'] else (port_offsets(node,w,h)[1] if pin==node.get('output') else None)
+                    if auxiliary_y is not None:
+                        c.create_rectangle((x+8)*scale+ox,(y+auxiliary_y-17)*scale+oy,
+                                           (x+w-8)*scale+ox,(y+auxiliary_y+17)*scale+oy,
+                                           outline='#ff9b78',width=2,tags=tags)
+                    elif offset:
                         px,py=(x+offset[0])*scale+ox,(y+offset[1])*scale+oy
                         c.create_oval(px-8,py-8,px+8,py+8,outline='#ff9b78',width=3,tags=tags)
             self.nodes[key]=(tag,detail_key,None)

@@ -10,9 +10,10 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.0 · 更新日期：2026-11-07 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.1 · 更新日期：2026-11-09 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
+<p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
 <p><strong>大规模设计默认选“目标结构提取（大设计推荐）”</strong>，从全部关注输入反查驱动，不展开输出全部 load。需要检查普通寄存器负载时，另选“全负载核验”并新建提取。两种模式的证据与末端含义不同，见 <a href="#target-extraction">第 28 章</a>。本手册旧截图和历史验收中关于 driver/load 双向证据、范围出口与普通负载统计的描述，适用于全负载核验模式。</p>
 <p><a class="figure" href="images/default-two-layers.png" target="_blank"><img alt="没有历史记录时的两级空白配置" src="images/default-two-layers.png" /></a></p>
@@ -49,6 +50,7 @@
 <li><a href="#target-extraction">大设计：目标结构提取与全负载核验</a></li>
 <li><a href="#port-trace-timeout">端口 trace 超时与当前例化跳过</a></li>
 <li><a href="#workbench-v3">分支布局、快速导航、搜索历史、子系统与完整问题表</a></li>
+<li><a href="#auxiliary-ports">辅助端口：pll_sel、div、sw_done 与 gt</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -1821,4 +1823,114 @@ bash clocktree.sh gui
 <h3 id="3010">30.10 兼容、验证与限制</h3>
 <p>旧配置、旧结果及历史快照继续可读。旧索引需要时在用户缓存中升级，保留原历史文件；原始真实实例 ID、连接证据和提取断点不因改变布局而重写。升级实现后恢复未完成任务仍遵循原有版本指纹检查，不强行使用不兼容断点。</p>
 <p>性能以 VM 实测为准：8,195 实例实图拖动 P95 25.0 ms、缩放 P95 26.4 ms，停止缩放后约 148 ms 恢复细节；10 万节点合成图通过概览、局部展开、搜索、全分支高亮及重复操作稳定性检查。大图按需显示概览和局部，未同时绘制 10 万个详细器件。</p>
-<p>详细测试环境、旧版对比、真实 NPI/KDB 用例、便携包和已知限制见 <a href="WORKBENCH_VALIDATION.zh-CN.md">本轮逐项验收报告</a>。这些数据不是商业芯片数据库的性能保证。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>详细测试环境、旧版对比、真实 NPI/KDB 用例、便携包和已知限制见 <a href="WORKBENCH_VALIDATION.zh-CN.md">本轮逐项验收报告</a>。这些数据不是商业芯片数据库的性能保证。</p>
+<p><a id="auxiliary-ports"></a></p>
+<h2 id="31-pll_seldivsw_done-gt">31. 辅助端口：pll_sel、div、sw_done 与 gt</h2>
+<h3 id="311">31.1 填写哪个名称</h3>
+<p>辅助端口是用来展示控制/状态信号的可选字段。下面的功能名称是工具中的角色名，右边输入框应填写 RTL module 声明中的<strong>真实端口名</strong>，不是连到它的 wire 名，也不是整个实例路径。</p>
+<table>
+<thead>
+<tr>
+<th>器件类型</th>
+<th>编辑窗口中的字段</th>
+<th>期望 RTL 方向</th>
+<th>实际端口名举例</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>MUX 选择器</td>
+<td><code>pll_sel 输入端口名</code></td>
+<td>input</td>
+<td><code>choose_src</code>、<code>pll_select_i</code></td>
+</tr>
+<tr>
+<td>DIV 分频器</td>
+<td><code>div 输入端口名</code></td>
+<td>input，可为总线</td>
+<td><code>ratio_cfg</code>、<code>div_value_i</code></td>
+</tr>
+<tr>
+<td>DIV 分频器</td>
+<td><code>sw_done 输出端口名</code></td>
+<td>output</td>
+<td><code>locked_o</code>、<code>switch_done_o</code></td>
+</tr>
+<tr>
+<td>门控 GATE</td>
+<td><code>gt 输入端口名</code></td>
+<td>input</td>
+<td><code>enable_ctl</code>、<code>gate_en_i</code></td>
+</tr>
+</tbody>
+</table>
+<p>每个字段只填写一个端口名。并非每个器件都具有这些端口；不需要的字段留空即可。工具不假设实际接口就叫 <code>pll_sel</code>、<code>div</code>、<code>sw_done</code> 或 <code>gt</code>。MUX 在时钟树和复位树中均可配置 <code>pll_sel</code>；复位树仍不增加 DIV 或门控器件类型。</p>
+<h3 id="312-gui">31.2 GUI 操作步骤</h3>
+<ol>
+<li>在左侧选择规则层级，添加或编辑一条 module 规则。</li>
+<li>选择 MUX、DIV 或门控，填写原有的 module、关注时钟/复位输入和唯一输出。</li>
+<li>在“辅助端口（选填）”中填写实际接口名。DIV 可只填 <code>div</code>、只填 <code>sw_done</code>，也可两者都填。</li>
+<li>点击“保存规则”。辅助端口不可与参与追踪的输入/输出重合，也不可在同一规则中重复。</li>
+<li>保存配置并启动一次新的提取。工具对规则匹配到的<strong>每个实例</strong>分别读取 elab 连接，不能由同名 module 的第一个实例推断其他实例。</li>
+<li>放大并定位器件，查看下方“辅助端口 · 仅显示”。长名称可悬停查看全文，也可在右侧“属性”的“辅助端口例化连接（不参与追踪）”中查看。</li>
+</ol>
+<p><a class="figure" href="images/auxiliary-div-editor.png" target="_blank"><img alt="DIV 编辑器：填写实际接口 ratio_cfg 和 locked_o" src="images/auxiliary-div-editor.png" /></a></p>
+<p>例如 RTL 为：</p>
+<pre><code class="language-systemverilog">ctl_div d0 (
+    .i(gclk0), .o(c0),
+    .ratio_cfg(ratio[5:2]),
+    .locked_o(done[0])
+);
+</code></pre>
+<p>则在 DIV 规则中填 <code>div = ratio_cfg</code>、<code>sw_done = locked_o</code>。提取后器件下方显示：</p>
+<pre><code class="language-text">div · 输入  ratio_cfg
+ratio[5:2]
+sw_done · 输出  locked_o
+done[0]
+</code></pre>
+<p><a class="figure" href="images/auxiliary-div-details.png" target="_blank"><img alt="真实 Verdi 2018 结果：DIV 辅助端口和例化信号" src="images/auxiliary-div-details.png" /></a></p>
+<h3 id="313">31.3 结果与连线的关系</h3>
+<p>辅助端口只通过 NPI Language Model 的 <code>npiHighConn</code> 读取例化连接，并读取 elab 方向进行检查；不加入 driver/load 的追踪种子，不增加端口连线、上游/下游关系或独立网络。MUX 仍保留全部已解析时钟输入路径，不根据 <code>pll_sel</code> 的值裁剪分支；DIV 不根据 <code>div</code> 的信号计算运行时分频比。</p>
+<p>可显示普通信号、位选、总线片选、常量和组合表达式。比如 <code>enable &amp; cfg_sel[0]</code> 会作为一个例化表达式显示。整条总线应填写端口名，如 <code>ratio_cfg</code>；它的实际连接可以是 <code>ratio[5:2]</code>。填写 <code>ratio_cfg[2]</code> 时，若 NPI 只提供所属端口的整体绑定，属性中会注明“整体连接、未推断逐位映射”，不会编造该位对应的 wire。</p>
+<p>器件下方的辅助区没有外部接线点。连线仍只接原有的关注时钟/复位端口。辅助区随器件一起参与布局，Tk 和 SVG 使用同一套模型；全图概览和缩小时可能隐藏文字，放大到实例明细可看见。</p>
+<h3 id="314">31.4 异常提示</h3>
+<table>
+<thead>
+<tr>
+<th>提示</th>
+<th>含义与处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>辅助端口不存在</td>
+<td>该实例没有填写的端口；检查实际接口名称、大小写或参数化变体。</td>
+</tr>
+<tr>
+<td>辅助端口方向不符</td>
+<td>如把 output 误填入 <code>div</code>；界面保留已读到的连接并提示方向不符。</td>
+</tr>
+<tr>
+<td>辅助端口未连接</td>
+<td>elab 的 high connection 为空，如 <code>.locked_o()</code>；如确属预期可保留。</td>
+</tr>
+<tr>
+<td>辅助连接未取得</td>
+<td>NPI 未取得连接或方向；检查属性及该任务的 Verdi 日志。</td>
+</tr>
+</tbody>
+</table>
+<p>这些项目进入“问题表 / CSV”，可分类、搜索并定位到器件对应辅助行。它们是显示信息的警告，不会把已有的正确时钟连线改成错误，也不会让未知连接变成已确认连线。辅助端口不使用“端口 trace 超时”；原有主端口超时、跳过的标记不会误套到辅助端口上。</p>
+<h3 id="315">31.5 配置、导出与恢复</h3>
+<p>配置文件使用可选 <code>aux_ports</code> 对象，键是功能名，值是实际端口名。例如：</p>
+<pre><code class="language-json">{
+  &quot;module&quot;: &quot;ctl_div&quot;,
+  &quot;kind&quot;: &quot;div&quot;,
+  &quot;clock_inputs&quot;: [&quot;i&quot;],
+  &quot;clock_output&quot;: &quot;o&quot;,
+  &quot;aux_ports&quot;: {&quot;div&quot;: &quot;ratio_cfg&quot;, &quot;sw_done&quot;: &quot;locked_o&quot;}
+}
+</code></pre>
+<p>MUX 使用 <code>{"pll_sel": "choose_src"}</code>，门控使用 <code>{"gt": "enable_ctl"}</code>。旧配置无 <code>aux_ports</code> 可直接使用，行为不变。旧结果没有采集的辅助连接不会自动补齐；修改规则后应重新提取。</p>
+<p>结果的 <code>aux_ports</code> 保存角色映射，<code>port_connections</code> 保存各实例实际连接、方向及读取状态。索引结果、JSON、SVG、自动历史恢复和本版本的 module 断点轮换均保留这些信息。升级前产生的未完成任务仍受版本指纹检查，不能强行复用不兼容断点。</p>
+<p>本功能的真实 Verdi、Tk、无辅助配置对比和迁移验收见 <a href="AUXILIARY_PORTS_VALIDATION.zh-CN.md">辅助端口验收报告</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

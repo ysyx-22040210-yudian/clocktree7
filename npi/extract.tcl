@@ -98,7 +98,7 @@ proc ct_find_direct_instances {root module result} {
 proc ct_release_instances {handles} {
     foreach handle $handles {npi_release_handle -object $handle}
 }
-proc ct_port_connections {instance pins} {
+proc ct_port_connections {instance pins {annotation_directions {}}} {
     # Language-model high connections preserve the instantiation expression,
     # unlike traced/canonical net names. Inspect only ports on this instance;
     # never enumerate descendants or retain language handles between instances.
@@ -131,8 +131,13 @@ proc ct_port_connections {instance pins} {
                         # A configured vector bit still refers to this formal
                         # port's whole high connection. Do not guess bit mapping.
                         set coverage [expr {$pin eq $name ? "port" : "whole_port"}]
+                        set annotation {}
+                        if {[dict exists $annotation_directions $pin]} {
+                            lappend annotation direction [ct_js [npi_get_str -property npiDirection -object $port]]
+                            lappend annotation expected_direction [ct_js [dict get $annotation_directions $pin]]
+                        }
                         dict set result $pin [ct_object status [ct_js $status] expression [ct_js $expression] \
-                            full_name [ct_js $full_name] formal_port [ct_js $name] coverage [ct_js $coverage] source [ct_js npiHighConn]]
+                            full_name [ct_js $full_name] formal_port [ct_js $name] coverage [ct_js $coverage] source [ct_js npiHighConn] {*}$annotation]
                     }
                 } message]
                 if {$code} {
@@ -645,16 +650,28 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
     if {$output ne ""} {lappend pins $output}
     if {$emit} {
         set connection_fields {}
+        set connection_pins $pins
+        set auxiliary {}
+        set annotation_directions [dict create]
+        if {[info exists ::ct_active_aux_ports]} {
+            foreach entry $::ct_active_aux_ports {
+                lassign $entry role pin expected_direction
+                lappend auxiliary $role [ct_js $pin]
+                lappend connection_pins $pin
+                dict set annotation_directions $pin $expected_direction
+            }
+        }
         if {$language_handle ne ""} {
-            if {[catch {ct_port_connections $language_handle $pins} connections]} {
+            if {[catch {ct_port_connections $language_handle $connection_pins $annotation_directions} connections]} {
                 set connections {}
-                foreach pin $pins {
+                foreach pin $connection_pins {
                     lappend connections $pin [ct_object status [ct_js unavailable] reason [ct_js connection_query_failed]]
                 }
                 set connections [ct_object {*}$connections]
             }
             set connection_fields [list port_connections $connections]
         }
+        if {[llength $auxiliary]} {lappend connection_fields aux_ports [ct_object {*}$auxiliary]}
         ct_emit [ct_object event [ct_js instance] path [ct_js $path] module [ct_js $module] layer $layer \
             inputs [ct_strings $inputs] configured_inputs [ct_strings $configured_inputs] output [expr {$output eq "" ? "null" : [ct_js $output]}] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
         if {$ct_context} {puts $ct_target_stream [list ct_target $path $module $layer $inputs $output $kind $source]}
@@ -873,6 +890,9 @@ proc ct_main {} {
             continue
         }
         lassign $rule layer scope module inputs output kind
+        # Annotation metadata is read only while committing the instance.
+        # Trace seeds and target checkpoints remain the primary ports only.
+        set ::ct_active_aux_ports [lindex $rule 6]
         ct_journal item_begin modules [ct_object index $module_cursor query_index $query_count rule_in_query $rule_index \
             layer $layer scope [ct_js $scope] module [ct_js $module]] "apply module rule"
         set matched 0

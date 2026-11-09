@@ -4,6 +4,7 @@ import re
 import unicodedata
 from xml.sax.saxutils import escape, quoteattr
 from .profiles import profile, rule_ports
+from .auxiliary import aux_entries, aux_height, aux_problem, DIRECTIONS
 
 
 DEVICE_TYPES = {
@@ -78,7 +79,7 @@ def typed_nodes(graph):
 def node_height(node):
     if node.get('aggregate'):
         return 144
-    return max(152, 88 + 32 * len(display_inputs(node)))
+    return max(152, 88 + 32 * len(display_inputs(node))) + aux_height(node)
 
 
 def display_inputs(node):
@@ -101,6 +102,7 @@ def port_offsets(node, width, height):
     """The sole source of pin anchors for symbols and all routed edges."""
     if node.get('aggregate'):
         return [(0, 110)], (width, 110)
+    height -= aux_height(node)
     count = len(display_inputs(node))
     middle = (50 + height - 18) / 2
     # Leave room beneath the last signal label for boundary/status markers.
@@ -138,7 +140,7 @@ def connection_details(node, pins):
             lines.append('  .{} 的整体连接；关注 {}，未推断逐位映射'.format(connection['formal_port'], pin))
         if connection.get('reason'):
             lines.append('  原因：' + connection['reason'])
-        if node.get('trace_timeout'):
+        if node.get('trace_timeout') and pin in node['inputs'] + ([node['output']] if node.get('output') else []):
             state = node.get('port_trace_status', {}).get(pin, 'not_traced')
             label = {'trace_timeout':'trace 超时；本条未完成证据已撤回',
                      'trace_skipped_timeout':'trace 已跳过（本例化其他端口超时）',
@@ -156,10 +158,27 @@ def trace_pin_label(node, pin):
     return pin + ' · ' + suffix if suffix else pin
 
 
+def auxiliary_details(node):
+    lines = []
+    for role, pin, direction in aux_entries(node):
+        lines.append('{} · {} · 仅显示、不追踪'.format(role, DIRECTIONS[direction]))
+        lines.append(connection_details(node, [pin]))
+        problem = aux_problem(node, role, pin, direction)
+        if problem:lines.append('  ' + problem[1])
+    return '\n'.join(lines)
+
+
+def auxiliary_port_y(node, height, pin):
+    for index, (_, name, _) in enumerate(aux_entries(node)):
+        if name == pin:return height - aux_height(node) + 34 + index * 36
+    return None
+
+
 def symbol_parts(node, width, height, selected=False):
     """Return neutral drawing primitives consumed by native Tk and SVG alike.
 
-    Only configured ports have external wires. Internal pulse/clock marks
+    Only primary ports have external wires. Auxiliary ports are text only.
+    Internal pulse/clock marks
     are pictograms, not invented SEL/EN/test pins or simulated waveforms.
     """
     parts = []
@@ -168,13 +187,15 @@ def symbol_parts(node, width, height, selected=False):
     info = DEVICE_TYPES.get(kind, {'color': '#8199b9', 'fill': '#1c2d44', 'short': '未分类'})
     color = info['color']
     inputs, output = port_offsets(node, width, height)
+    total_height = height
+    height -= aux_height(node)
     def add(op, **kwargs):
         parts.append(dict(op=op, **kwargs))
     def line(points, fill=color, stroke_width=1.5, **kwargs):
         add('polyline', points=points, fill=fill, width=stroke_width, **kwargs)
     def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None, tooltip=None):
         add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width, tooltip=tooltip)
-    add('rect', x=0, y=0, w=width, h=height, radius=8,
+    add('rect', x=0, y=0, w=width, h=total_height, radius=8,
         fill='#1b3350' if selected else '#17283e', stroke='#78bdff' if selected else ('#f5a46b' if node.get('trace_timeout') else '#2e445f'),
         width=2 if selected else 1, dash=aggregate)
     path = node.get('path', node['id'])
@@ -300,6 +321,22 @@ def symbol_parts(node, width, height, selected=False):
         if state:
             add('circle',x=status_x,y=height-9,r=2.6,fill=fill,stroke='',width=0)
             status_x -= 11
+    if aux_height(node):
+        add('rect', x=7, y=height+4, w=width-14, h=total_height-height-8, radius=5,
+            fill='#122237', stroke='', width=0)
+        text(13, height+12, '辅助端口 · 仅显示', size=8, fill='#7e98b9')
+        for index, (role, pin, direction) in enumerate(aux_entries(node)):
+            y = height + 26 + index*36
+            problem = aux_problem(node, role, pin, direction)
+            detail = '{} · {} · {} · 仅显示、不追踪\n{}'.format(path, role, DIRECTIONS[direction], connection_details(node, [pin]))
+            if problem:detail += '\n' + problem[1]
+            value = connection_label(node, pin)
+            if problem and problem[0] == 'aux_port_missing':value = '端口不存在'
+            elif problem and problem[0] == 'aux_port_direction':value += ' · 方向不符'
+            text(13, y, '{} · {}  {}'.format(role, DIRECTIONS[direction], pin), size=10,
+                 fill=color, max_width=width-26, tooltip=detail)
+            text(13, y+16, value, size=11, fill='#ffb27b' if problem and 'port_connections' in node else '#9fcfc3',
+                 max_width=width-26, tooltip=detail)
     return parts
 
 

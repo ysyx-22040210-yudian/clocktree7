@@ -73,6 +73,22 @@ def test_selected_vector_bit_explicitly_reports_the_whole_formal_connection():
     assert '未推断逐位映射' in connection_details(node, ['i[3]'])
 
 
+def test_annotation_reads_actual_formal_direction_and_whole_bus_binding():
+    tcl=interpreter()
+    tcl.eval('''rename npi_get_str original_get_str
+        proc npi_get_str {args} {
+            if {[lindex $args 1] eq "npiDirection"} {
+                return [expr {[lindex $args 3] eq "o" ? "npiOutput" : "npiInput"}]
+            }
+            return [original_get_str {*}$args]
+        }
+    ''')
+    data=json.loads(tcl.call('ct_port_connections','top.u',('i','o'),('i','npiInput','o','npiOutput')))
+    assert data['i']['direction']=='npiInput' and data['i']['expression']=='alias_clk'
+    assert data['o']['direction']=='npiOutput' and data['o']['status']=='unconnected'
+    assert set(tcl.splitlist(tcl.getvar('decompiled')))=={'connection:i'}
+
+
 def test_expression_is_json_data_even_when_it_contains_tcl_or_xml_characters():
     tcl = interpreter()
     expression = '(bus[2] & enable) | \\escaped"name ; [error injected]'

@@ -3,6 +3,7 @@ import os
 import math
 from pathlib import Path
 from .profiles import TREE_PROFILES, tree_type, profile, rule_ports
+from .auxiliary import AUX_ROLES, validate_aux_ports
 
 EXTRACTION_MODES = {'target': '目标结构提取（大设计推荐）', 'full': '全负载核验'}
 
@@ -86,6 +87,7 @@ def validate_config(config, allow_incomplete=False):
                 raise ValueError('kind must be ' + ', '.join(info['kinds']) + ' for ' + mode + ' analysis')
             if kind in ('gate', 'occ', 'div', 'rsy_sync') and len(inputs) != 1:
                 raise ValueError('Gate, OCC, DIV and RSY_SYNC rules require exactly one input')
+            validate_aux_ports(rule, inputs, output)
     if not allow_incomplete and not any(layer.get("modules") for layer in layers):
         raise ValueError("Provide at least one module rule")
     design = config.get("design", {})
@@ -133,6 +135,10 @@ def write_tcl_config(config, path, output):
             inputs = "[list " + " ".join(tcl_string(p) for p in pins) + "]"
             fields = [str(layer["index"]), tcl_string(layer["hierarchy"]),
                       tcl_string(rule["module"]), inputs, tcl_string(output_pin or ''), tcl_string(rule.get('kind') or '')]
+            aux = validate_aux_ports(rule, pins, output_pin)
+            entries = ['[list {} {} {}]'.format(tcl_string(role), tcl_string(aux[role]), tcl_string('npi' + direction.title()))
+                       for role, direction in AUX_ROLES.get(rule.get('kind'), ()) if role in aux]
+            fields.append('[list ' + ' '.join(entries) + ']')
             lines.append("lappend ct_rules [list " + " ".join(fields) + "]")
     for key, value in config["design"].items():
         if key in ("elab", "filelist", "top"):

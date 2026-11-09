@@ -1,0 +1,676 @@
+{
+  "date": "2026-11-09",
+  "environment": {
+    "os": "CentOS 7.9",
+    "python": "3.6.8",
+    "tk": "8.5.13",
+    "verdi": "O-2018.09-SP2"
+  },
+  "pytest": {
+    "passed": 205,
+    "skipped": 1
+  },
+  "native": {
+    "passed": true,
+    "native_verdi": true,
+    "cases": [
+      {
+        "case": "target",
+        "passed": true,
+        "trace_seeds_unchanged": true,
+        "annotations": {
+          "aux_top.m0": {
+            "aux_ports": {
+              "pll_sel": "choose_src"
+            },
+            "connections": {
+              "choose_src": {
+                "status": "connected",
+                "expression": "cfg_sel[1]",
+                "full_name": "aux_top.cfg_sel[1]",
+                "formal_port": "choose_src",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.m1": {
+            "aux_ports": {
+              "pll_sel": "choose_src"
+            },
+            "connections": {
+              "choose_src": {
+                "status": "connected",
+                "expression": "'b0",
+                "full_name": "",
+                "formal_port": "choose_src",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.g0": {
+            "aux_ports": {
+              "gt": "enable_ctl"
+            },
+            "connections": {
+              "enable_ctl": {
+                "status": "connected",
+                "expression": "(enable & cfg_sel[0])",
+                "full_name": "",
+                "formal_port": "enable_ctl",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.g1": {
+            "aux_ports": {
+              "gt": "enable_ctl"
+            },
+            "connections": {
+              "enable_ctl": {
+                "status": "connected",
+                "expression": "enable",
+                "full_name": "aux_top.enable",
+                "formal_port": "enable_ctl",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.d0": {
+            "aux_ports": {
+              "div": "ratio_cfg",
+              "sw_done": "locked_o"
+            },
+            "connections": {
+              "ratio_cfg": {
+                "status": "connected",
+                "expression": "ratio[5:2]",
+                "full_name": "",
+                "formal_port": "ratio_cfg",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              },
+              "locked_o": {
+                "status": "connected",
+                "expression": "done[0]",
+                "full_name": "aux_top.done[0]",
+                "formal_port": "locked_o",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiOutput",
+                "expected_direction": "npiOutput"
+              }
+            }
+          },
+          "aux_top.d1": {
+            "aux_ports": {
+              "div": "ratio_cfg",
+              "sw_done": "locked_o"
+            },
+            "connections": {
+              "ratio_cfg": {
+                "status": "connected",
+                "expression": "'h5",
+                "full_name": "",
+                "formal_port": "ratio_cfg",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              },
+              "locked_o": {
+                "status": "unconnected",
+                "expression": "",
+                "full_name": "",
+                "formal_port": "locked_o",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiOutput",
+                "expected_direction": "npiOutput"
+              }
+            }
+          }
+        },
+        "seconds": 4.569,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 8,
+          "observed_pin_traces": 8,
+          "unresolved": 0,
+          "diagnostics": 1,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 2,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "full",
+        "passed": true,
+        "trace_seeds_unchanged": true,
+        "annotations": {
+          "aux_top.m0": {
+            "aux_ports": {
+              "pll_sel": "choose_src"
+            },
+            "connections": {
+              "choose_src": {
+                "status": "connected",
+                "expression": "cfg_sel[1]",
+                "full_name": "aux_top.cfg_sel[1]",
+                "formal_port": "choose_src",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.m1": {
+            "aux_ports": {
+              "pll_sel": "choose_src"
+            },
+            "connections": {
+              "choose_src": {
+                "status": "connected",
+                "expression": "'b0",
+                "full_name": "",
+                "formal_port": "choose_src",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.g0": {
+            "aux_ports": {
+              "gt": "enable_ctl"
+            },
+            "connections": {
+              "enable_ctl": {
+                "status": "connected",
+                "expression": "(enable & cfg_sel[0])",
+                "full_name": "",
+                "formal_port": "enable_ctl",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.g1": {
+            "aux_ports": {
+              "gt": "enable_ctl"
+            },
+            "connections": {
+              "enable_ctl": {
+                "status": "connected",
+                "expression": "enable",
+                "full_name": "aux_top.enable",
+                "formal_port": "enable_ctl",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              }
+            }
+          },
+          "aux_top.d0": {
+            "aux_ports": {
+              "div": "ratio_cfg",
+              "sw_done": "locked_o"
+            },
+            "connections": {
+              "ratio_cfg": {
+                "status": "connected",
+                "expression": "ratio[5:2]",
+                "full_name": "",
+                "formal_port": "ratio_cfg",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              },
+              "locked_o": {
+                "status": "connected",
+                "expression": "done[0]",
+                "full_name": "aux_top.done[0]",
+                "formal_port": "locked_o",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiOutput",
+                "expected_direction": "npiOutput"
+              }
+            }
+          },
+          "aux_top.d1": {
+            "aux_ports": {
+              "div": "ratio_cfg",
+              "sw_done": "locked_o"
+            },
+            "connections": {
+              "ratio_cfg": {
+                "status": "connected",
+                "expression": "'h5",
+                "full_name": "",
+                "formal_port": "ratio_cfg",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiInput",
+                "expected_direction": "npiInput"
+              },
+              "locked_o": {
+                "status": "unconnected",
+                "expression": "",
+                "full_name": "",
+                "formal_port": "locked_o",
+                "coverage": "port",
+                "source": "npiHighConn",
+                "direction": "npiOutput",
+                "expected_direction": "npiOutput"
+              }
+            }
+          }
+        },
+        "seconds": 3.369,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 14,
+          "observed_pin_traces": 14,
+          "unresolved": 0,
+          "diagnostics": 1,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.221,
+        "language_stats": {},
+        "elaborated_probes": []
+      },
+      {
+        "case": "missing-and-wrong-direction",
+        "passed": true,
+        "seconds": 3.422,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 8,
+          "observed_pin_traces": 8,
+          "unresolved": 0,
+          "diagnostics": 6,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.221,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 2,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "reset-target",
+        "passed": true,
+        "seconds": 3.422,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 1,
+          "reset_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 8,
+          "observed_pin_traces": 8,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.219,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 2,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "reset-full",
+        "passed": true,
+        "seconds": 3.256,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "reset",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 2,
+          "components": 1,
+          "reset_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 14,
+          "observed_pin_traces": 14,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.221,
+        "language_stats": {},
+        "elaborated_probes": []
+      },
+      {
+        "case": "rotated-target",
+        "passed": true,
+        "restarts": 3,
+        "annotations_equal": true,
+        "seconds": 11.207,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 6,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 8,
+          "observed_pin_traces": 8,
+          "unresolved": 0,
+          "diagnostics": 1,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.221,
+        "language_stats": {
+          "driver_queries": 6,
+          "cache_hits": 2,
+          "output_index_hits": 4
+        },
+        "elaborated_probes": []
+      },
+      {
+        "case": "rotated-full",
+        "passed": true,
+        "restarts": 3,
+        "annotations_equal": true,
+        "seconds": 11.612,
+        "summary": {
+          "instances": 6,
+          "edges": 4,
+          "roots": 2,
+          "tree_type": "clock",
+          "extraction_mode": "full",
+          "physical_loads_checked": true,
+          "terminal_semantics": "load_trace",
+          "validated_outputs": 0,
+          "terminals": 2,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 2,
+            "2": 2,
+            "3": 2
+          },
+          "terminal_layers": {
+            "3": 2
+          },
+          "expected_pin_traces": 14,
+          "observed_pin_traces": 14,
+          "unresolved": 0,
+          "diagnostics": 1,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.225,
+        "language_stats": {},
+        "elaborated_probes": []
+      }
+    ]
+  },
+  "gui": [
+    {
+      "passed": true,
+      "phase": "gui-write",
+      "callback_errors": [],
+      "instances": 6,
+      "edges": 4
+    },
+    {
+      "passed": true,
+      "phase": "gui-read",
+      "callback_errors": [],
+      "instances": 6,
+      "edges": 4
+    }
+  ],
+  "portable_rc2": {
+    "passed": true,
+    "folder": "/home/host/clocktree7-portable-qa/clocktree7-auxiliary-20261109-rc2",
+    "isolated_user_site": true,
+    "manifest_files": 212,
+    "source_commit": "bf99317e5b745fb594c38c28c1540341f352b009",
+    "source_dirty": true,
+    "gui": [
+      {
+        "passed": true,
+        "phase": "gui-write",
+        "callback_errors": [],
+        "instances": 6,
+        "edges": 4,
+        "screenshots": false
+      },
+      {
+        "passed": true,
+        "phase": "gui-read",
+        "callback_errors": [],
+        "instances": 6,
+        "edges": 4,
+        "screenshots": false
+      }
+    ],
+    "doctor": {
+      "status": "pass",
+      "gui_verified": true,
+      "eda_verified": true,
+      "tool_root": "/home/host/clocktree7-portable-qa/clocktree7-auxiliary-20261109-rc2"
+    },
+    "native_cases": [
+      {
+        "case": "target",
+        "passed": true
+      },
+      {
+        "case": "full",
+        "passed": true
+      },
+      {
+        "case": "missing-and-wrong-direction",
+        "passed": true
+      },
+      {
+        "case": "reset-target",
+        "passed": true
+      },
+      {
+        "case": "reset-full",
+        "passed": true
+      },
+      {
+        "case": "rotated-target",
+        "passed": true
+      },
+      {
+        "case": "rotated-full",
+        "passed": true
+      }
+    ],
+    "archives": {
+      "clocktree7-auxiliary-20261109-rc2.tar.gz": "e3ac9152843aea7cd7bad249d901cd13aeb6c6ff03e7b42ce0b1380374979a71",
+      "clocktree7-auxiliary-20261109-rc2.zip": "20e29067842017987432c106050cfd9881157d85201833a372fe36f877d8991e"
+    }
+  }
+}

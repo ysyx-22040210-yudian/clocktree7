@@ -24,6 +24,8 @@ from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule, connection_details
+from .auxiliary import AUX_ROLES, DIRECTIONS, validate_aux_ports
+from .devices import auxiliary_details
 from .viewmodel import GraphView
 from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
 from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
@@ -88,6 +90,16 @@ class RuleDialog(tk.Toplevel):
             self.entries[key]=entry
             if key=='module':
                 self.first = entry
+        self.aux_frame=ttk.Frame(frame,style='White.TFrame')
+        self.aux_frame.pack(fill='x',pady=(6,0))
+        self.aux_hint=ttk.Label(self.aux_frame,text='辅助端口（选填）：只显示例化连接信号，不参与追踪。',style='Muted.TLabel')
+        self.aux_fields={};self.aux_rows={}
+        for role,direction in (('pll_sel','input'),('div','input'),('sw_done','output'),('gt','input')):
+            row=ttk.Frame(self.aux_frame,style='White.TFrame')
+            ttk.Label(row,text='{} {}端口名'.format(role,DIRECTIONS[direction]),style='Small.TLabel',width=22).pack(side='left')
+            variable=tk.StringVar(value=rule.get('aux_ports',{}).get(role,''))
+            ttk.Entry(row,textvariable=variable,width=25).pack(side='left',fill='x',expand=True,ipady=2)
+            self.aux_rows[role]=row;self.aux_fields[role]=variable
         self.preprocess_button=ttk.Button(frame,text='读取 elab 输入端口 → 正则筛选 → 勾选确认',command=self.edit_inputs)
         self.preprocess_button.pack(fill='x',pady=8)
         self.selection_status=tk.StringVar(value='子系统需在编辑期间确认 input 名单；主提取不会运行正则。')
@@ -104,6 +116,7 @@ class RuleDialog(tk.Toplevel):
         ttk.Button(actions, text='保存规则', style='Accent.TButton', command=self.save).pack(side='right', padx=8)
         self.kind_var.trace('w',self.update_preview)
         for variable in self.fields.values():variable.trace('w',self.update_preview)
+        for variable in self.aux_fields.values():variable.trace('w',self.update_preview)
         self.fields['module'].trace('w',self.invalidate_ports)
         if rule.get('kind')=='subsystem' and self._old_selection.get('module')==rule.get('module') and self._old_selection.get('hierarchy')==self.hierarchy:
             self._confirmed=(rule['module'],self.hierarchy,self.input_regex,tuple(rule.get(self.input_key,[])))
@@ -140,6 +153,10 @@ class RuleDialog(tk.Toplevel):
         if kind in ('gate','occ','div','rsy_sync') and len(inputs)!=1:
             self.error.set('{}只允许一个关注输入口；多个{}输入请选择 MUX。'.format(kind_label(kind,self.tree_type),self.info['signal']))
             return
+        aux={role:self.aux_fields[role].get().strip() for role,_ in AUX_ROLES.get(kind,()) if self.aux_fields[role].get().strip()}
+        if aux:rule['aux_ports']=aux
+        try:validate_aux_ports(rule,inputs,output)
+        except ValueError as error:self.error.set(str(error));return
         self.callback(rule)
         self.destroy()
 
@@ -164,6 +181,12 @@ class RuleDialog(tk.Toplevel):
         c=self.preview
         c.delete('all')
         kind=LABEL_TO_KIND.get(self.kind_var.get())
+        roles=dict(AUX_ROLES.get(kind,()))
+        self.aux_hint.pack_forget()
+        for row in self.aux_rows.values():row.pack_forget()
+        if roles:
+            self.aux_hint.pack(anchor='w',pady=(2,4))
+            for role,_ in AUX_ROLES[kind]:self.aux_rows[role].pack(fill='x',pady=3)
         subsystem=kind=='subsystem'
         self.preprocess_button.configure(state='normal' if subsystem else 'disabled')
         self.entries[self.input_key].configure(state='readonly' if subsystem else 'normal')
@@ -177,6 +200,7 @@ class RuleDialog(tk.Toplevel):
         pins=pins or (['输入 1','输入 2'] if kind=='mux' else ['输入'])
         node={'id':'u_instance','module':self.fields['module'].get().strip() or 'module_name',
               'kind':kind,'inputs':pins,'output':None if subsystem else self.fields[self.output_key].get().strip() or '输出'}
+        node['aux_ports']={role:self.aux_fields[role].get().strip() for role in roles if self.aux_fields[role].get().strip()}
         h=node_height(node)
         scale=min(1.,142/h)
         draw_device(c,node,(440-242*scale)/2,8,242,h,scale,self.app.family,font_cache=self.preview_fonts)
@@ -1744,6 +1768,7 @@ class ClockTreeApp(tk.Tk):
                     ('关注输入','\n'.join(node['inputs'])),('关注输出',node.get('output') or '无 · 子系统输入终点'),
                     ('输入口例化连接',connection_details(node,node['inputs'])),
                     ('输出口例化连接',connection_details(node,[node['output']]) if node.get('output') else '无输出口'),
+                    ('辅助端口例化连接（不参与追踪）',auxiliary_details(node) or '未配置'),
                     ('连接名来源','NPI 例化端口 npiHighConn；表达式由 elab 还原' if 'port_connections' in node else '该历史结果未采集例化连接名；使用新版重新提取后显示'),
                     ('结构状态',' / '.join(x for value,x in [(node.get('trace_timeout'),'实例 trace 超时'),(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]

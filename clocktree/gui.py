@@ -634,7 +634,7 @@ class ClockTreeApp(tk.Tk):
         devices.create_polygon(234,8,250,8,257,16,250,25,234,25,227,16,fill='#eee5ff',outline='#9a77df')
         devices.create_text(264,16,text='DIV',anchor='w',fill='#6680a4',font=(self.family,8))
         devices.pack(side='right')
-        self.diagram=ClockDiagram(self.center,self.family,self.inspect_node,self.inspect_edges,self.view_changed,self.set_status)
+        self.diagram=ClockDiagram(self.center,self.family,self.inspect_node,self.inspect_edges,self.view_changed,self.set_status,on_branch=self.open_branch)
         self.diagram.pack(fill='both',expand=True)
         self.log_toggle=ttk.Button(self.center,text='任务日志与诊断  ▴',command=self.toggle_log)
         self.log_toggle.pack(fill='x')
@@ -1930,6 +1930,14 @@ class ClockTreeApp(tk.Tk):
 
     def expand_selected(self):
         if self.selected_object:self.diagram.expand(self.selected_object)
+
+    def open_branch(self,node,source_model=None):
+        model=source_model or self.diagram.model
+        if model is None:return
+        if node.get('aggregate'):
+            self.set_status('请先展开 RTL 聚合框，再双击具体器件。');return
+        from .branch_view import BranchDialog
+        return BranchDialog(self,model,node)
 
     def highlight_path(self,direction):
         count=self.diagram.trace(direction)

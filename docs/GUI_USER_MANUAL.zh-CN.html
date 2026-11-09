@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.4 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.5 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -967,8 +967,8 @@ L7  fixture_top.l7
 <td>属性及相邻连接高亮</td>
 </tr>
 <tr>
-<td>双击真实实例</td>
-<td>定位并放大到该实例</td>
+<td>双击真实实例 / 子系统器件引用</td>
+<td>新开独立画布，只显示该器件的全部上游和下游分支；原画布保留</td>
 </tr>
 <tr>
 <td>双击聚合框</td>
@@ -1700,6 +1700,19 @@ bash clocktree.sh gui
 <li>“适配高亮范围”可从局部邻域回到全网概览并适配高亮，“清除高亮”恢复正常显示。</li>
 </ul>
 <p>高亮表示静态连通关系，不代表 MUX 当前选择状态、时钟实际运行状态或复位是否有效。</p>
+<p><a id="branch-canvas"></a></p>
+<h4 id="_2">双击打开独立分支画布</h4>
+<p>在主画布上<strong>双击具体器件</strong>，会打开“独立时钟分支画布”或“独立复位分支画布”。原画布的范围、位置和缩放保持不变，可以同时操作多个窗口。</p>
+<ol>
+<li>新窗口标题显示起始选择的真实实例路径。范围为该器件的全部上游边与全部下游边的并集；保留 MUX 的所有已解析输入路径，不带入上游其他旁支。</li>
+<li>双击子系统的器件引用，只沿此引用显示的输入查找；同一子系统由其他分支驱动的输入不混入。无已解析连接的器件仍单独显示，超时和未解析状态继续保留。</li>
+<li>新画布支持滚轮缩放、拖动平移、“适配分支”、分支内搜索、上下游跳转、后退/前进和连线摘要。“返回分支全图”始终返回此窗口的分支范围。</li>
+<li>通过右侧“展开 / 收起总线各位”查看子系统的逐位输入。双击 RTL 虚线聚合框仍是展开层次；先展开到具体器件，再双击开分支窗口。</li>
+<li>大分支先显示概览，所有真实实例及连线仍保存在分支索引中，可搜索、展开和翻组。“导出当前视图 SVG”导出当前显示范围，概览导出仍为聚合图。</li>
+<li>在分支窗口再次双击器件，可继续打开另一个窗口；新窗口从最初的完整结果查找该器件的分支。关闭任一分支窗口不会关闭主画布或其他分支窗口。准备中关闭窗口会取消准备并清理临时数据。</li>
+</ol>
+<p>此操作只读取已经提取的结果，不启动 Verdi。窗口打开时建立独立分支快照，缺失连接不会被补画。临时分支窗口不写入启动恢复记录；重开工具仍恢复原主画布配置及结果。</p>
+<p><a class="figure" href="images/branch-canvas.png" target="_blank"><img alt="双击打开的独立分支画布" src="images/branch-canvas.png" /></a></p>
 <h3 id="304">30.4 搜索历史与布局偏好</h3>
 <p>在搜索框按 Enter 或点击“查找实例”属于一次显式搜索；无匹配的查询也会保存。连续输入过程不写历史。</p>
 <ul>
@@ -1762,7 +1775,7 @@ bash clocktree.sh gui
 </table>
 <p>非法正则、零匹配或没有勾选任何匹配口时，不能完成确认。修改正则后需要重新筛选并确认；修改 module 或该规则的父层路径后，需要重新读取并确认。器件编辑窗口中的关注输入不能绕过确认手工扩大。</p>
 <p>确认后，名单写入时钟规则的 <code>clock_inputs</code> 或复位规则的 <code>reset_inputs</code>，<code>input_regex</code> 只保存为编辑辅助。<strong>主提取不重新运行正则，也不自动把后来新增的同名模式端口加入关注范围。</strong> 使用外部 JSON 配置时，可直接给出明确的 input 名单；其中只有 <code>kind: subsystem</code> 可以省略输出字段。</p>
-<p>一维总线按整个 formal 端口勾选，预览显示实际范围。主提取按每个实例的 elab 范围逐位追踪，如 <code>clk_bus[4]</code>、<code>clk_bus[3]</code>、<code>clk_bus[2]</code>。图中默认按端口分组，双击子系统或点击属性区的展开入口查看各位，再次操作可收拢。属性、连接列表、原始证据和 JSON 保留逐位信息。</p>
+<p>一维总线按整个 formal 端口勾选，预览显示实际范围。主提取按每个实例的 elab 范围逐位追踪，如 <code>clk_bus[4]</code>、<code>clk_bus[3]</code>、<code>clk_bus[2]</code>。图中默认按端口分组，点击属性区“展开 / 收起总线各位”查看各位，再次操作可收拢；双击子系统打开独立分支画布。属性、连接列表、原始证据和 JSON 保留逐位信息。</p>
 <p>本轮实际验证了参数化的一维 packed 总线及非零下标。未能可靠取得范围、复杂多维或不支持的映射会进入问题表；不会按猜测的位宽补连。若需显式位选，应在外部配置中提供已知的具体位，并检查结果诊断；不要把未解析总线视为验收通过。</p>
 <h3 id="307">30.7 独立输入网络与器件引用</h3>
 <p>假设同一真实实例 <code>soc.u_cpu</code> 的 <code>core_clk</code> 来自分支 A，<code>debug_clk</code> 来自分支 B。工具把两个输入作为独立端口终点，不因为它们在同一个子系统框内就认为 A、B 连通。</p>

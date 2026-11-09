@@ -68,10 +68,11 @@ def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cac
 
 
 class ClockDiagram(tk.Frame):
-    def __init__(self, master, font_family, on_node, on_edge, on_view, on_hover):
+    def __init__(self, master, font_family, on_node, on_edge, on_view, on_hover, on_branch=None):
         super().__init__(master, bg='#101b2e')
         self.family = font_family
         self.on_node, self.on_edge, self.on_view, self.on_hover = on_node, on_edge, on_view, on_hover
+        self.on_branch = on_branch
         self.model = None
         self.tree_type = 'clock'
         self.mode, self.component, self.scope, self.depth = 'instances', None, '', 5
@@ -116,13 +117,17 @@ class ClockDiagram(tk.Frame):
         self.canvas.bind('<Button-5>', lambda e: self.zoom(1/1.15, e.x, e.y))
         self.canvas.bind('<Motion>', self._hover)
         self.minimap.bind('<Button-1>', self._map_click)
-        self.canvas.bind('<Leave>', lambda e: self.on_hover('滚轮缩放 · 拖动画布平移 · 双击聚合框展开'))
+        self.canvas.bind('<Leave>', lambda e: self.on_hover('滚轮缩放 · 拖动画布平移 · 双击器件打开分支画布 · 双击聚合框展开'))
         from .canvas_scene import CanvasScene
         self.scene = CanvasScene(self)
         self.bind('<Destroy>', self._destroyed, add='+')
 
     def _destroyed(self,event):
-        if event.widget is self:self.cancel_layout(restore=False)
+        if event.widget is self:
+            self.cancel_layout(restore=False)
+            for attribute in ('_pending','_zoom_timer'):
+                timer=getattr(self,attribute,None)
+                if timer is not None:self.after_cancel(timer);setattr(self,attribute,None)
 
     def cancel_layout(self, restore=True):
         if self._layout_poll is not None:
@@ -496,10 +501,14 @@ class ClockDiagram(tk.Frame):
     def _double(self, event):
         hit = self._hit(event.x, event.y)
         if hit and hit[0]=='node':
-            if hit[1].get('aggregate') or hit[1].get('kind')=='subsystem':
+            self._drag=None
+            if hit[1].get('aggregate'):
                 self.expand(hit[1])
+            elif self.on_branch is not None:
+                self.on_branch(hit[1])
             else:
                 self.locate(hit[1])
+            return 'break'
 
     def _hover(self, event):
         if self._drag:

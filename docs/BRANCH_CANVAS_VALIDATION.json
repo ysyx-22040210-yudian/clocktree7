@@ -1,0 +1,59 @@
+{
+  "clock": {
+    "nodes": 3,
+    "edges": 4,
+    "reference_nodes": 2,
+    "reference_edges": 2,
+    "original_unchanged": true,
+    "native_double_click": true,
+    "independent_navigation": true,
+    "main_result_switch": true
+  },
+  "reset": {
+    "nodes": 3,
+    "edges": 4,
+    "reference_nodes": 2,
+    "reference_edges": 2,
+    "original_unchanged": true,
+    "native_double_click": true,
+    "independent_navigation": true,
+    "main_result_switch": true
+  },
+  "large_npi": {
+    "source_instances": 8195,
+    "branch_instances": 2,
+    "branch_edges": 1,
+    "open_seconds": 0.4280818740007817
+  },
+  "stress": {
+    "nodes": 100000,
+    "edges": 99999,
+    "boxes": 2,
+    "open_seconds": 5.672154808999039
+  },
+  "cancelled_preparation": true,
+  "repeated_windows": {
+    "count": 5,
+    "rss_kib": [
+      80496,
+      80496,
+      80496,
+      80496,
+      80496
+    ],
+    "private_indexes_removed": true
+  },
+  "passed": true,
+  "callback_errors": [],
+  "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+  "tk": "8.5.13",
+  "main_exit_released_branches": true,
+  "automated_tests": {
+    "passed": 254,
+    "skipped": 1,
+    "seconds": 13.19,
+    "log": "validation/branch-canvas-20261110-tests-final.log"
+  },
+  "source_log": "validation/branch-canvas-20261110-release.log",
+  "eda_scope": "Viewer verification against previously extracted real NPI results; no new extraction"
+}

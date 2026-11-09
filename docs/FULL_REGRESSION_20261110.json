@@ -1,0 +1,2003 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-10",
+  "baseline": "507990b13d0f5bb5d73abefb35255ec832b82040",
+  "main_regression_passed": true,
+  "main_workflows": 25,
+  "unit": {
+    "passed": 267,
+    "skipped": 1,
+    "seconds": 12.36
+  },
+  "workflows": [
+    {
+      "name": "doctor",
+      "command": [
+        "/bin/python3",
+        "-m",
+        "clocktree",
+        "doctor",
+        "--self-test",
+        "--gui",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/doctor"
+      ],
+      "started_at": "2026-11-10T02:59:30.766977",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/doctor.log",
+      "pid": 90995,
+      "elapsed_seconds": 6.014,
+      "exit_code": 0,
+      "seconds": 8.017,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "auxiliary-native",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_auxiliary_ports.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/auxiliary"
+      ],
+      "started_at": "2026-11-10T02:59:38.790083",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/auxiliary-native.log",
+      "pid": 91285,
+      "elapsed_seconds": 38.082,
+      "exit_code": 0,
+      "seconds": 40.116,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "auxiliary-gui-write",
+      "attempt": 2,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_auxiliary_ports.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/auxiliary",
+        "--phase",
+        "gui-write"
+      ],
+      "started_at": "2026-11-10T03:16:48.438790",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/auxiliary-gui-write-attempt2.log",
+      "pid": 108410,
+      "elapsed_seconds": 0.003,
+      "exit_code": 0,
+      "seconds": 2.005,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "auxiliary-gui-read",
+      "attempt": 2,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_auxiliary_ports.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/auxiliary",
+        "--phase",
+        "gui-read"
+      ],
+      "started_at": "2026-11-10T03:16:50.450016",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/auxiliary-gui-read-attempt2.log",
+      "pid": 108435,
+      "elapsed_seconds": 0.006,
+      "exit_code": 0,
+      "seconds": 2.01,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "subsystems",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_subsystem.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems"
+      ],
+      "started_at": "2026-11-10T03:00:28.727225",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems.log",
+      "pid": 93469,
+      "elapsed_seconds": 6.011,
+      "exit_code": 0,
+      "seconds": 8.014,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "subsystem-edges",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_subsystem_edges.py",
+        "--base",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystem-edges"
+      ],
+      "started_at": "2026-11-10T03:00:36.744924",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystem-edges.log",
+      "pid": 93872,
+      "elapsed_seconds": 18.034,
+      "exit_code": 0,
+      "seconds": 20.035,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "workbench",
+      "attempt": 2,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_workbench_gui.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/workbench",
+        "--result",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems/target/clocktree.json"
+      ],
+      "started_at": "2026-11-10T03:17:09.456519",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/workbench-attempt2.log",
+      "pid": 109176,
+      "elapsed_seconds": 34.073,
+      "exit_code": 0,
+      "seconds": 36.079,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "navigation",
+      "attempt": 2,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_navigation_gui.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/navigation",
+        "--clock",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems/target/clocktree.json",
+        "--reset",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystem-edges/reset-target/resettree.json",
+        "--fan-in",
+        "1024"
+      ],
+      "started_at": "2026-11-10T03:17:45.541432",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/navigation-attempt2.log",
+      "pid": 109551,
+      "elapsed_seconds": 24.045,
+      "exit_code": 0,
+      "seconds": 26.049,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "branch",
+      "attempt": 2,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_branch_gui.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/branch",
+        "--clock",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems/target/clocktree.json",
+        "--reset",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystem-edges/reset-target/resettree.json",
+        "--cycles",
+        "50",
+        "--large",
+        "/mnt/hgfs/VMshare/clocktree7/validation/resilience/scales/fanout/run/clocktree.json"
+      ],
+      "started_at": "2026-11-10T03:18:16.073423",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/branch-attempt2.log",
+      "pid": 110114,
+      "elapsed_seconds": 88.182,
+      "exit_code": 0,
+      "seconds": 90.184,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "canvas-performance",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_canvas_performance.py",
+        "--result",
+        "/mnt/hgfs/VMshare/clocktree7/validation/resilience/scales/fanout/run/clocktree.json",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/canvas-performance.json",
+        "--frames",
+        "240"
+      ],
+      "started_at": "2026-11-10T03:01:04.814022",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/canvas-performance.log",
+      "pid": 94982,
+      "elapsed_seconds": 28.066,
+      "exit_code": 0,
+      "seconds": 30.069,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "register-1k",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_trace.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-1k",
+        "--fanout",
+        "1000"
+      ],
+      "started_at": "2026-11-10T03:25:34.751559",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-1k.log",
+      "pid": 114472,
+      "elapsed_seconds": 16.033,
+      "exit_code": 0,
+      "seconds": 18.037,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "register-gui-write",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_trace.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-1k",
+        "--phase",
+        "gui-write"
+      ],
+      "started_at": "2026-11-10T03:25:52.793050",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-gui-write.log",
+      "pid": 115295,
+      "elapsed_seconds": 10.021,
+      "exit_code": 0,
+      "seconds": 12.025,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "register-gui-read",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_trace.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-1k",
+        "--phase",
+        "gui-read"
+      ],
+      "started_at": "2026-11-10T03:26:04.822873",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-gui-read.log",
+      "pid": 115480,
+      "elapsed_seconds": 0.004,
+      "exit_code": 0,
+      "seconds": 2.007,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "register-recovery",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_recovery.py",
+        "--request",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-1k/request.json",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-recovery"
+      ],
+      "started_at": "2026-11-10T03:26:06.863948",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-recovery.log",
+      "pid": 115495,
+      "elapsed_seconds": 46.095,
+      "exit_code": 0,
+      "seconds": 48.099,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "register-large",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_trace.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-large",
+        "--fanout",
+        "25000"
+      ],
+      "started_at": "2026-11-10T03:26:54.966387",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-large.log",
+      "pid": 117257,
+      "elapsed_seconds": 124.265,
+      "exit_code": 0,
+      "seconds": 126.268,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "sv-native",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_sv_templates.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/sv-native"
+      ],
+      "started_at": "2026-11-10T03:31:25.547954",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/sv-native.log",
+      "pid": 120660,
+      "elapsed_seconds": 10.02,
+      "exit_code": 0,
+      "seconds": 12.024,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "sv-gui-write",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_sv_templates.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/sv-native",
+        "--phase",
+        "gui-write"
+      ],
+      "started_at": "2026-11-10T03:31:42.779040",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/sv-gui-write.log",
+      "pid": 122044,
+      "elapsed_seconds": 2.008,
+      "exit_code": 0,
+      "seconds": 4.012,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "sv-gui-read",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_sv_templates.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/sv-native",
+        "--phase",
+        "gui-read"
+      ],
+      "started_at": "2026-11-10T03:31:46.795332",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/sv-gui-read.log",
+      "pid": 122197,
+      "elapsed_seconds": 0.003,
+      "exit_code": 0,
+      "seconds": 2.006,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "sv-scale",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_sv_templates.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/sv-scale",
+        "--phase",
+        "scale",
+        "--native-source",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/sv-native",
+        "--terminals",
+        "20000"
+      ],
+      "started_at": "2026-11-10T03:05:29.535185",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/sv-scale.log",
+      "pid": 100995,
+      "elapsed_seconds": 561.068,
+      "exit_code": 0,
+      "seconds": 563.072,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "real-memory",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_real_memory_threshold.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/real-memory",
+        "--gui"
+      ],
+      "started_at": "2026-11-10T03:15:16.551956",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/real-memory.log",
+      "pid": 105400,
+      "elapsed_seconds": 64.13,
+      "exit_code": 0,
+      "seconds": 66.133,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "soc-regression",
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_target_soc.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/soc-regression"
+      ],
+      "started_at": "2026-11-10T03:16:22.689308",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/soc-regression.log",
+      "pid": 107915,
+      "elapsed_seconds": 22.042,
+      "exit_code": 0,
+      "seconds": 24.046,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "input-selection",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_input_selection_gui.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/input-selection",
+        "--request",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/subsystems/request.json"
+      ],
+      "started_at": "2026-11-10T03:16:52.466245",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/input-selection.log",
+      "pid": 108453,
+      "elapsed_seconds": 10.022,
+      "exit_code": 0,
+      "seconds": 12.026,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "register-bit-matrix",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_bit_matrix.py",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-bit-matrix"
+      ],
+      "started_at": "2026-11-10T03:29:01.239126",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-bit-matrix.log",
+      "pid": 119019,
+      "elapsed_seconds": 128.199,
+      "exit_code": 0,
+      "seconds": 130.201,
+      "round": "full-regression-20261110-r2"
+    },
+    {
+      "name": "sv-oracle",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_sv_scale_oracle.py",
+        "--source",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/sv-scale",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/sv-oracle",
+        "--terminals",
+        "20000"
+      ],
+      "started_at": "2026-11-10T03:20:31.890145",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r1/sv-oracle.log",
+      "pid": 112125,
+      "elapsed_seconds": 252.499,
+      "exit_code": 0,
+      "seconds": 254.503,
+      "round": "full-regression-20261110-r1"
+    },
+    {
+      "name": "register-progress-gui",
+      "attempt": 1,
+      "command": [
+        "/bin/python3",
+        "/mnt/hgfs/VMshare/clocktree7/scripts/check_register_progress_gui.py",
+        "--base",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-bit-matrix",
+        "--out",
+        "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-progress-gui"
+      ],
+      "started_at": "2026-11-10T03:31:23.539287",
+      "passed": true,
+      "log": "/mnt/hgfs/VMshare/clocktree7/validation/full-regression-20261110-r2/register-progress-gui.log",
+      "pid": 120639,
+      "elapsed_seconds": 0.002,
+      "exit_code": 0,
+      "seconds": 2.005,
+      "round": "full-regression-20261110-r2"
+    }
+  ],
+  "fixed_issue": "HGFS PermissionError replacing register status snapshot interrupted trace; event log now authoritative",
+  "product_sha256": {
+    "clocktree/register_progress.py": "8c812a1c39f6f34ae0256d38d0195a56d46f1358479ed8f4ea9683c7ab231d81",
+    "clocktree/register_trace.py": "f81f7dad538ea27ef13b8aab92693cd51b8a93c2c3b15d023f74efbb89df0133",
+    "clocktree/register_view.py": "34a3d1b1cb0fe748aeeae3ce86104baec3a022d403ebab7adb9d6e45ff40d84f"
+  },
+  "register_large": {
+    "passed": true,
+    "real_verdi": true,
+    "kdb": true,
+    "fanout": 25000,
+    "rows": 25037,
+    "seconds": 95.591,
+    "summary": {
+      "ports": 17,
+      "counts": {
+        "boundary": 2,
+        "constant": 1,
+        "cycle": 1,
+        "register": 25032,
+        "unresolved": 1
+      },
+      "conditional_mappings": 3,
+      "finished": true,
+      "traced_bits": 33,
+      "register_bits": 29,
+      "all_bits_have_register": false,
+      "complete": false,
+      "verdi_restarts": 0,
+      "timeout_instances": 0,
+      "peak_rss_gib": 0.394
+    },
+    "original_tree": {
+      "seconds": 3.953,
+      "summary": {
+        "instances": 16,
+        "edges": 2,
+        "roots": 14,
+        "tree_type": "clock",
+        "extraction_mode": "target",
+        "physical_loads_checked": false,
+        "terminal_semantics": "selected_structure",
+        "validated_outputs": 16,
+        "terminals": 14,
+        "components": 1,
+        "clock_sources": 2,
+        "layers": {
+          "1": 5,
+          "2": 10,
+          "3": 1
+        },
+        "terminal_layers": {
+          "1": 4,
+          "2": 9,
+          "3": 1
+        },
+        "expected_pin_traces": 21,
+        "observed_pin_traces": 21,
+        "unresolved": 0,
+        "diagnostics": 10,
+        "trace_timeout_instances": 0,
+        "trace_timeout_ports": 0,
+        "trace_skipped_ports": 0,
+        "trace_scope": "",
+        "scope_limited": false,
+        "scope_boundaries": 0,
+        "scope_output_instances": 0,
+        "extraction_finished": true,
+        "connectivity_complete": true,
+        "topology_valid": false
+      },
+      "rss_peak_gib": 0.249,
+      "language_stats": {
+        "driver_queries": 4,
+        "cache_hits": 17,
+        "output_index_hits": 2
+      },
+      "elaborated_probes": []
+    },
+    "resume_deduplicated": true
+  },
+  "register_bits": {
+    "passed": true,
+    "native_kdb": true,
+    "random_seed": 20261110,
+    "widths": [
+      1,
+      2,
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "descending_and_ascending": true,
+    "ports": 18,
+    "exact_bit_mappings": 546,
+    "sparse_load_bits": 32,
+    "summary": {
+      "ports": 18,
+      "counts": {
+        "register": 546
+      },
+      "conditional_mappings": 0,
+      "finished": true,
+      "traced_bits": 546,
+      "register_bits": 546,
+      "all_bits_have_register": true,
+      "complete": true,
+      "verdi_restarts": 0,
+      "timeout_instances": 0,
+      "peak_rss_gib": 0.224
+    },
+    "seconds": 125.74773352100601
+  },
+  "windows_lock": {
+    "passed": true,
+    "real_windows_delete_sharing_denied": true,
+    "snapshot_unchanged": true,
+    "latest_log_stage": "finished",
+    "locked_seconds": 138.25,
+    "summary": {
+      "ports": 18,
+      "counts": {
+        "register": 546
+      },
+      "conditional_mappings": 0,
+      "finished": true,
+      "traced_bits": 546,
+      "register_bits": 546,
+      "all_bits_have_register": true,
+      "complete": true,
+      "verdi_restarts": 0,
+      "timeout_instances": 0,
+      "peak_rss_gib": 0.224
+    }
+  },
+  "progress_gui": {
+    "passed": true,
+    "snapshot_stage": "import",
+    "log_stage": "finished",
+    "stale_snapshot_recovered": true,
+    "exact_rows": 546,
+    "callback_errors": []
+  },
+  "register_recovery": {
+    "passed": true,
+    "native_verdi": true,
+    "injection": "QA only; real workers killed/restarted; RSS samples forced, not physical 64 GiB allocation",
+    "cases": [
+      {
+        "case": "baseline-language-only",
+        "passed": true,
+        "summary": {
+          "ports": 4,
+          "counts": {
+            "register": 1011
+          },
+          "conditional_mappings": 0,
+          "finished": true,
+          "traced_bits": 10,
+          "register_bits": 10,
+          "all_bits_have_register": true,
+          "complete": true,
+          "verdi_restarts": 0,
+          "timeout_instances": 0,
+          "peak_rss_gib": 0.225
+        }
+      },
+      {
+        "case": "rotate",
+        "passed": true,
+        "rows_equal": true,
+        "summary": {
+          "ports": 4,
+          "counts": {
+            "register": 1011
+          },
+          "conditional_mappings": 0,
+          "finished": true,
+          "traced_bits": 10,
+          "register_bits": 10,
+          "all_bits_have_register": true,
+          "complete": true,
+          "verdi_restarts": 1,
+          "timeout_instances": 0,
+          "peak_rss_gib": 0.225
+        }
+      },
+      {
+        "case": "threshold",
+        "passed": true,
+        "rows_equal": true,
+        "summary": {
+          "ports": 4,
+          "counts": {
+            "register": 1011
+          },
+          "conditional_mappings": 0,
+          "finished": true,
+          "traced_bits": 10,
+          "register_bits": 10,
+          "all_bits_have_register": true,
+          "complete": true,
+          "verdi_restarts": 1,
+          "timeout_instances": 0,
+          "peak_rss_gib": 4.04
+        }
+      },
+      {
+        "case": "hard-crash-and-resume",
+        "passed": true,
+        "committed_rows_unchanged": 4,
+        "orphan_reaped": true
+      },
+      {
+        "case": "native-query-timeout",
+        "passed": true,
+        "summary": {
+          "ports": 4,
+          "counts": {
+            "register": 5,
+            "skipped": 1,
+            "timeout": 1
+          },
+          "conditional_mappings": 0,
+          "finished": true,
+          "traced_bits": 7,
+          "register_bits": 5,
+          "all_bits_have_register": false,
+          "complete": false,
+          "verdi_restarts": 1,
+          "timeout_instances": 1,
+          "peak_rss_gib": 0.214
+        }
+      },
+      {
+        "case": "changed-input-rejected",
+        "passed": true
+      },
+      {
+        "case": "three-no-progress-retries-stop",
+        "passed": true,
+        "prior_ports_retained": 3
+      }
+    ]
+  },
+  "real_memory": {
+    "pass": true,
+    "measurement": "unmodified production /proc RSS sampler",
+    "pressure": "real bytes allocated in Verdi via test-only scratch Tcl",
+    "rss_readings_injected": false,
+    "cases": [
+      {
+        "pass": true,
+        "tree_type": "clock",
+        "action": "soft",
+        "configured_limit_gib": 0.5,
+        "effective_limit_gib": 0.5,
+        "cli_override": false,
+        "restarts": 2,
+        "attempts": 3,
+        "actual_peak_rss_gib": 0.475,
+        "trigger_rss_gib": [
+          0.475,
+          0.475
+        ],
+        "instances": 6,
+        "edges": 4,
+        "exact_evidence_equal": true,
+        "extraction_mode": "target",
+        "trace_ids_unique": true,
+        "all_workers_terminated": true,
+        "allocations": [
+          {
+            "stage": "actual_soft_enum",
+            "pid": 105670,
+            "limit_gib": 0.5,
+            "sampled_before_bytes": 228773888,
+            "requested_extra_bytes": 281253478,
+            "target_rss_bytes": 510027366
+          },
+          {
+            "stage": "actual_soft_trace",
+            "pid": 105808,
+            "limit_gib": 0.5,
+            "sampled_before_bytes": 229249024,
+            "requested_extra_bytes": 280778342,
+            "target_rss_bytes": 510027366
+          }
+        ]
+      },
+      {
+        "pass": true,
+        "tree_type": "clock",
+        "action": "hard",
+        "configured_limit_gib": 0.375,
+        "effective_limit_gib": 0.375,
+        "cli_override": false,
+        "restarts": 2,
+        "attempts": 3,
+        "actual_peak_rss_gib": 0.438,
+        "trigger_rss_gib": [
+          0.437,
+          0.438
+        ],
+        "instances": 6,
+        "edges": 4,
+        "exact_evidence_equal": true,
+        "extraction_mode": "target",
+        "trace_ids_unique": true,
+        "all_workers_terminated": true,
+        "allocations": [
+          {
+            "stage": "actual_hard_enum",
+            "pid": 106079,
+            "limit_gib": 0.375,
+            "sampled_before_bytes": 231043072,
+            "requested_extra_bytes": 238718976,
+            "target_rss_bytes": 469762048
+          },
+          {
+            "stage": "actual_hard_trace",
+            "pid": 106222,
+            "limit_gib": 0.375,
+            "sampled_before_bytes": 229347328,
+            "requested_extra_bytes": 240414720,
+            "target_rss_bytes": 469762048
+          }
+        ]
+      },
+      {
+        "pass": true,
+        "tree_type": "reset",
+        "action": "soft",
+        "configured_limit_gib": 0.5,
+        "effective_limit_gib": 0.5,
+        "cli_override": false,
+        "restarts": 2,
+        "attempts": 3,
+        "actual_peak_rss_gib": 0.475,
+        "trigger_rss_gib": [
+          0.475,
+          0.475
+        ],
+        "instances": 5,
+        "edges": 3,
+        "exact_evidence_equal": true,
+        "extraction_mode": "target",
+        "trace_ids_unique": true,
+        "all_workers_terminated": true,
+        "allocations": [
+          {
+            "stage": "actual_soft_enum",
+            "pid": 106490,
+            "limit_gib": 0.5,
+            "sampled_before_bytes": 229457920,
+            "requested_extra_bytes": 280569446,
+            "target_rss_bytes": 510027366
+          },
+          {
+            "stage": "actual_soft_trace",
+            "pid": 106624,
+            "limit_gib": 0.5,
+            "sampled_before_bytes": 232300544,
+            "requested_extra_bytes": 277726822,
+            "target_rss_bytes": 510027366
+          }
+        ]
+      },
+      {
+        "pass": true,
+        "tree_type": "reset",
+        "action": "hard",
+        "configured_limit_gib": 0.375,
+        "effective_limit_gib": 0.375,
+        "cli_override": false,
+        "restarts": 2,
+        "attempts": 3,
+        "actual_peak_rss_gib": 0.438,
+        "trigger_rss_gib": [
+          0.438,
+          0.438
+        ],
+        "instances": 5,
+        "edges": 3,
+        "exact_evidence_equal": true,
+        "extraction_mode": "target",
+        "trace_ids_unique": true,
+        "all_workers_terminated": true,
+        "allocations": [
+          {
+            "stage": "actual_hard_enum",
+            "pid": 106978,
+            "limit_gib": 0.375,
+            "sampled_before_bytes": 229900288,
+            "requested_extra_bytes": 239861760,
+            "target_rss_bytes": 469762048
+          },
+          {
+            "stage": "actual_hard_trace",
+            "pid": 107194,
+            "limit_gib": 0.375,
+            "sampled_before_bytes": 230477824,
+            "requested_extra_bytes": 239284224,
+            "target_rss_bytes": 469762048
+          }
+        ]
+      },
+      {
+        "pass": true,
+        "tree_type": "clock",
+        "action": "hard",
+        "configured_limit_gib": 0.5,
+        "effective_limit_gib": 0.625,
+        "cli_override": true,
+        "restarts": 2,
+        "attempts": 3,
+        "actual_peak_rss_gib": 0.687,
+        "trigger_rss_gib": [
+          0.642,
+          0.687
+        ],
+        "instances": 6,
+        "edges": 4,
+        "exact_evidence_equal": true,
+        "extraction_mode": "target",
+        "trace_ids_unique": true,
+        "all_workers_terminated": true,
+        "allocations": [
+          {
+            "stage": "actual_hard_enum",
+            "pid": 107461,
+            "limit_gib": 0.625,
+            "sampled_before_bytes": 231600128,
+            "requested_extra_bytes": 506597376,
+            "target_rss_bytes": 738197504
+          },
+          {
+            "stage": "actual_hard_trace",
+            "pid": 107610,
+            "limit_gib": 0.625,
+            "sampled_before_bytes": 230248448,
+            "requested_extra_bytes": 507949056,
+            "target_rss_bytes": 738197504
+          }
+        ]
+      }
+    ],
+    "too_low_threshold_stops_without_result": true,
+    "gui_custom_value_saved_and_restored": true
+  },
+  "sv_native": {
+    "passed": true,
+    "kdb": true,
+    "sv_vcs_compiled": true,
+    "terminal_inputs": 2,
+    "initial_generated": 1,
+    "initial_skipped": 1,
+    "final_generated": 2,
+    "gate_order": [
+      "sv_top.C[6]",
+      "sv_top.C[5]",
+      "sv_top.C[4]"
+    ],
+    "missing_literal": "1'b1",
+    "mux_values": {
+      "var_clkip": "sv_top.cd",
+      "var_div": "sv_top.D[9:6]",
+      "var_gt0": "sv_top.C[7]",
+      "var_gt1": "1'b1",
+      "var_gt2": "1'b1",
+      "var_pll0": "sv_top.a",
+      "var_pll1": "sv_top.b",
+      "var_pll2": "1'b1",
+      "var_pll3": "1'b1",
+      "var_pllsel": "sv_top.D[5:2]",
+      "var_rst": "sv_top.rst_n",
+      "var_swdone": "sv_top.E[10]"
+    },
+    "no_mux_values": {
+      "var_clkip": "sv_top.ng3",
+      "var_div": "sv_top.C[3:0]",
+      "var_gt0": "sv_top.C[6]",
+      "var_gt1": "sv_top.C[5]",
+      "var_gt2": "sv_top.C[4]",
+      "var_pll0": "sv_top.a",
+      "var_pll1": "1'b1",
+      "var_pll2": "1'b1",
+      "var_pll3": "1'b1",
+      "var_rst": "sv_top.rst_alt_n",
+      "var_swdone": "sv_top.E[11]"
+    }
+  },
+  "sv_scale": {
+    "passed": true,
+    "synthetic": true,
+    "nodes": 20007,
+    "terminal_inputs": 20000,
+    "plan_seconds": 461.00488606500585,
+    "export_seconds": 99.0431815539996,
+    "peak_rss_mib": 74.17578125,
+    "generated": 10000,
+    "skipped": 10000,
+    "last_page": 100,
+    "cancellation_preserves_prior_file": true
+  },
+  "sv_oracle": {
+    "passed": true,
+    "synthetic_terminal_expansion": true,
+    "terminal_inputs": 20000,
+    "partial_exact_bindings": 20000,
+    "candidate_lists_checked": 10000,
+    "final_exact_blocks": 20000,
+    "every_origin_reset_checked": true,
+    "repeat_export_sha256": "fde5cef784d73c98330a9075f5ac2e477a99aa41b3be1d7cf71317c1282dde39",
+    "export_seconds": 84.5953746679952,
+    "total_seconds": 252.95980885799509
+  },
+  "canvas": {
+    "source": "/mnt/hgfs/VMshare/clocktree7",
+    "result": "/mnt/hgfs/VMshare/clocktree7/validation/resilience/scales/fanout/run/clocktree.json",
+    "instances": 8195,
+    "window": [
+      1840,
+      1000
+    ],
+    "tk": "8.5.13",
+    "load_seconds": 2.647198523998668,
+    "rss": "VmRSS:\t  131252 kB",
+    "measurements": {
+      "pan": {
+        "frames": 236,
+        "p50_ms": 23.752155997499358,
+        "p95_ms": 26.656718997401185,
+        "max_ms": 30.148070996801835,
+        "items": 8332,
+        "visible_nodes": 8,
+        "detail_restore_ms": null
+      },
+      "zoom": {
+        "frames": 242,
+        "p50_ms": 22.256525000557303,
+        "p95_ms": 26.67453199683223,
+        "max_ms": 94.61609500431223,
+        "items": 8332,
+        "visible_nodes": 8,
+        "detail_restore_ms": 190.09852500312263
+      }
+    }
+  },
+  "navigation": {
+    "clock-memory": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "clock-indexed": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "clock-direct": true,
+    "reset-memory": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "reset-indexed": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "reset-direct": true,
+    "mux_exact_input": true,
+    "auxiliary_issue_location_preserved": true,
+    "bounded_focus": {
+      "instances": 1025,
+      "edges": 1024,
+      "test_detail_limit": 8,
+      "required_edge_preserved": true,
+      "randomized_exact_input_jumps": 100,
+      "same_instance_cross_focus_history": true,
+      "chooser_second_page": true
+    },
+    "passed": true,
+    "callback_errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "tk": "8.5.13"
+  },
+  "branch": {
+    "clock": {
+      "nodes": 3,
+      "edges": 4,
+      "reference_nodes": 2,
+      "reference_edges": 2,
+      "original_unchanged": true,
+      "native_double_click": true,
+      "independent_navigation": true,
+      "main_result_switch": true
+    },
+    "reset": {
+      "nodes": 3,
+      "edges": 4,
+      "reference_nodes": 2,
+      "reference_edges": 2,
+      "original_unchanged": true,
+      "native_double_click": true,
+      "independent_navigation": true,
+      "main_result_switch": true
+    },
+    "large_npi": {
+      "source_instances": 8195,
+      "branch_instances": 2,
+      "branch_edges": 1,
+      "open_seconds": 0.25622759699763265
+    },
+    "stress": {
+      "nodes": 100000,
+      "edges": 99999,
+      "boxes": 2,
+      "open_seconds": 5.219843023995054
+    },
+    "cancelled_preparation": true,
+    "repeated_windows": {
+      "count": 50,
+      "rss_kib": [
+        78200,
+        78200,
+        78200,
+        78200,
+        78200,
+        78200,
+        78208,
+        78240,
+        78248,
+        78272,
+        78280,
+        78316,
+        78324,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344,
+        78344
+      ],
+      "private_indexes_removed": true
+    },
+    "passed": true,
+    "callback_errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "tk": "8.5.13",
+    "main_exit_released_branches": true
+  },
+  "workbench": {
+    "passed": true,
+    "phases": {
+      "write": {
+        "input_discovery_cancelled": true,
+        "real_eda_editor_confirmed": true,
+        "searches": [
+          "explicit-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "physical_instances": 4,
+        "display_boxes": 6,
+        "callback_errors": []
+      },
+      "read": {
+        "tree_type": "clock",
+        "searches": [
+          "explicit-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "restored": true,
+        "callback_errors": []
+      },
+      "reset-write": {
+        "searches": [
+          "explicit-reset-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "physical_instances": 4,
+        "display_boxes": 6,
+        "callback_errors": []
+      },
+      "reset-read": {
+        "tree_type": "reset",
+        "searches": [
+          "explicit-reset-write",
+          "wb_top.g1",
+          "wb_top.g0"
+        ],
+        "restored": true,
+        "callback_errors": []
+      },
+      "stress": {
+        "stale_layout_discarded": true,
+        "layout_cancelled_and_view_restored": true,
+        "instances": 100000,
+        "highlight_edges": 99999,
+        "items": [
+          35,
+          35,
+          35,
+          35,
+          35,
+          35
+        ],
+        "rss_kib": [
+          56920,
+          56920,
+          56920,
+          56920,
+          56920,
+          56920
+        ],
+        "text_cache": 19,
+        "font_cache": 7,
+        "callback_errors": []
+      }
+    }
+  },
+  "input_selection": {
+    "passed": true,
+    "states": 160,
+    "names": 10000,
+    "rows": 20000
+  },
+  "soc": {
+    "passed": true,
+    "cases": [
+      {
+        "project": "opentitan",
+        "passed": true,
+        "reference": "opentitan-clkmgr-01",
+        "reference_nodes_and_edges_equal": true,
+        "scope": "all targets in recorded block configuration",
+        "seconds": 3.552,
+        "summary": {
+          "instances": 15,
+          "edges": 10,
+          "roots": 5,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 15,
+          "terminals": 8,
+          "components": 3,
+          "clock_sources": 3,
+          "layers": {
+            "1": 10,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 1,
+            "6": 1
+          },
+          "terminal_layers": {
+            "1": 8
+          },
+          "expected_pin_traces": 15,
+          "observed_pin_traces": 15,
+          "unresolved": 0,
+          "diagnostics": 11,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.22,
+        "language_stats": {
+          "driver_queries": 20,
+          "cache_hits": 8,
+          "output_index_hits": 7
+        },
+        "elaborated_probes": []
+      },
+      {
+        "project": "pulp",
+        "passed": true,
+        "reference": "pulp-soc-kdb-02",
+        "reference_nodes_and_edges_equal": true,
+        "scope": "all targets in recorded block configuration",
+        "seconds": 12.398,
+        "summary": {
+          "instances": 62,
+          "edges": 48,
+          "roots": 18,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 62,
+          "terminals": 39,
+          "components": 3,
+          "clock_sources": 3,
+          "layers": {
+            "1": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 1,
+            "10": 1,
+            "11": 3,
+            "12": 1,
+            "13": 1,
+            "14": 2,
+            "15": 1,
+            "16": 1,
+            "17": 1,
+            "18": 1,
+            "19": 1,
+            "20": 1,
+            "21": 1,
+            "22": 1,
+            "23": 1,
+            "24": 1,
+            "25": 1,
+            "26": 1,
+            "27": 1,
+            "28": 1,
+            "29": 1,
+            "30": 1,
+            "31": 1,
+            "32": 1,
+            "33": 1,
+            "34": 1,
+            "35": 1,
+            "36": 1,
+            "37": 1,
+            "38": 1,
+            "39": 1,
+            "40": 1,
+            "41": 1,
+            "42": 3,
+            "43": 1,
+            "44": 1,
+            "45": 6,
+            "46": 1,
+            "47": 1,
+            "48": 1,
+            "49": 1
+          },
+          "terminal_layers": {
+            "1": 1,
+            "2": 1,
+            "3": 1,
+            "4": 1,
+            "5": 4,
+            "6": 1,
+            "7": 1,
+            "8": 1,
+            "9": 1,
+            "10": 1,
+            "12": 1,
+            "14": 1,
+            "15": 1,
+            "16": 1,
+            "17": 1,
+            "18": 1,
+            "19": 1,
+            "20": 1,
+            "21": 1,
+            "29": 1,
+            "32": 1,
+            "33": 1,
+            "34": 1,
+            "35": 1,
+            "36": 1,
+            "38": 1,
+            "39": 1,
+            "40": 1,
+            "41": 1,
+            "43": 1,
+            "44": 1,
+            "45": 1,
+            "46": 1,
+            "47": 1,
+            "48": 1,
+            "49": 1
+          },
+          "expected_pin_traces": 67,
+          "observed_pin_traces": 67,
+          "unresolved": 0,
+          "diagnostics": 44,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.337,
+        "language_stats": {
+          "driver_queries": 152,
+          "cache_hits": 130,
+          "output_index_hits": 23
+        },
+        "elaborated_probes": []
+      },
+      {
+        "project": "openc910",
+        "passed": true,
+        "reference": "openc910-ordered7-01",
+        "reference_nodes_and_edges_equal": true,
+        "scope": "selected direct-parent subnetwork",
+        "seconds": 5.769,
+        "summary": {
+          "instances": 30,
+          "edges": 29,
+          "roots": 1,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 30,
+          "terminals": 28,
+          "components": 1,
+          "clock_sources": 1,
+          "layers": {
+            "1": 1,
+            "2": 5,
+            "3": 1,
+            "4": 1,
+            "5": 22
+          },
+          "terminal_layers": {
+            "2": 5,
+            "4": 1,
+            "5": 22
+          },
+          "expected_pin_traces": 30,
+          "observed_pin_traces": 30,
+          "unresolved": 0,
+          "diagnostics": 0,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": true
+        },
+        "rss_peak_gib": 0.584,
+        "language_stats": {
+          "driver_queries": 25,
+          "cache_hits": 148,
+          "output_index_hits": 2
+        },
+        "elaborated_probes": []
+      }
+    ]
+  },
+  "portable": {
+    "passed": true,
+    "workflows": 22,
+    "cases": [
+      {
+        "name": "doctor",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "-m",
+          "clocktree",
+          "doctor",
+          "--self-test",
+          "--gui",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/doctor"
+        ],
+        "started_at": "2026-11-10T03:31:48.941625",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/doctor.log",
+        "pid": 122237,
+        "elapsed_seconds": 4.006,
+        "exit_code": 0,
+        "seconds": 6.008
+      },
+      {
+        "name": "auxiliary-native",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_auxiliary_ports.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/auxiliary"
+        ],
+        "started_at": "2026-11-10T03:31:54.951425",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/auxiliary-native.log",
+        "pid": 122509,
+        "elapsed_seconds": 30.029,
+        "exit_code": 0,
+        "seconds": 32.031
+      },
+      {
+        "name": "auxiliary-gui-write",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_auxiliary_ports.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/auxiliary",
+          "--phase",
+          "gui-write"
+        ],
+        "started_at": "2026-11-10T03:32:26.983703",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/auxiliary-gui-write.log",
+        "pid": 124436,
+        "elapsed_seconds": 0.001,
+        "exit_code": 0,
+        "seconds": 2.003
+      },
+      {
+        "name": "auxiliary-gui-read",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_auxiliary_ports.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/auxiliary",
+          "--phase",
+          "gui-read"
+        ],
+        "started_at": "2026-11-10T03:32:28.988946",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/auxiliary-gui-read.log",
+        "pid": 124469,
+        "elapsed_seconds": 0.002,
+        "exit_code": 0,
+        "seconds": 2.002
+      },
+      {
+        "name": "subsystems",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_subsystem.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems"
+        ],
+        "started_at": "2026-11-10T03:32:30.992557",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems.log",
+        "pid": 124491,
+        "elapsed_seconds": 6.007,
+        "exit_code": 0,
+        "seconds": 8.008
+      },
+      {
+        "name": "subsystem-edges",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_subsystem_edges.py",
+          "--base",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystem-edges"
+        ],
+        "started_at": "2026-11-10T03:32:39.001756",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystem-edges.log",
+        "pid": 124932,
+        "elapsed_seconds": 14.02,
+        "exit_code": 0,
+        "seconds": 16.023
+      },
+      {
+        "name": "input-selection",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_input_selection_gui.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/input-selection",
+          "--request",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems/request.json"
+        ],
+        "started_at": "2026-11-10T03:32:59.751629",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/input-selection.log",
+        "pid": 126004,
+        "elapsed_seconds": 8.013,
+        "exit_code": 0,
+        "seconds": 10.016
+      },
+      {
+        "name": "workbench",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_workbench_gui.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/workbench",
+          "--result",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems/target/clocktree.json"
+        ],
+        "started_at": "2026-11-10T03:33:09.769006",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/workbench.log",
+        "pid": 126545,
+        "elapsed_seconds": 20.019,
+        "exit_code": 0,
+        "seconds": 22.022
+      },
+      {
+        "name": "navigation",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_navigation_gui.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/navigation",
+          "--clock",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems/target/clocktree.json",
+          "--reset",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystem-edges/reset-target/resettree.json",
+          "--fan-in",
+          "1024"
+        ],
+        "started_at": "2026-11-10T03:33:31.792509",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/navigation.log",
+        "pid": 126851,
+        "elapsed_seconds": 20.022,
+        "exit_code": 0,
+        "seconds": 22.025
+      },
+      {
+        "name": "branch",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_branch_gui.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/branch",
+          "--clock",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystems/target/clocktree.json",
+          "--reset",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/subsystem-edges/reset-target/resettree.json",
+          "--cycles",
+          "50"
+        ],
+        "started_at": "2026-11-10T03:33:58.092084",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/branch.log",
+        "pid": 127398,
+        "elapsed_seconds": 82.095,
+        "exit_code": 0,
+        "seconds": 84.097
+      },
+      {
+        "name": "register-1k",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_trace.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-1k",
+          "--fanout",
+          "1000"
+        ],
+        "started_at": "2026-11-10T03:35:26.008490",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-1k.log",
+        "pid": 128163,
+        "elapsed_seconds": 12.017,
+        "exit_code": 0,
+        "seconds": 14.019
+      },
+      {
+        "name": "register-gui-write",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_trace.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-1k",
+          "--phase",
+          "gui-write"
+        ],
+        "started_at": "2026-11-10T03:35:40.028954",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-gui-write.log",
+        "pid": 128954,
+        "elapsed_seconds": 8.011,
+        "exit_code": 0,
+        "seconds": 10.013
+      },
+      {
+        "name": "register-gui-read",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_trace.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-1k",
+          "--phase",
+          "gui-read"
+        ],
+        "started_at": "2026-11-10T03:35:50.043603",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-gui-read.log",
+        "pid": 129122,
+        "elapsed_seconds": 0.002,
+        "exit_code": 0,
+        "seconds": 2.004
+      },
+      {
+        "name": "register-recovery",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_recovery.py",
+          "--request",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-1k/request.json",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-recovery"
+        ],
+        "started_at": "2026-11-10T03:35:52.050645",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-recovery.log",
+        "pid": 129147,
+        "elapsed_seconds": 42.055,
+        "exit_code": 0,
+        "seconds": 44.057
+      },
+      {
+        "name": "register-large",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_trace.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-large",
+          "--fanout",
+          "1000"
+        ],
+        "started_at": "2026-11-10T03:36:39.441403",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-large.log",
+        "pid": 130813,
+        "elapsed_seconds": 12.012,
+        "exit_code": 0,
+        "seconds": 14.015
+      },
+      {
+        "name": "register-bit-matrix",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_bit_matrix.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-bit-matrix"
+        ],
+        "started_at": "2026-11-10T03:36:53.457412",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-bit-matrix.log",
+        "pid": 893,
+        "elapsed_seconds": 118.15,
+        "exit_code": 0,
+        "seconds": 120.152
+      },
+      {
+        "name": "register-progress-gui",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_register_progress_gui.py",
+          "--base",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-bit-matrix",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-progress-gui"
+        ],
+        "started_at": "2026-11-10T03:38:58.851823",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/register-progress-gui.log",
+        "pid": 2524,
+        "elapsed_seconds": 0.002,
+        "exit_code": 0,
+        "seconds": 2.004
+      },
+      {
+        "name": "sv-native",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_sv_templates.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-native"
+        ],
+        "started_at": "2026-11-10T03:39:00.856959",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-native.log",
+        "pid": 2545,
+        "elapsed_seconds": 8.012,
+        "exit_code": 0,
+        "seconds": 10.015
+      },
+      {
+        "name": "sv-gui-write",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_sv_templates.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-native",
+          "--phase",
+          "gui-write"
+        ],
+        "started_at": "2026-11-10T03:39:12.763814",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-gui-write.log",
+        "pid": 4210,
+        "elapsed_seconds": 2.005,
+        "exit_code": 0,
+        "seconds": 4.007
+      },
+      {
+        "name": "sv-gui-read",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_sv_templates.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-native",
+          "--phase",
+          "gui-read"
+        ],
+        "started_at": "2026-11-10T03:39:16.773180",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-gui-read.log",
+        "pid": 4355,
+        "elapsed_seconds": 0.002,
+        "exit_code": 0,
+        "seconds": 2.005
+      },
+      {
+        "name": "sv-scale",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_sv_templates.py",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-scale",
+          "--phase",
+          "scale",
+          "--native-source",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-native",
+          "--terminals",
+          "1000"
+        ],
+        "started_at": "2026-11-10T03:39:18.779526",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-scale.log",
+        "pid": 4386,
+        "elapsed_seconds": 0.002,
+        "exit_code": 0,
+        "seconds": 2.004
+      },
+      {
+        "name": "sv-oracle",
+        "attempt": 1,
+        "command": [
+          "/bin/python3",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/scripts/check_sv_scale_oracle.py",
+          "--source",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-scale",
+          "--out",
+          "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-oracle",
+          "--terminals",
+          "1000"
+        ],
+        "started_at": "2026-11-10T03:39:20.785905",
+        "passed": true,
+        "log": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/validation/portable-smoke/sv-oracle.log",
+        "pid": 4404,
+        "elapsed_seconds": 0.002,
+        "exit_code": 0,
+        "seconds": 2.004
+      }
+    ],
+    "isolation": {
+      "passed": true,
+      "workflows": 22,
+      "source": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2",
+      "imported_module": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2/clocktree/__init__.py",
+      "user_site_disabled": 1
+    },
+    "before": {
+      "pass": true,
+      "files": 257,
+      "root": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2"
+    },
+    "after": {
+      "pass": true,
+      "files": 257,
+      "root": "/home/host/clocktree7-portable-qa/full-20261110-r2/clocktree7-full-regression-20261110-rc2"
+    },
+    "source_dirty_snapshot": true,
+    "current_code_files_equal_to_tested_bundle": 145,
+    "archives": {
+      "clocktree7-full-regression-20261110-rc2.tar.gz": "c93c5a61ee9618fbcb63ed95701354d03a6b2d7d739e286d305179b56f4c20c1",
+      "clocktree7-full-regression-20261110-rc2.zip": "b52f01a0f837e1c440a97bf7972c58c2c8cc44b6b45d1ab1592d17763f65821f"
+    }
+  },
+  "passed": true
+}

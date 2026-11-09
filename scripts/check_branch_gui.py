@@ -21,6 +21,7 @@ def main():
     parser.add_argument('--clock',required=True,help='wb_top subsystem result from check_subsystem.py')
     parser.add_argument('--reset',required=True,help='wb_top subsystem reset result')
     parser.add_argument('--large',help='Optional existing 8,195-instance NPI fanout result')
+    parser.add_argument('--cycles',type=int,default=5)
     args=parser.parse_args()
     out=Path(args.out).resolve();out.mkdir(parents=True,exist_ok=True)
     errors=[];reports={}
@@ -136,13 +137,13 @@ def main():
     # Repeated local windows should leave no private indexes or live workers.
     rss=[]
     leaf=app.diagram.model.original['stress.domain.g099998.u']
-    for _ in range(5):
+    for _ in range(args.cycles):
         window=app.open_branch(leaf);ready(window)
         assert len(window.graph['nodes'])==2 and len(window.graph['edges'])==1
         path=window.graph.store.path;window.close();pump();assert not path.exists()
         rss.append(int(next(line.split()[1] for line in Path('/proc/self/status').read_text().splitlines() if line.startswith('VmRSS:'))))
     assert rss[-1]-min(rss)<16*1024,rss
-    reports['repeated_windows']=dict(count=5,rss_kib=rss,private_indexes_removed=True)
+    reports['repeated_windows']=dict(count=args.cycles,rss_kib=rss,private_indexes_removed=True)
     assert not [w for w in app.winfo_children() if isinstance(w,BranchDialog)]
     assert not errors,errors
     reports.update(passed=True,callback_errors=errors,python=sys.version,tk=app.tk.call('info','patchlevel'))

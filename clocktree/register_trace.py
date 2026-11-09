@@ -18,7 +18,7 @@ from .register_expr import Expressions, MappingError, number, sequential_proof, 
 from .register_worker import RegisterWorker, WorkerFault, MemoryFault, PortDeadline, QueryError
 from .memory import GIB
 from .recovery import RunLease, input_snapshot
-from .runtime import process_identity
+from .register_progress import progress_reporter
 from .storage import write_graph
 
 
@@ -272,7 +272,7 @@ def trace_job(db,job,seed,flow,report):
 def fingerprint(request):
     root=Path(__file__).resolve().parents[1]
     digest=hashlib.sha256()
-    for name in ('clocktree/register_trace.py','clocktree/register_expr.py','clocktree/register_worker.py','npi/register_worker.tcl','npi/extract.tcl'):
+    for name in ('clocktree/register_trace.py','clocktree/register_expr.py','clocktree/register_worker.py','clocktree/register_progress.py','npi/register_worker.tcl','npi/extract.tcl'):
         digest.update((root/name).read_bytes())
     return {'engine':digest.hexdigest(),'request':hashlib.sha256(json.dumps(request,sort_keys=True,ensure_ascii=False).encode('utf-8')).hexdigest(),
             'inputs':input_snapshot(request['config'])}
@@ -310,10 +310,7 @@ def run(request_path,output,resume=False):
         if not db.execute('SELECT 1 FROM jobs LIMIT 1').fetchone():
             db.executemany('INSERT INTO jobs VALUES (?, ?, ?, ?)',((i+1,json.dumps(seed,ensure_ascii=False),'pending','{}') for i,seed in enumerate(seeds)));db.commit()
         events=(directory/'events.jsonl').open('a',encoding='utf-8')
-        def report(stage,message,context):
-            data={'time':time.time(),'stage':stage,'message':message,'context':context,'controller':process_identity()}
-            events.write(json.dumps(data,ensure_ascii=False)+'\n');events.flush()
-            write_graph(directory/'status.json',data)
+        report=progress_reporter(directory,events)
         metrics_path=directory/'metrics.json'
         metrics=json.loads(metrics_path.read_text(encoding='utf-8')) if metrics_path.exists() else {}
         worker=None;restarts=metrics.get('verdi_restarts',0);timeouts=metrics.get('timeout_instances',0)

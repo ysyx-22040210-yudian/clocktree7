@@ -36,6 +36,7 @@ def main():
     parser.add_argument('--out',required=True)
     parser.add_argument('--clock',required=True)
     parser.add_argument('--reset',required=True)
+    parser.add_argument('--fan-in',type=int,default=128)
     args=parser.parse_args()
     out=Path(args.out).resolve();out.mkdir(parents=True,exist_ok=True)
     errors=[];reports={}
@@ -150,21 +151,28 @@ def main():
     original_limit=indexed_view.DETAIL_LIMIT
     try:
         indexed_view.DETAIL_LIMIT=8
-        graph=index_graph(synthetic(128),new_store(out/'bounded-focus'))
+        graph=index_graph(synthetic(args.fan_in),new_store(out/'bounded-focus'))
         app.show_graph(graph);pump()
-        early=app.diagram.model.original_edges['0'];late=app.diagram.model.original_edges['127']
+        early=app.diagram.model.original_edges['0'];late=app.diagram.model.original_edges[str(args.fan_in-1)]
         app.diagram.locate_edge(early,'downstream');checked(app,early)
         app.diagram.locate_edge(late,'downstream');checked(app,late)
-        assert app.diagram.model.focus_edge=='127'
+        assert app.diagram.model.focus_edge==str(args.fan_in-1)
         app.diagram.navigate_history();checked(app,early)
         app.diagram.navigate_history(True);checked(app,late)
         # Upstream chooser can page beyond 100 edges without changing target port.
         dialog=NeighbourDialog(app,app.diagram.model.original['n.s'],'upstream')
         assert len(dialog.rows)==100
-        dialog.show(1);assert len(dialog.rows)==28
+        for page in range(1,(args.fan_in+99)//100):dialog.show(1)
+        assert len(dialog.rows)==(args.fan_in-1)%100+1
         choose(dialog,late);checked(app,late,'source')
         app.lift();pump();capture(app,out/'bounded-focus.png')
-        reports['bounded_focus']=dict(instances=129,edges=128,test_detail_limit=8,required_edge_preserved=True,
+        import random
+        indices=list(range(args.fan_in));random.Random(20261110).shuffle(indices)
+        for index in indices[:100]:
+            edge=app.diagram.model.original_edges[str(index)]
+            app.diagram.locate_edge(edge,'downstream');checked(app,edge)
+        reports['bounded_focus']=dict(instances=args.fan_in+1,edges=args.fan_in,test_detail_limit=8,required_edge_preserved=True,
+                                     randomized_exact_input_jumps=min(100,args.fan_in),
                                      same_instance_cross_focus_history=True,chooser_second_page=True)
     finally:indexed_view.DETAIL_LIMIT=original_limit
     reports.update(passed=True,callback_errors=errors,python=sys.version,tk=app.tk.call('info','patchlevel'))

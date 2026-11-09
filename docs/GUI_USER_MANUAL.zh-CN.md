@@ -1696,6 +1696,8 @@ always @(posedge clk) E[10] <= done_mux;
 - `request.json` / `manifest.json`：设计、种子端口、范围、DFT 假设及兼容指纹。
 - `registers.sqlite`：端口断点、结果与路径；`queries.sqlite`：已完成原生查询缓存。
 - `status.json` / `events.jsonl`：最后阶段、当前实例/端口/信号及时间；`controller.log` / `verdi.log`：异常原因线索。无法据日志确认 OS 杀进程原因时，不把推测标为确定结论。
+
+在 Windows 与 Linux VM 共用目录时，查看状态文件可能短暂阻止文件替换。寄存器追踪会继续保存完整事件和端口断点；日志中的 `Register status snapshot temporarily unavailable` 表示界面快照暂时无法刷新，不表示 NPI 追踪失败。实时界面和重新打开历史任务时均优先读取最后一条完整事件，因此不会把已完成任务误报为停在导入阶段。磁盘写满、结果或断点写入失败仍会作为错误报告。升级版本后，旧的未完成寄存器任务继续受实现指纹检查，不能强行复用；已完成结果可以查看。
 - `register-trace.json`：汇总，包括寄存器映射数、未解析数、是否全部完成、重启及超时计数。
 
 CLI 可复用 GUI 保存的请求：

@@ -13,6 +13,7 @@ from tkinter import ttk,filedialog
 from .register_trace import RegisterIndex,LABELS,seeds_from_graph
 from .runtime import tail_text
 from .storage import write_graph
+from .register_progress import read_progress
 
 
 RELATIONS={'direct':'精确位映射','inverted':'反相位映射','logic':'组合逻辑依赖','conditional':'条件未固定'}
@@ -90,8 +91,7 @@ class RegisterDialog(tk.Toplevel):
         manifest=json.loads((self.directory/'manifest.json').read_text(encoding='utf-8'));request=manifest['request']
         self.root_var.set(request.get('trace_root',''));self.dft_var.set(', '.join(request.get('dft_zero',[])))
         self.memory_var.set(str(request.get('memory_limit_gib',60)));self.timeout_var.set(str(request.get('port_trace_timeout_s',0)))
-        status=self.directory/'status.json'
-        state=json.loads(status.read_text(encoding='utf-8')) if status.exists() else {}
+        state=read_progress(self.directory)
         from .runtime import alive
         if state and state.get('stage') not in ('finished','interrupted') and alive(state.get('controller',{})) is False:
             context=state.get('context',{})
@@ -131,12 +131,10 @@ class RegisterDialog(tk.Toplevel):
 
     def poll(self):
         if self.closed:return
-        status=self.directory/'status.json'
-        if status.exists():
-            try:
-                data=json.loads(status.read_text(encoding='utf-8'));context=data.get('context',{})
-                self.status.set('{} · {} · {} {} {}'.format(data['stage'],data['message'],context.get('instance',''),context.get('bit',context.get('pin','')),context.get('signal','')))
-            except (ValueError,OSError):pass
+        data=read_progress(self.directory)
+        if data:
+            context=data.get('context',{})
+            self.status.set('{} · {} · {} {} {}'.format(data['stage'],data['message'],context.get('instance',''),context.get('bit',context.get('pin','')),context.get('signal','')))
         if self.process.poll() is None:self.after(200,self.poll);return
         self.stream.close();self.stream=None;self.start_button.configure(state='normal')
         self.index=RegisterIndex(self.directory) if (self.directory/'registers.sqlite').exists() else None

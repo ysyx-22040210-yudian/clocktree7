@@ -64,4 +64,17 @@ PNG 截图是验收脚本的可选能力，使用 Pillow；工具运行本身不
 
 第一次候选包 rc1 的产品自检及 NPI 均通过，验收在 PNG 截图步骤因隔离环境无 Pillow 停止。已给验收脚本增加明确的 `--no-screenshots` 选项，rc2 复验保留全部 GUI 功能断言。正式运行工具不依赖 Pillow；本报告及手册的截图仍来自先前实际通过的 VM Tk 窗口。
 
-rc2 是提交前的候选快照，MANIFEST 标记 `source_dirty: true`，不能当作干净提交的发布包。正式便携包由提交后的源码生成并单独验证，发布校验记录随后追加。
+rc2 是提交前的候选快照，MANIFEST 标记 `source_dirty: true`，不能当作干净提交的发布包。正式便携包按下面的提交和校验值交付。
+
+## 正式交付
+
+实现与手册通过 GitHub Desktop 提交并上传至 `main`：`8e7f2233a10c1d977b2c3c69a94960b531675267`。正式包 `clocktree7-auxiliary-20261109` 从该干净提交生成，MANIFEST 为 `source_dirty: false`。
+
+再次解压至 VM 独立目录 `/home/host/clocktree7-portable-qa/clocktree7-auxiliary-20261109`，在不加载用户 Python 包的环境中验收：212 文件校验、doctor 真实时钟/复位 golden 与 Tk、新辅助功能完整 7 场景/2 基线、独立 GUI 保存与重开全部通过。验收记录位于共享目录 `validation/auxiliary-20261109/portable-clocktree7-auxiliary-20261109/acceptance.json`，精简记录已写入本报告旁的 JSON。
+
+| 文件（共享目录 `validation/releases/`） | SHA-256 |
+| --- | --- |
+| `clocktree7-auxiliary-20261109.zip` | `e50548c424fefc67d4955e22f5de26e347a4910f01d858f61a3855bfd27605f3` |
+| `clocktree7-auxiliary-20261109.tar.gz` | `0c5f1f43392e25eea4e3d9aa342d1c6ecee2a2e5d2f545f934699b7050789a0c` |
+
+本节和 JSON 的正式包验收记录在出包后单独补交；与归档之间仅有验收文档差异，不变更程序。压缩包不包含 EDA、许可、用户历史或商业 RTL，迁移时使用目标设备自己的 EDA 环境。

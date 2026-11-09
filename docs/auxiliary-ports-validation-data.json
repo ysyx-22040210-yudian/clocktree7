@@ -672,5 +672,71 @@
       "clocktree7-auxiliary-20261109-rc2.tar.gz": "e3ac9152843aea7cd7bad249d901cd13aeb6c6ff03e7b42ce0b1380374979a71",
       "clocktree7-auxiliary-20261109-rc2.zip": "20e29067842017987432c106050cfd9881157d85201833a372fe36f877d8991e"
     }
+  },
+  "portable_release": {
+    "passed": true,
+    "folder": "/home/host/clocktree7-portable-qa/clocktree7-auxiliary-20261109",
+    "isolated_user_site": true,
+    "manifest_files": 212,
+    "source_commit": "8e7f2233a10c1d977b2c3c69a94960b531675267",
+    "source_dirty": false,
+    "gui": [
+      {
+        "passed": true,
+        "phase": "gui-write",
+        "callback_errors": [],
+        "instances": 6,
+        "edges": 4,
+        "screenshots": false
+      },
+      {
+        "passed": true,
+        "phase": "gui-read",
+        "callback_errors": [],
+        "instances": 6,
+        "edges": 4,
+        "screenshots": false
+      }
+    ],
+    "doctor": {
+      "status": "pass",
+      "gui_verified": true,
+      "eda_verified": true,
+      "tool_root": "/home/host/clocktree7-portable-qa/clocktree7-auxiliary-20261109"
+    },
+    "native_cases": [
+      {
+        "case": "target",
+        "passed": true
+      },
+      {
+        "case": "full",
+        "passed": true
+      },
+      {
+        "case": "missing-and-wrong-direction",
+        "passed": true
+      },
+      {
+        "case": "reset-target",
+        "passed": true
+      },
+      {
+        "case": "reset-full",
+        "passed": true
+      },
+      {
+        "case": "rotated-target",
+        "passed": true
+      },
+      {
+        "case": "rotated-full",
+        "passed": true
+      }
+    ],
+    "archives": {
+      "clocktree7-auxiliary-20261109.zip": "e50548c424fefc67d4955e22f5de26e347a4910f01d858f61a3855bfd27605f3",
+      "clocktree7-auxiliary-20261109.tar.gz": "0c5f1f43392e25eea4e3d9aa342d1c6ecee2a2e5d2f545f934699b7050789a0c"
+    }
   }
 }

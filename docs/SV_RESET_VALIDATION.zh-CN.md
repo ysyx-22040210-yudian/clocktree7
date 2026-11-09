@@ -33,7 +33,14 @@
 
 候选包 `clocktree7-sv-reset-20261110-rc1` 在 VM 全新独立目录中验证，清除 `PYTHONPATH`、设置 `PYTHONNOUSERSITE=1`，未借用共享目录 Python 模块。235 个内容文件及 SHA-256 清单一致，另有 MANIFEST。
 
-`doctor --self-test --gui`、重新生成真实 KDB、寄存器追踪、起始层复位绑定、VCS 编译、两次独立 Tk 启动全部通过。另以 1,000 个合成末端复验：500 段生成、500 个多寄存器分支按预期跳过，末页和取消保留原文件通过。候选清单标记 `source_dirty: true`，是提交前快照；正式包从干净提交生成后补录。
+`doctor --self-test --gui`、重新生成真实 KDB、寄存器追踪、起始层复位绑定、VCS 编译、两次独立 Tk 启动全部通过。另以 1,000 个合成末端复验：500 段生成、500 个多寄存器分支按预期跳过，末页和取消保留原文件通过。候选清单标记 `source_dirty: true`，是提交前快照。
+
+正式包 `clocktree7-sv-reset-20261110` 从干净提交 `d563639d230ade795121464671701029434d73ba` 生成，在另一个全新 VM 目录完整复跑上述检查，全部通过。235 个内容文件校验一致，`source_dirty: false`。代码与验收文档通过 GitHub Desktop 提交上传，正式包记录另作文档提交补录。
+
+| 文件（共享目录 `validation/releases/`） | SHA-256 |
+| --- | --- |
+| `clocktree7-sv-reset-20261110.zip` | `fa348f56074580a0a41e05bd26f34ae09a823ce45de5ed0dca269d89339298b2` |
+| `clocktree7-sv-reset-20261110.tar.gz` | `235eca212efc965de612feb83097fce18726effd428b5bc6f893c634e8110243` |
 
 ## 环境与边界
 

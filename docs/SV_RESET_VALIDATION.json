@@ -162,5 +162,109 @@
     ],
     "doctor_status": "pass",
     "source_dirty": true
+  },
+  "portable_formal": {
+    "passed": true,
+    "root": "/home/host/clocktree7-portable-qa/clocktree7-sv-reset-20261110",
+    "verify": {
+      "pass": true,
+      "files": 235,
+      "root": "/home/host/clocktree7-portable-qa/clocktree7-sv-reset-20261110"
+    },
+    "native": {
+      "passed": true,
+      "kdb": true,
+      "sv_vcs_compiled": true,
+      "terminal_inputs": 2,
+      "initial_generated": 1,
+      "initial_skipped": 1,
+      "final_generated": 2,
+      "gate_order": [
+        "sv_top.C[6]",
+        "sv_top.C[5]",
+        "sv_top.C[4]"
+      ],
+      "missing_literal": "1'b1",
+      "mux_values": {
+        "var_clkip": "sv_top.cd",
+        "var_div": "sv_top.D[9:6]",
+        "var_gt0": "sv_top.C[7]",
+        "var_gt1": "1'b1",
+        "var_gt2": "1'b1",
+        "var_pll0": "sv_top.a",
+        "var_pll1": "sv_top.b",
+        "var_pll2": "1'b1",
+        "var_pll3": "1'b1",
+        "var_pllsel": "sv_top.D[5:2]",
+        "var_rst": "sv_top.rst_n",
+        "var_swdone": "sv_top.E[10]"
+      },
+      "no_mux_values": {
+        "var_clkip": "sv_top.ng3",
+        "var_div": "sv_top.C[3:0]",
+        "var_gt0": "sv_top.C[6]",
+        "var_gt1": "sv_top.C[5]",
+        "var_gt2": "sv_top.C[4]",
+        "var_pll0": "sv_top.a",
+        "var_pll1": "1'b1",
+        "var_pll2": "1'b1",
+        "var_pll3": "1'b1",
+        "var_rst": "sv_top.rst_alt_n",
+        "var_swdone": "sv_top.E[11]"
+      }
+    },
+    "scale": {
+      "passed": true,
+      "synthetic": true,
+      "nodes": 1007,
+      "terminal_inputs": 1000,
+      "plan_seconds": 0.9099260829971172,
+      "export_seconds": 0.42465482799889287,
+      "peak_rss_mib": 20.90234375,
+      "generated": 500,
+      "skipped": 500,
+      "last_page": 100,
+      "cancellation_preserves_prior_file": true
+    },
+    "gui": [
+      {
+        "passed": true,
+        "errors": [],
+        "layer_reset_config": true,
+        "post_extraction_edit": true,
+        "reset_values": {
+          "with_mux": "sv_top.rst_alt_n",
+          "without_mux": "sv_top.rst_n"
+        },
+        "reset_basis": "branch_origin"
+      },
+      {
+        "passed": true,
+        "errors": [],
+        "layer_reset_config": true,
+        "post_extraction_edit": true,
+        "reset_values": {
+          "with_mux": "sv_top.rst_alt_n",
+          "without_mux": "sv_top.rst_n"
+        },
+        "reset_basis": "branch_origin"
+      }
+    ],
+    "doctor_status": "pass",
+    "source_dirty": false,
+    "source_commit": "d563639d230ade795121464671701029434d73ba"
+  },
+  "release": {
+    "files": 236,
+    "archives": [
+      "D:\\VMshare\\clocktree7\\validation\\releases\\clocktree7-sv-reset-20261110.zip",
+      "D:\\VMshare\\clocktree7\\validation\\releases\\clocktree7-sv-reset-20261110.tar.gz"
+    ],
+    "source_commit": "d563639d230ade795121464671701029434d73ba",
+    "source_dirty": false,
+    "sha256": {
+      "clocktree7-sv-reset-20261110.zip": "fa348f56074580a0a41e05bd26f34ae09a823ce45de5ed0dca269d89339298b2",
+      "clocktree7-sv-reset-20261110.tar.gz": "235eca212efc965de612feb83097fce18726effd428b5bc6f893c634e8110243"
+    }
   }
 }

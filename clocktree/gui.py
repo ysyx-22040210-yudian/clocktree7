@@ -599,6 +599,7 @@ class ClockTreeApp(tk.Tk):
         self.references_var=tk.BooleanVar(value=True)
         ttk.Checkbutton(navigation,text='子系统分支引用',variable=self.references_var,command=self.change_layout).pack(side='left',padx=7)
         ttk.Button(navigation,text='问题表 / CSV',command=self.open_issues).pack(side='right')
+        ttk.Button(navigation,text='辅助口 → 寄存器',command=self.open_register_trace).pack(side='right',padx=8)
         scopebar=tk.Frame(self.center,bg='#edf2fa',height=31)
         scopebar.pack(fill='x')
         scopebar.pack_propagate(False)
@@ -2009,10 +2010,18 @@ class ClockTreeApp(tk.Tk):
     def toggle_log(self):
         self.show_log(not self.log_visible)
 
+    def open_register_trace(self):
+        if not self.graph:
+            self.status.set('请先打开或提取架构结果，再追踪其中的辅助端口。')
+            return
+        from .register_view import RegisterDialog
+        RegisterDialog(self)
+
     def export_menu(self):
         menu=tk.Menu(self,tearoff=False)
         menu.add_command(label='保存传播规则配置 JSON',command=self.save_config)
         menu.add_command(label='导出全部结构与连线 JSON',command=self.export_result)
+        menu.add_command(label='辅助口寄存器追踪 / 位映射 CSV',command=self.open_register_trace)
         menu.add_command(label='导出当前范围架构图 SVG',command=self.export_svg)
         menu.tk_popup(self.winfo_pointerx(),self.winfo_pointery())
 

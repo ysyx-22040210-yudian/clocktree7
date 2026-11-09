@@ -10,10 +10,10 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.1 · 更新日期：2026-11-09 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.2 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
-<p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。</p>
+<p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
 <p><strong>大规模设计默认选“目标结构提取（大设计推荐）”</strong>，从全部关注输入反查驱动，不展开输出全部 load。需要检查普通寄存器负载时，另选“全负载核验”并新建提取。两种模式的证据与末端含义不同，见 <a href="#target-extraction">第 28 章</a>。本手册旧截图和历史验收中关于 driver/load 双向证据、范围出口与普通负载统计的描述，适用于全负载核验模式。</p>
 <p><a class="figure" href="images/default-two-layers.png" target="_blank"><img alt="没有历史记录时的两级空白配置" src="images/default-two-layers.png" /></a></p>
@@ -51,6 +51,7 @@
 <li><a href="#port-trace-timeout">端口 trace 超时与当前例化跳过</a></li>
 <li><a href="#workbench-v3">分支布局、快速导航、搜索历史、子系统与完整问题表</a></li>
 <li><a href="#auxiliary-ports">辅助端口：pll_sel、div、sw_done 与 gt</a></li>
+<li><a href="#register-trace">辅助端口追踪至真实寄存器与精确 bit</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -1890,7 +1891,7 @@ done[0]
 </code></pre>
 <p><a class="figure" href="images/auxiliary-div-details.png" target="_blank"><img alt="真实 Verdi 2018 结果：DIV 辅助端口和例化信号" src="images/auxiliary-div-details.png" /></a></p>
 <h3 id="313">31.3 结果与连线的关系</h3>
-<p>辅助端口只通过 NPI Language Model 的 <code>npiHighConn</code> 读取例化连接，并读取 elab 方向进行检查；不加入 driver/load 的追踪种子，不增加端口连线、上游/下游关系或独立网络。MUX 仍保留全部已解析时钟输入路径，不根据 <code>pll_sel</code> 的值裁剪分支；DIV 不根据 <code>div</code> 的信号计算运行时分频比。</p>
+<p>在原有架构提取中，辅助端口通过 NPI Language Model 的 <code>npiHighConn</code> 读取例化连接，并读取 elab 方向进行检查；不加入时钟/复位树 driver/load 的追踪种子，不增加端口连线、上游/下游关系或独立网络。MUX 仍保留全部已解析时钟输入路径，不根据 <code>pll_sel</code> 的值裁剪分支；DIV 不根据 <code>div</code> 的信号计算运行时分频比。第 32 章的寄存器任务单独追踪这些辅助端口，结果保存在独立表中。</p>
 <p>可显示普通信号、位选、总线片选、常量和组合表达式。比如 <code>enable &amp; cfg_sel[0]</code> 会作为一个例化表达式显示。整条总线应填写端口名，如 <code>ratio_cfg</code>；它的实际连接可以是 <code>ratio[5:2]</code>。填写 <code>ratio_cfg[2]</code> 时，若 NPI 只提供所属端口的整体绑定，属性中会注明“整体连接、未推断逐位映射”，不会编造该位对应的 wire。</p>
 <p>器件下方的辅助区没有外部接线点。连线仍只接原有的关注时钟/复位端口。辅助区随器件一起参与布局，Tk 和 SVG 使用同一套模型；全图概览和缩小时可能隐藏文字，放大到实例明细可看见。</p>
 <h3 id="314">31.4 异常提示</h3>
@@ -1920,7 +1921,7 @@ done[0]
 </tr>
 </tbody>
 </table>
-<p>这些项目进入“问题表 / CSV”，可分类、搜索并定位到器件对应辅助行。它们是显示信息的警告，不会把已有的正确时钟连线改成错误，也不会让未知连接变成已确认连线。辅助端口不使用“端口 trace 超时”；原有主端口超时、跳过的标记不会误套到辅助端口上。</p>
+<p>这些项目进入“问题表 / CSV”，可分类、搜索并定位到器件对应辅助行。它们是显示信息的警告，不会把已有的正确时钟连线改成错误，也不会让未知连接变成已确认连线。在架构提取中，辅助端口绑定读取不使用“端口 trace 超时”；独立寄存器任务有自己的每端口超时设置。两类任务分别记录超时与跳过状态。</p>
 <h3 id="315">31.5 配置、导出与恢复</h3>
 <p>配置文件使用可选 <code>aux_ports</code> 对象，键是功能名，值是实际端口名。例如：</p>
 <pre><code class="language-json">{
@@ -1933,4 +1934,137 @@ done[0]
 </code></pre>
 <p>MUX 使用 <code>{"pll_sel": "choose_src"}</code>，门控使用 <code>{"gt": "enable_ctl"}</code>。旧配置无 <code>aux_ports</code> 可直接使用，行为不变。旧结果没有采集的辅助连接不会自动补齐；修改规则后应重新提取。</p>
 <p>结果的 <code>aux_ports</code> 保存角色映射，<code>port_connections</code> 保存各实例实际连接、方向及读取状态。索引结果、JSON、SVG、自动历史恢复和本版本的 module 断点轮换均保留这些信息。升级前产生的未完成任务仍受版本指纹检查，不能强行复用不兼容断点。</p>
-<p>本功能的真实 Verdi、Tk、无辅助配置对比和迁移验收见 <a href="AUXILIARY_PORTS_VALIDATION.zh-CN.md">辅助端口验收报告</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p>本功能的真实 Verdi、Tk、无辅助配置对比和迁移验收见 <a href="AUXILIARY_PORTS_VALIDATION.zh-CN.md">辅助端口验收报告</a>。</p>
+<p><a id="register-trace"></a></p>
+<h2 id="32-bit">32. 辅助端口追踪至真实寄存器与精确 bit</h2>
+<h3 id="321">32.1 操作入口与流程</h3>
+<ol>
+<li>按第 31 章配置辅助端口的实际名称，完成一次架构提取，或打开包含这些辅助配置的历史结果。</li>
+<li>点击画布工具栏 <strong>“辅助口 → 寄存器”</strong>，也可从导出菜单选择 <strong>“辅助口寄存器追踪 / 位映射 CSV”</strong>。</li>
+<li>检查“追踪根层次”。默认采用配置的端口追踪根，没有配置时采用设计顶层。该范围必须包含全部辅助实例及预期控制寄存器，跨出范围会记录为边界。</li>
+<li>检查“置 0 的 DFT 信号”，默认 <code>dft_mode</code>。如果项目实际采用其他名称，填写真实信号名；多个名称以英文逗号分隔。留空表示不施加置零假设。</li>
+<li>检查“内存 GiB”和“每端口超时秒”。内存阈值从主配置继承，<code>0</code> 关闭内存保护；端口超时 <code>0</code> 表示不限时。任务总时长没有上限。</li>
+<li>点击 <strong>“开始新的寄存器追踪”</strong>。独立 Verdi 工作进程会逐实例、逐辅助端口、逐 bit 查询。状态栏显示导入、NPI 查询、当前信号和断点。</li>
+<li>完成后在表中检查所有状态。搜索实例、实际端口或寄存器名，按 100 行翻页；双击或点击“定位所选实例”回到画布对应器件。</li>
+<li>选中一行，下方显示时序依据、触发沿、目的写入表达式、已采用的 DFT 假设和完整层次路径。可拖动表格与详情的分隔条。</li>
+<li>“导出全部 CSV”导出所有行，不受当前搜索和页码限制；“导出映射与证据 JSON”包含位映射、原始 NPI 证据和共享路径前缀，可供后续模板生成使用。</li>
+</ol>
+<p><a class="figure" href="images/register-endpoints.png" target="_blank"><img alt="原生 Tk：sw_done 到 E[10] 写入位的实际证据" src="images/register-endpoints.png" /></a></p>
+<p>主架构中的辅助端口仍不画连线。此任务不会改变已证明的时钟树/复位树边、网络划分或布局。修改规则后，应先重新提取架构，再新建寄存器任务；历史结果不会自动采用尚未提取的新规则。</p>
+<h3 id="322">32.2 怎样确认“寄存器”</h3>
+<table>
+<thead>
+<tr>
+<th>辅助功能</th>
+<th>追踪方向</th>
+<th>终点含义</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pll_sel</code>、<code>div</code>、<code>gt</code></td>
+<td>driver / 上游</td>
+<td><code>Q · 来源时序输出</code>，在第一个确认的时序存储输出停止</td>
+</tr>
+<tr>
+<td><code>sw_done</code></td>
+<td>load / 下游</td>
+<td><code>D · 目的写入位</code>，列出所有可达的目的寄存器 bit，在各分支的第一个时序存储写入位置停止</td>
+</tr>
+</tbody>
+</table>
+<p>判定依据来自 elab 对象及赋值语句的父链：边沿触发 <code>always</code>、具有已证明保持条件的简单锁存器，以及 NPI 明确标识的时序 UDP 输出。单独的 <code>reg</code> 或 <code>logic</code> 声明不能证明时序电路；例如 <code>always @* comb_reg = D[5:2]</code> 会继续穿透至 <code>D</code> 的时序输出。</p>
+<p>RTL 行为级代码通常没有独立命名的 <code>D</code> 引脚。若 <code>always @(posedge clk) E[10] &lt;= done_mux;</code>，结果保存 <code>top.E[10]</code>、方向 <code>D</code>、写入表达式 <code>done_mux</code> 和时钟沿依据；这里表示 <strong>E[10] 的写入端</strong>，不会虚构一个 <code>E_D</code> 信号。仅在时钟沿、敏感列表中使用 <code>sw_done</code>，不计为 D 数据路径。</p>
+<h3 id="323-dft">32.3 DFT 条件、位映射与多分支</h3>
+<pre><code class="language-systemverilog">assign ctl = dft_mode ? test_value : D[5:2];
+assign gate_ctl = dft_mode ? test_gate : C[7];
+assign done_mux = dft_mode ? test_done : sw_done;
+always @(posedge clk) E[10] &lt;= done_mux;
+</code></pre>
+<p>默认假设 <code>dft_mode=0</code> 后，控制口分别继续追踪至 <code>D[5:2]</code>、<code>C[7]</code>，状态口继续到 <code>E[10]</code> 的写入位。不是仅凭字符串删除测试分支：工具读取 elab 的三目/条件表达式，处理可解析的别名、取反及嵌套条件，并保存实际应用的信号全路径。</p>
+<p>短名称 <code>dft_mode</code> 精确匹配各层中同名信号，不匹配 <code>not_dft_mode</code>。如只想限定一处，填写 <code>chip.u_ctrl.dft_mode</code>。这是静态分析假设，不会修改 RTL、KDB 或运行中的仿真信号。其他未固定的选择条件保留全部依赖并标记“条件未固定”，不擅自挑选某一个寄存器。</p>
+<p>结果逐 bit 保存，不会仅保存一个可能掩盖位序的范围字符串。例如实际 formal 端口为 <code>[7:4] choose_src</code> 且连接 <code>D[5:2]</code>：</p>
+<table>
+<thead>
+<tr>
+<th>例化端口 bit</th>
+<th>实际寄存器 bit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>u_mux.choose_src[4]</code></td>
+<td><code>top.D[2]</code></td>
+</tr>
+<tr>
+<td><code>u_mux.choose_src[5]</code></td>
+<td><code>top.D[3]</code></td>
+</tr>
+<tr>
+<td><code>u_mux.choose_src[6]</code></td>
+<td><code>top.D[4]</code></td>
+</tr>
+<tr>
+<td><code>u_mux.choose_src[7]</code></td>
+<td><code>top.D[5]</code></td>
+</tr>
+</tbody>
+</table>
+<p>升序总线、非零下标、静态 bit/part select、常量 indexed select、拼接和重复拼接保留实际位序。若一个端口拼接了多个寄存器，分别列出每一 bit；<code>sw_done</code> 扇出到多个寄存器时全部保存，不只取第一个。</p>
+<p>“精确位映射”表示直接连接/别名路径；“反相位映射”表示存在取反；“组合逻辑依赖”表示该 bit 的值依赖所列寄存器 bit，例如 AND、OR 或受支持的加减表达式，不代表两端可直接互换赋值。“条件未固定”表示仍有选择条件未解析为常量。</p>
+<h3 id="324">32.4 异常、断点与恢复</h3>
+<table>
+<thead>
+<tr>
+<th>状态</th>
+<th>含义及处理</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>已确认寄存器</td>
+<td>找到有时序证据的 Q 或 D 端点；同时检查映射类型。</td>
+</tr>
+<tr>
+<td>常量终点</td>
+<td>控制口为已知常量；不存在对应寄存器。</td>
+</tr>
+<tr>
+<td>范围边界</td>
+<td>超出追踪根、顶层入口或未连接；核对范围和连接。</td>
+</tr>
+<tr>
+<td>未解析</td>
+<td>缺失端口、方向不符、动态下标、未支持的表达式/语句或多驱动等；原因列及原始证据保留具体位置。</td>
+</tr>
+<tr>
+<td>组合环路</td>
+<td>当前路径重返同一信号，停止该环路，其他分支仍保留。</td>
+</tr>
+<tr>
+<td>条件分支已排除</td>
+<td>在当前假设下不再存在活动的数据路径。</td>
+</tr>
+<tr>
+<td>端口超时 / 当前例化已跳过</td>
+<td>当前辅助端口超过阈值，回退其未提交数据并跳过该例化剩余辅助口；其他例化继续。</td>
+</tr>
+</tbody>
+</table>
+<p>动态运行时下标不能被猜测成静态 bit。函数调用、复杂 case/循环或锁存器结构、多维选择、缺少行为模型的黑盒以及未支持的运算会保留未解析记录，不把这些边界当作已找到寄存器。出现有效分支与未解析分支时，两者同时保留；“任务运行完成”不等于“全部位都已确认”。</p>
+<p>每个完整辅助端口提交一个 SQLite 事务断点；尚未完成的当前端口在退出后回退。接近内存阈值时先提交再轮换 Verdi；触及阈值时结束当前进程、撤回未提交端口、重试当前端口，连续三次无进展会停止。已完成的原生查询缓存在磁盘，不跨进程保存 NPI 句柄。</p>
+<p>端口计时在 elab 导入完成后开始，包括该端口全部 bit 的查询和映射分析；导入本身仍不设时间上限，但受内存阈值监控。</p>
+<p>点击“取消当前追踪”会保留已完成端口。重开该窗口自动加载本设计、分析类型的上次任务；选择 <strong>“从已提交端口继续”</strong> 恢复。恢复使用原任务参数，编辑上方设置后请“开始新的寄存器追踪”。输入或实现改变时不能复用旧断点。完整任务再次恢复不会重复启动 Verdi，也不新增重复映射。</p>
+<p>任务目录位于 <code>&lt;runs&gt;/.register-trace/&lt;任务 ID&gt;/</code>：</p>
+<ul>
+<li><code>request.json</code> / <code>manifest.json</code>：设计、种子端口、范围、DFT 假设及兼容指纹。</li>
+<li><code>registers.sqlite</code>：端口断点、结果与路径；<code>queries.sqlite</code>：已完成原生查询缓存。</li>
+<li><code>status.json</code> / <code>events.jsonl</code>：最后阶段、当前实例/端口/信号及时间；<code>controller.log</code> / <code>verdi.log</code>：异常原因线索。无法据日志确认 OS 杀进程原因时，不把推测标为确定结论。</li>
+<li><code>register-trace.json</code>：汇总，包括寄存器映射数、未解析数、是否全部完成、重启及超时计数。</li>
+</ul>
+<p>CLI 可复用 GUI 保存的请求：</p>
+<pre><code class="language-bash">python3 -m clocktree trace-registers --request /path/task/request.json --out /path/new-task
+python3 -m clocktree trace-registers --request /path/task/request.json --out /path/task --resume
+</code></pre>
+<p>退出码 <code>0</code> 表示追踪完成且无待核对问题；<code>2</code> 表示运行完成但有未解析、边界、环路、超时或未固定条件；<code>1</code> 表示任务未完成。常量终点不构成错误，但不会被统计为寄存器。未来 SV 代码按用户模板生成；<strong>当前版本只定位信号及导出证据，不生成 SV</strong>。</p>
+<p>真实 Verdi 2018、VCS KDB、10,000 负载、恢复及便携验收见 <a href="REGISTER_TRACE_VALIDATION.zh-CN.md">寄存器追踪验收报告</a>。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

@@ -11,6 +11,10 @@ def main():
     inputs = commands.add_parser('discover-inputs', help='Read subsystem formal input ports without tracing')
     inputs.add_argument('--request', required=True)
     inputs.add_argument('--out', required=True)
+    registers = commands.add_parser('trace-registers', help='Trace auxiliary control/status bits to proven sequential endpoints')
+    registers.add_argument('--request',required=True)
+    registers.add_argument('--out',required=True)
+    registers.add_argument('--resume',action='store_true',help='Resume committed ports with the same request and unchanged RTL/elab')
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
     run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
@@ -40,6 +44,13 @@ def main():
     where.add_argument('--gui-latest',action='store_true',help='Inspect this user\'s latest and previous GUI sessions')
     diagnosis.add_argument('--json',action='store_true')
     args = parser.parse_args()
+    if args.command == 'trace-registers':
+        from .register_trace import run as trace_registers
+        try:result=trace_registers(args.request,args.out,args.resume)
+        except (ValueError,RuntimeError,OSError,KeyboardInterrupt) as error:
+            parser.exit(1,'ClockTree7 register trace: '+str(error)+'\n')
+        print(json.dumps(result['summary'],ensure_ascii=False,indent=2))
+        return 0 if result['summary']['complete'] else 2
     if args.command == 'discover-inputs':
         from .input_ports import discover
         try: result = discover(args.request, args.out)

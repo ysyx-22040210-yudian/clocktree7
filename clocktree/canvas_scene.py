@@ -129,7 +129,8 @@ class CanvasScene:
             # text sizes are regenerated just once at the settled zoom.
             issue=getattr(d,'issue_port',(None,None))
             issue_pin=issue[1] if issue[0] and issue[0] in (key,node.get('reference_of')) else None
-            detail_key = ('coarse' if coarse else 'detail', round(scale,5) if not zooming else None,selected,issue_pin)
+            navigation_pin=(getattr(d,'selection_target',None) or {}).get('pin') if selected else None
+            detail_key = ('coarse' if coarse else 'detail', round(scale,5) if not zooming else None,selected,issue_pin,navigation_pin)
             if old:
                 tag,previous,_ = old
                 if previous[0] == detail_key[0] and previous[2] == selected and (zooming or previous == detail_key): continue
@@ -143,21 +144,22 @@ class CanvasScene:
                 color=DEVICE_TYPES.get(node.get('kind'),{}).get('color','#8199b9')
                 c.create_rectangle(x*scale+ox,y*scale+oy,(x+w)*scale+ox,(y+h)*scale+oy,
                                    fill=color,outline='#def0ff' if selected else '',tags=tags)
-                if zooming and not coarse: detail_key=('temporary',None,selected,issue_pin)
+                if zooming and not coarse: detail_key=('temporary',None,selected,issue_pin,navigation_pin)
             else:
                 d.port_tooltips.update(draw_device(c,node,x*scale+ox,y*scale+oy,w,h,scale,d.family,selected,tags,d._font_cache))
-                if issue_pin:
+                if issue_pin or navigation_pin:
                     from .devices import port_offsets,pin_index,auxiliary_port_y
-                    pin=issue_pin
+                    pin=issue_pin or navigation_pin
+                    marker_color='#ff9b78' if issue_pin else '#78caff'
                     auxiliary_y=auxiliary_port_y(node,h,pin)
                     offset=port_offsets(node,w,h)[0][pin_index(node,pin)] if pin in node['inputs'] else (port_offsets(node,w,h)[1] if pin==node.get('output') else None)
                     if auxiliary_y is not None:
                         c.create_rectangle((x+8)*scale+ox,(y+auxiliary_y-17)*scale+oy,
                                            (x+w-8)*scale+ox,(y+auxiliary_y+17)*scale+oy,
-                                           outline='#ff9b78',width=2,tags=tags)
+                                           outline=marker_color,width=2,tags=tags)
                     elif offset:
                         px,py=(x+offset[0])*scale+ox,(y+offset[1])*scale+oy
-                        c.create_oval(px-8,py-8,px+8,py+8,outline='#ff9b78',width=3,tags=tags)
+                        c.create_oval(px-8,py-8,px+8,py+8,outline=marker_color,width=3,tags=tags)
             self.nodes[key]=(tag,detail_key,None)
             d.rendered_nodes[tag]=node
         c.itemconfigure('detail',state='hidden' if zooming else 'normal')

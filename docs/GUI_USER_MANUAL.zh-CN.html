@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.5 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.5.1 · 更新日期：2026-11-10 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -589,7 +589,7 @@ L7  fixture_top.l7
 <h3 id="112">11.2 跳转上下游与高亮整个分支</h3>
 <ol>
 <li>先在明细中选择一个真实实例。</li>
-<li><strong>上游 (N)</strong>、<strong>下游 (N)</strong> 按钮用于定位邻接器件；N 为器件数。只有一个对端时直接跳转，多个对端时打开可搜索、分页的端口连接列表。</li>
+<li><strong>上游 (N)</strong>、<strong>下游 (N)</strong> 按钮用于定位邻接器件；N 为器件数。只有一个对端端口时直接跳转，多个对端器件或多个输入端口时打开可搜索、分页的端口连接列表。跳转保留实际输入分支，目标端口以蓝圈标出。</li>
 <li>点击 <strong>高亮整个分支</strong>，显示全部上游边与全部下游边的并集，不带入上游其他旁支。MUX 的全部已解析输入路径均保留。</li>
 <li>使用 <strong>适配高亮范围</strong> 调整视口，使用 <strong>清除高亮</strong> 退出高亮。定位、分页及切换概览不会清除已经选定的分支。</li>
 </ol>
@@ -1685,11 +1685,12 @@ bash clocktree.sh gui
 <ol>
 <li>单击器件，在右侧确认真实实例路径、输入和输出。</li>
 <li>点击“上游（数量）”或“下游（数量）”。数量按相邻器件去重。</li>
-<li>只有一个相邻器件时直接定位；有多个时弹出列表，可搜索实例、端口或实际信号。</li>
-<li>列表每页 100 条端口连接，同一个器件可以因为多个端口出现多行。双击条目或点击定位即可跳转。</li>
-<li>使用“后退”“前进”恢复此前选中的器件及视口；目标已在当前视图时不会重新布局。大图中目标不在当前页时进入其局部邻域。</li>
+<li>只有一个对端端口时直接定位；有多个对端器件或同一器件的多个输入端口时弹出列表，可搜索实例、端口或实际信号。按钮数量仍按器件去重，所以“下游（1）”也可能需要选择具体输入。</li>
+<li>列表每页 100 条端口连接，同一个器件可以因为多个端口出现多行。双击条目或点击定位，按该行的真实连线定位到对应端口与分支，不会选择同名实例的另一个输入引用。右侧属性区连接列表的双击操作遵循相同规则。</li>
+<li>目标端口用蓝圈标出，当前跳转连线高亮，状态栏显示“来源实例.输出口 → 目标实例.输入口”。若已启用整个分支高亮，则保留原有分支高亮范围，蓝圈仍指向本次定位的端口。</li>
+<li>使用“后退”“前进”恢复此前选中的器件、输入分支及视口；目标及其连线已在当前视图时不会重新布局。大图中目标连线不在当前页时进入局部邻域，并确保包含这条实际连线。展开/收起子系统总线不会切换到别的输入分支。</li>
 </ol>
-<p>对于“器件引用”，上游入口只沿该引用所属分支返回。子系统没有下游输出。未解析连接不会产生可跳转的虚构器件。</p>
+<p>对于“器件引用”，上游入口只沿该引用所属分支返回。同一上游输出接到引用的多个输入时，刚完成跳转后返回上游会保留刚才那条连线。主画布与独立分支窗口的行为一致。子系统没有下游输出，未解析连接不会产生可跳转的虚构器件；切换结果后，旧的候选窗口不能向新结果发起跳转。</p>
 <h3 id="303">30.3 整个分支高亮</h3>
 <p>选择器件后点击“高亮整个分支”。高亮范围为该器件的全部上游边与全部下游边的并集：</p>
 <ul>

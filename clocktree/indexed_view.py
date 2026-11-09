@@ -117,6 +117,7 @@ class IndexedGraphView(GraphView):
         self.actual_count = 0
         self.bounds = (0, 0, self.layer_count * COLUMN_STEP + 36, 560)
         self.effective_mode, self.effective_depth, self.focus = 'hierarchy', 5, None
+        self.focus_edge = None
         self.page, self.pages, self.page_signature, self.external_edges = 0, 1, None, 0
 
     @staticmethod
@@ -136,6 +137,7 @@ class IndexedGraphView(GraphView):
         where, params = self.condition(component, scope)
         self.actual_count = conn.execute('SELECT COUNT(*) FROM nodes WHERE ' + where, params).fetchone()[0]
         self.focus = None
+        self.focus_edge = None
         signature = (component, scope, depth, mode)
         if signature != self.page_signature:
             self.page = 0
@@ -295,13 +297,16 @@ class IndexedGraphView(GraphView):
         return QuerySequence(self.store, 'SELECT data FROM edges WHERE id IN (' + members.sql + ')', members.params,
                              decode=True, count=len(members))
 
-    def project_focus(self, node):
+    def project_focus(self, node, required_edge=None):
         # Exact location loads a bounded neighbourhood. All other instances
         # remain searchable in the index and accessible via the full overview.
         conn = self.store.connection()
         rows = conn.execute('SELECT source,target FROM edges WHERE source=? OR target=? LIMIT ?',
-                            (node['id'], node['id'], DETAIL_LIMIT-1))
+                            (node['id'], node['id'], DETAIL_LIMIT-2 if required_edge else DETAIL_LIMIT-1))
         ids = {node['id']}
+        if required_edge:
+            required_edge=self.original_edges[required_edge['id']]
+            ids.update((required_edge['source'],required_edge['target']))
         for source, target in rows:
             ids.update((source, target))
         conn.execute('CREATE TEMP TABLE IF NOT EXISTS ct7_focus(id TEXT PRIMARY KEY)')
@@ -310,7 +315,10 @@ class IndexedGraphView(GraphView):
         self.nodes = {key: self.original[key] for key in ids}
         self.edges = [self.store.decode(row[0]) for row in conn.execute(
             'SELECT data FROM edges WHERE source IN (SELECT id FROM ct7_focus) AND target IN (SELECT id FROM ct7_focus) LIMIT ?', (DETAIL_LIMIT*2,))]
+        if required_edge and not any(edge['id']==required_edge['id'] for edge in self.edges):
+            self.edges.append(required_edge)
         self.actual_count, self.focus = len(ids), node['id']
+        self.focus_edge=required_edge['id'] if required_edge else None
         self.page, self.pages, self.external_edges = 0, 1, 0
         self.effective_mode = 'instances'
         self._references()

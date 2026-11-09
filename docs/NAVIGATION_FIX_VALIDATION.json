@@ -1,0 +1,127 @@
+{
+  "date": "2026-11-10",
+  "scope": "Exact input-port navigation; saved NPI results, no new elaboration or extraction",
+  "navigation": {
+    "clock-memory": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "clock-indexed": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "clock-direct": true,
+    "reset-memory": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "reset-indexed": {
+      "exact_reference": true,
+      "exact_pin": true,
+      "connection_list": true,
+      "blue_port_marker": true,
+      "history": true,
+      "bus_rebuild": true,
+      "cross_component": true,
+      "independent_branch": true,
+      "stale_dialog_guard": true
+    },
+    "reset-direct": true,
+    "mux_exact_input": true,
+    "auxiliary_issue_location_preserved": true,
+    "bounded_focus": {
+      "instances": 129,
+      "edges": 128,
+      "test_detail_limit": 8,
+      "required_edge_preserved": true,
+      "same_instance_cross_focus_history": true,
+      "chooser_second_page": true
+    },
+    "passed": true,
+    "callback_errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "tk": "8.5.13"
+  },
+  "existing_branch_regression": {
+    "clock": {
+      "nodes": 3,
+      "edges": 4,
+      "reference_nodes": 2,
+      "reference_edges": 2,
+      "original_unchanged": true,
+      "native_double_click": true,
+      "independent_navigation": true,
+      "main_result_switch": true
+    },
+    "reset": {
+      "nodes": 3,
+      "edges": 4,
+      "reference_nodes": 2,
+      "reference_edges": 2,
+      "original_unchanged": true,
+      "native_double_click": true,
+      "independent_navigation": true,
+      "main_result_switch": true
+    },
+    "large_npi": {
+      "source_instances": 8195,
+      "branch_instances": 2,
+      "branch_edges": 1,
+      "open_seconds": 0.2597371369993198
+    },
+    "stress": {
+      "nodes": 100000,
+      "edges": 99999,
+      "boxes": 2,
+      "open_seconds": 5.606210219004424
+    },
+    "cancelled_preparation": true,
+    "repeated_windows": {
+      "count": 5,
+      "rss_kib": [
+        82208,
+        82208,
+        82208,
+        82208,
+        82208
+      ],
+      "private_indexes_removed": true
+    },
+    "passed": true,
+    "callback_errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "tk": "8.5.13",
+    "main_exit_released_branches": true
+  },
+  "automated_tests": {
+    "passed": 260,
+    "skipped": 1,
+    "seconds": 14.07,
+    "log": "validation/navigation-20261110-tests-final.log"
+  },
+  "native_logs": [
+    "validation/navigation-20261110-final.log",
+    "validation/navigation-branch-regression-20261110.log"
+  ]
+}

@@ -7,6 +7,7 @@ from collections import OrderedDict
 from .viewmodel import GraphView
 from .devices import DEVICE_TYPES, symbol_parts
 from .profiles import tree_type
+from .navigation_target import display_node, location_target
 
 
 COLORS = ['#55a9ff', '#46c8bb', '#a492f4', '#edb55b', '#df88bb', '#5db7d6', '#91bd72']
@@ -78,6 +79,7 @@ class ClockDiagram(tk.Frame):
         self.mode, self.component, self.scope, self.depth = 'instances', None, '', 5
         self.scale, self.ox, self.oy = 1., 0., 0.
         self.selected, self.highlights = None, set()
+        self.selection_target = None
         self.rendered_nodes, self.rendered_wires = {}, {}
         self.port_tooltips = {}
         self._font_cache = {}
@@ -150,15 +152,19 @@ class ClockDiagram(tk.Frame):
         self.cancel_layout(restore=False)
         self.model.layout_mode=self.layout_mode
         cache_key=(self.mode,self.component,self.scope,self.depth,getattr(self.model,'page',0),getattr(self.model,'focus',None),
-                   self.layout_mode,getattr(self.model,'subsystem_references',True),tuple(sorted(getattr(self.model,'expanded_buses',()))))
+                   getattr(self.model,'focus_edge',None),self.layout_mode,getattr(self.model,'subsystem_references',True),tuple(sorted(getattr(self.model,'expanded_buses',()))))
         def finish(data):
             for key,value in data.items():setattr(self.model,key,value)
             self.layout_pending=False
             self._committed_view=(self.model,{key:getattr(self.model,key) for key in ('nodes','edges','positions','routes','bounds',
                 'node_columns','component_tops','layer_spans','layer_columns','actual_count','layout_mode')},
                 {key:getattr(self,key) for key in ('mode','component','scope','depth','layout_mode')})
-            for key in ('page','pages','focus','external_edges'):
+            for key in ('page','pages','focus','focus_edge','external_edges'):
                 if hasattr(self.model,key):self._committed_view[1][key]=getattr(self.model,key)
+            if not after and self.selection_target:
+                chosen=display_node(self.model.nodes,self.selection_target)
+                self.selected=chosen['id'] if chosen else None
+                if chosen:self.on_node(chosen)
             self.scene.reset();self._record_first_paint=True
             self._stage('end','layout','架构布局已完成',boxes=len(self.model.nodes))
             if fit:self.fit()
@@ -206,6 +212,7 @@ class ClockDiagram(tk.Frame):
         self.mode = 'hierarchy' if len(graph['nodes']) > 400 else 'instances'
         self.component, self.scope, self.depth = None, '', 5
         self.selected, self.highlights = None, set()
+        self.selection_target = None
         self._history,self._future=[],[]
         self._branch_highlight=False
         self.model.defer_layout=True
@@ -220,6 +227,7 @@ class ClockDiagram(tk.Frame):
         self.tree_type=mode
         self.model=None
         self.selected,self.highlights=None,set()
+        self.selection_target=None
         self.scale,self.ox,self.oy=1.,0.,0.
         self.mode,self.component,self.scope,self.depth='instances',None,'',5
         self.rendered_nodes,self.rendered_wires={},{}
@@ -313,28 +321,38 @@ class ClockDiagram(tk.Frame):
         self.selected = None
         self.rebuild()
 
-    def locate(self, node, record=True):
+    def locate_edge(self, edge, direction, record=True):
+        endpoint='source' if direction=='upstream' else 'target'
+        self.locate(self.model.original[edge[endpoint]],record=record,edge=edge,endpoint=endpoint)
+
+    def locate(self, node, record=True, edge=None, endpoint=None, pin=None):
         if not self.model:
             return
         if record:self._remember_position()
         actual=node.get('reference_of',node['id'])
-        keys=[key for key,n in self.model.nodes.items() if key == node['id'] or n.get('reference_of') == actual]
+        target=location_target(node,edge,endpoint,pin)
         def center():
-            candidates=[key for key,n in self.model.nodes.items() if key == node['id'] or key == actual or n.get('reference_of') == actual]
-            if not candidates:return
-            key=candidates[0]
+            chosen=display_node(self.model.nodes,target)
+            if chosen is None:
+                self.on_hover('当前视图未包含目标端口分支，未跳转到其他输入。');return
+            key=chosen['id']
             x,y,w,h=self.model.positions[key]
             self.scale=min(1.05,max(.7,self.canvas.winfo_width()/1100))
             self.ox=self.canvas.winfo_width()/2-(x+w/2)*self.scale
             self.oy=self.canvas.winfo_height()/2-(y+h/2)*self.scale
-            self.select(self.model.nodes[key]);self.notify()
-        if keys and not self.layout_pending:
+            self.select(chosen,target=target);self.notify()
+            if edge is not None:
+                self.on_hover('沿实际连接定位：{}.{} → {}.{}'.format(edge['source'],edge['source_pin'],edge['target'],edge['target_pin']))
+        # If a projected neighbourhood omitted the actual navigation edge,
+        # rebuild it with that edge pinned instead of highlighting another path.
+        edge_visible=edge is None or any(e['id']==edge['id'] for e in self.model.edges)
+        if display_node(self.model.nodes,target) is not None and edge_visible and not self.layout_pending:
             center();return
         self.mode, self.component, self.scope = 'instances', None, ''
         from .indexed_view import DETAIL_LIMIT
         if hasattr(self.model, 'project_focus') and len(self.model.original) > DETAIL_LIMIT:
             self._stage('begin','layout','定位实例并读取局部连接',instance=node['id'])
-            try:self.model.project_focus(self.model.original[actual])
+            try:self.model.project_focus(self.model.original[actual],required_edge=edge)
             except BaseException as error:
                 if self.runtime_journal:self.runtime_journal.fail(error)
                 raise
@@ -346,7 +364,8 @@ class ClockDiagram(tk.Frame):
     def _position(self):
         return dict(selected=self.selected,scale=self.scale,ox=self.ox,oy=self.oy,
                     mode=self.mode,component=self.component,scope=self.scope,depth=self.depth,
-                    focus=getattr(self.model,'focus',None),page=getattr(self.model,'page',0))
+                    focus=getattr(self.model,'focus',None),focus_edge=getattr(self.model,'focus_edge',None),
+                    selection_target=self.selection_target,page=getattr(self.model,'page',0))
 
     def _remember_position(self):
         if self.model and not self.layout_pending:
@@ -356,25 +375,32 @@ class ClockDiagram(tk.Frame):
         source,target=(self._future,self._history) if forward else (self._history,self._future)
         if not source or not self.model:return
         state=source.pop();target.append(self._position())
-        same=all(getattr(self,k)==state[k] for k in ('mode','component','scope','depth')) and getattr(self.model,'focus',None)==state['focus'] and getattr(self.model,'page',0)==state['page']
+        same=all(getattr(self,k)==state[k] for k in ('mode','component','scope','depth')) and getattr(self.model,'focus',None)==state['focus'] and getattr(self.model,'focus_edge',None)==state.get('focus_edge') and getattr(self.model,'page',0)==state['page']
         def restore():
-            for k in ('scale','ox','oy','selected'):setattr(self,k,state[k])
-            node=self.model.nodes.get(self.selected)
-            if node:self.on_node(node)
+            for k in ('scale','ox','oy'):setattr(self,k,state[k])
+            target=state.get('selection_target')
+            node=display_node(self.model.nodes,target) if target else self.model.nodes.get(state['selected'])
+            if node:self.select(node,target=target)
+            else:self.selected=None;self.selection_target=target
             self.schedule();self.notify()
         if same:restore();return
         for k in ('mode','component','scope','depth'):setattr(self,k,state[k])
         if hasattr(self.model,'page'):self.model.page=state['page']
-        if state['focus']:self.model.project_focus(self.model.original[state['focus']])
+        if state['focus']:
+            required=self.model.original_edges[state['focus_edge']] if state.get('focus_edge') else None
+            self.model.project_focus(self.model.original[state['focus']],required_edge=required)
         else:self.model.project(self.mode,self.component,self.scope,self.depth)
         self._calculate_layout(False,restore)
 
-    def select(self, node):
+    def select(self, node, target=None):
         self.selected = node['id']
+        self.selection_target = target or location_target(node)
         if not self._branch_highlight:
             self.highlights = set()
             actual=node.get('reference_of',node['id'])
-            if node.get('reference_of'):
+            if self.selection_target.get('edge'):
+                self.highlights={self.selection_target['edge']}
+            elif node.get('reference_of'):
                 self.highlights={edge['id'] for edge in self.model.edges if edge['target']==node['id']}
             elif hasattr(self.model, 'selection_edges'):
                 self.highlights = self.model.selection_edges(self.model.original[actual] if node.get('reference_of') else node)

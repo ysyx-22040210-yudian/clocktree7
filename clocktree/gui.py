@@ -1691,7 +1691,7 @@ class ClockTreeApp(tk.Tk):
     def locate_issue_object(self,instance,pin=''):
         if self.diagram.model and instance in self.diagram.model.original:
             self.diagram.issue_port=(instance,pin)
-            self.diagram.locate(self.diagram.model.original[instance])
+            self.diagram.locate(self.diagram.model.original[instance],pin=pin or None)
             self.set_status('问题端口：{}.{}'.format(instance,pin))
 
     def locate_issue(self,row):
@@ -1707,22 +1707,8 @@ class ClockTreeApp(tk.Tk):
             self.show_log(True);self.log_source.set('阶段日志');self.set_status(row[8]+' · '+row[9])
 
     def jump_neighbour(self,direction):
-        if not self.selected_object or self.selected_object.get('aggregate'):return
-        node=self.selected_object;model=self.diagram.model
-        if node.get('reference_of'):
-            if direction=='upstream' and node.get('reference_source'):self.diagram.locate(model.original[node['reference_source']])
-            return
-        edges=model.incoming[node['id']] if direction=='upstream' else model.outgoing[node['id']]
-        endpoint='source' if direction=='upstream' else 'target'
-        if not edges:self.set_status('当前器件没有已解析的'+('上游' if direction=='upstream' else '下游')+'连接。');return
-        if hasattr(model,'store'):
-            match='target' if direction=='upstream' else 'source'
-            neighbours=[r[0] for r in model.store.connection().execute('SELECT DISTINCT '+endpoint+' FROM edges WHERE '+match+'=? LIMIT 2',(node['id'],))]
-        else:neighbours=list({e[endpoint] for e in edges})
-        if len(neighbours)==1:self.diagram.locate(model.original[neighbours[0]])
-        else:
-            from .navigation import NeighbourDialog
-            NeighbourDialog(self,node['id'],direction)
+        from .navigation import jump_neighbour
+        jump_neighbour(self,self.selected_object,direction)
 
     def change_mode(self,event=None):
         self.diagram.mode='hierarchy' if self.view_mode.get()=='RTL 层次概览' else 'instances'
@@ -1802,9 +1788,8 @@ class ClockTreeApp(tk.Tk):
                     timeout['pin'],timeout['direction'],timeout['limit_seconds'],timeout['elapsed_seconds'])))
             title=node['module']
             if node.get('reference_of'):
-                if isinstance(self.graph,IndexedGraph):
-                    edges=RecordSequence(self.graph.store,'edges','target=? AND source=?',(node['id'],node.get('reference_source') or ''))
-                else:edges=[edge for edge in self.diagram.model.incoming[node['id']] if edge['target_pin'] in node['inputs']]
+                from .navigation import neighbour_edges
+                edges=neighbour_edges(self.diagram.model,node,'upstream')
                 fields.insert(1,('器件引用','同一个真实子系统；此引用只显示当前分支相关输入。'))
             else:edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]
             members={node['id']}
@@ -1925,8 +1910,8 @@ class ClockTreeApp(tk.Tk):
         if not selection or selection[0] not in self.related_edges:return
         edge=self.related_edges[selection[0]]
         selected=self.selected_object
-        target=edge['source'] if selected and edge['target']==selected.get('id') else edge['target']
-        self.diagram.locate(self.diagram.model.original[target])
+        direction='upstream' if selected and edge['target']==selected.get('reference_of',selected.get('id')) else 'downstream'
+        self.diagram.locate_edge(edge,direction)
 
     def expand_selected(self):
         if self.selected_object:self.diagram.expand(self.selected_object)

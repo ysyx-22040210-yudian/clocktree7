@@ -121,11 +121,10 @@ class BranchDialog(tk.Toplevel):
         self.next.configure(state='normal' if info['page']+1 < info['pages'] else 'disabled')
         if self._initial_selection and not self.diagram.layout_pending:
             self._initial_selection = False
-            actual = self.seed.get('reference_of', self.seed['id'])
-            candidates = [n for n in self.diagram.model.nodes.values()
-                          if n['id'] == actual or n.get('reference_of') == actual]
-            if candidates:
-                self.diagram.select(candidates[0])
+            from .navigation_target import display_node, location_target
+            chosen = display_node(self.diagram.model.nodes, location_target(self.seed))
+            if chosen:
+                self.diagram.select(chosen)
 
     def change_mode(self, event=None):
         if self.diagram.model:
@@ -174,12 +173,8 @@ class BranchDialog(tk.Toplevel):
         return sorted({edge[other] for edge in edges})
 
     def jump_neighbour(self, direction):
-        neighbours = self._neighbours(direction)
-        if len(neighbours) == 1:
-            self.diagram.locate(self.diagram.model.original[neighbours[0]])
-        elif neighbours:
-            from .navigation import NeighbourDialog
-            NeighbourDialog(self, self.selected_object['id'], direction)
+        from .navigation import jump_neighbour
+        jump_neighbour(self, self.selected_object, direction)
 
     def expand_selected(self):
         if self.selected_object:

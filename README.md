@@ -6,6 +6,8 @@
 
 **[详细 GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md)** · [离线 HTML 阅读版](docs/GUI_USER_MANUAL.zh-CN.html) · **[其他 EDA 设备部署与验收](docs/PORTABILITY.zh-CN.md)** · [验证摘要](docs/VALIDATION.zh-CN.md) · [可浏览示例](examples/flexible_layers/README.md)
 
+**[产品介绍 PPT（34 页，功能、原理与使用演示）](presentations/clocktree7-product-20261110/README.md)** · [直接下载 PowerPoint](https://github.com/ysyx-22040210-yudian/clocktree7/raw/refs/heads/main/presentations/clocktree7-product-20261110/ClockTree7_Product_Introduction_20261110.pptx)
+
 ![原生 Tk 分支紧凑工作台与输入型子系统](docs/images/workbench-compact.png)
 
 ## 功能

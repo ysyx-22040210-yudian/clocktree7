@@ -1,0 +1,17 @@
+{
+  "title": "ClockTree7｜RTL 时钟与复位架构分析工具",
+  "language": "zh-CN",
+  "created": "2026-11-10",
+  "slides": 34,
+  "page_id": "page_5fa8794242f8819191d27c549f9a4135",
+  "artifactRef": "artifact_external_25f52d42-84e0-48b8-bf72-6dbcd78797a6",
+  "delivery": "Editable 34-slide PowerPoint file and saved Spaces presentation",
+  "pptx": "ClockTree7_Product_Introduction_20261110.pptx",
+  "pptx_sha256": "4452d26c3822fd8c33f5f6e84190af770d0f203f61e1dbe2ae85b1615ca07d69",
+  "pptx_bytes": 3711626,
+  "export_date": "2026-11-10",
+  "export_method": "Rebuilt from the saved deck, polish and final-polish callbacks; embedded original screenshot bytes and an editable chart data workbook",
+  "source_commit": "507990b13d0f5bb5d73abefb35255ec832b82040",
+  "authoring_order": ["deck.mjs build in batches", "polish.mjs polish once", "final-polish.mjs finish once with dimensions.json"],
+  "notes": "All 34 slides contain Chinese presenter notes and source citations. GUI demonstrations use actual saved screenshots and faithfully transcribed editable data tables."
+}

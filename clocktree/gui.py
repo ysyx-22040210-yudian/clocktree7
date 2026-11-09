@@ -600,6 +600,7 @@ class ClockTreeApp(tk.Tk):
         ttk.Checkbutton(navigation,text='子系统分支引用',variable=self.references_var,command=self.change_layout).pack(side='left',padx=7)
         ttk.Button(navigation,text='问题表 / CSV',command=self.open_issues).pack(side='right')
         ttk.Button(navigation,text='辅助口 → 寄存器',command=self.open_register_trace).pack(side='right',padx=8)
+        ttk.Button(navigation,text='分支 SV 模板',command=self.open_sv_templates).pack(side='right',padx=3)
         scopebar=tk.Frame(self.center,bg='#edf2fa',height=31)
         scopebar.pack(fill='x')
         scopebar.pack_propagate(False)
@@ -2017,11 +2018,20 @@ class ClockTreeApp(tk.Tk):
         from .register_view import RegisterDialog
         RegisterDialog(self)
 
+    def open_sv_templates(self):
+        if not self.graph:
+            self.status.set('请先打开时钟树架构结果。');return
+        if self.graph.get('tree_type',self.graph['config'].get('tree_type','clock'))!='clock':
+            self.status.set('分支 SV 模板当前用于时钟树。');return
+        from .sv_view import SVDialog
+        SVDialog(self)
+
     def export_menu(self):
         menu=tk.Menu(self,tearoff=False)
         menu.add_command(label='保存传播规则配置 JSON',command=self.save_config)
         menu.add_command(label='导出全部结构与连线 JSON',command=self.export_result)
         menu.add_command(label='辅助口寄存器追踪 / 位映射 CSV',command=self.open_register_trace)
+        menu.add_command(label='时钟树分支 SV 模板生成',command=self.open_sv_templates)
         menu.add_command(label='导出当前范围架构图 SVG',command=self.export_svg)
         menu.tk_popup(self.winfo_pointerx(),self.winfo_pointery())
 

@@ -16,7 +16,8 @@
 - 启动自动恢复上次模式、配置、选中层级和结果图；支持未导出草稿和本地结果快照，关闭时完成最后一次保存。
 - 时钟器件：**选择器 / 门控 / OCC / DIV / SUBSYSTEM**；复位器件：**MUX / RSY_SYNC / SUBSYSTEM**，均有专用模型。
 - 可选辅助端口：MUX 的 `pll_sel` 输入、DIV 的 `div` 输入及 `sw_done` 输出、门控的 `gt` 输入，均由用户填写实际接口名。逐实例读取 elab 连接并显示在器件下方，不参加时钟树连线追踪；缺失、方向不符及未连接进入问题表，JSON/SVG/历史恢复保留。[填写与查看](docs/GUI_USER_MANUAL.zh-CN.md#auxiliary-ports) · [Verdi 2018 验收](docs/AUXILIARY_PORTS_VALIDATION.zh-CN.md)。
-- **辅助口 → 寄存器** 独立任务：`pll_sel/div/gt` 逐 bit driver 到实际时序输出，`sw_done` 沿 load 到目的寄存器写入位。按 elab 表达式应用 `dft_mode=0`，保留完整路径、位序、条件与时序证据；不会把普通 `reg` 声明当作寄存器。提供原生 Tk 结果表、分页搜索、CSV/JSON、端口断点、内存轮换及可选超时。SV 模板生成尚未启用。[操作手册](docs/GUI_USER_MANUAL.zh-CN.md#register-trace) · [寄存器追踪验收](docs/REGISTER_TRACE_VALIDATION.zh-CN.md)。
+- **辅助口 → 寄存器** 独立任务：`pll_sel/div/gt` 逐 bit driver 到实际时序输出，`sw_done` 沿 load 到目的寄存器写入位。按 elab 表达式应用 `dft_mode=0`，保留完整路径、位序、条件与时序证据；不会把普通 `reg` 声明当作寄存器。提供原生 Tk 结果表、分页搜索、CSV/JSON、端口断点、内存轮换及可选超时。[操作手册](docs/GUI_USER_MANUAL.zh-CN.md#register-trace) · [寄存器追踪验收](docs/REGISTER_TRACE_VALIDATION.zh-CN.md)。
+- **分支 SV 模板**：起始有/无选择器分别使用用户模板，每个真实末端输入生成一段，全部写到一个 `.sv`。支持 `$var_pllsel`、`$var_div`、`$var_swdone`、按实际连接排序的 `$var_gt0～2`、按关注输入顺序编号的 `$var_pll0～3` 和 `$var_clkip`；不存在的门控/PLL 槽位补 `1'b1`。多寄存器分支暂时跳过，分页选择候选后重新生成同一文件，不重复追加。两套模板、选择及分支计划自动恢复。[详细用法](docs/GUI_USER_MANUAL.zh-CN.md#sv-templates) · [SV 验收](docs/SV_TEMPLATES_VALIDATION.zh-CN.md)。
 - SUBSYSTEM 只含输入终点：编辑器中从 elab 读取 input 名称、正则筛选、勾选确认后才能保存；主提取只使用已确认名单。参数化总线按实际范围展开，各输入独立，不合并不同网络。
 - 默认分支紧凑布局，支持按层排列。布局/布线使用可取消的后台进程；平移复用图元，缩放合并事件，导航图和高亮状态缓存。
 - 上下游直接跳转与分页选择、导航后退/前进、每设计及分析类型最近 100 条搜索历史、整分支高亮、可读证据摘要和按需原始证据。

@@ -1,0 +1,159 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-10",
+  "unit_tests": {
+    "passed": 237,
+    "skipped": 1,
+    "sv_tests": 21
+  },
+  "native": {
+    "passed": true,
+    "kdb": true,
+    "sv_vcs_compiled": true,
+    "terminal_inputs": 2,
+    "initial_generated": 1,
+    "initial_skipped": 1,
+    "final_generated": 2,
+    "gate_order": [
+      "sv_top.C[6]",
+      "sv_top.C[5]",
+      "sv_top.C[4]"
+    ],
+    "missing_literal": "1'b1",
+    "mux_values": {
+      "var_clkip": "sv_top.cd",
+      "var_div": "sv_top.D[9:6]",
+      "var_gt0": "sv_top.C[7]",
+      "var_gt1": "1'b1",
+      "var_gt2": "1'b1",
+      "var_pll0": "sv_top.a",
+      "var_pll1": "sv_top.b",
+      "var_pll2": "1'b1",
+      "var_pll3": "1'b1",
+      "var_pllsel": "sv_top.D[5:2]",
+      "var_swdone": "sv_top.E[10]"
+    },
+    "no_mux_values": {
+      "var_clkip": "sv_top.ng3",
+      "var_div": "sv_top.C[3:0]",
+      "var_gt0": "sv_top.C[6]",
+      "var_gt1": "sv_top.C[5]",
+      "var_gt2": "sv_top.C[4]",
+      "var_pll0": "sv_top.a",
+      "var_pll1": "1'b1",
+      "var_pll2": "1'b1",
+      "var_pll3": "1'b1",
+      "var_swdone": "sv_top.E[11]"
+    }
+  },
+  "gui": [
+    {
+      "passed": true,
+      "errors": []
+    },
+    {
+      "passed": true,
+      "errors": []
+    }
+  ],
+  "scale_before": {
+    "passed": true,
+    "synthetic": true,
+    "nodes": 10007,
+    "terminal_inputs": 10000,
+    "plan_seconds": 84.65434323200316,
+    "export_seconds": 136.68099522500415,
+    "peak_rss_mib": 48.20703125,
+    "generated": 5000,
+    "skipped": 5000,
+    "last_page": 100,
+    "cancellation_preserves_prior_file": true
+  },
+  "scale_after": {
+    "passed": true,
+    "synthetic": true,
+    "nodes": 10007,
+    "terminal_inputs": 10000,
+    "plan_seconds": 79.90248381900165,
+    "export_seconds": 48.833486206996895,
+    "peak_rss_mib": 48.14453125,
+    "generated": 5000,
+    "skipped": 5000,
+    "last_page": 100,
+    "cancellation_preserves_prior_file": true
+  },
+  "portable_candidate": {
+    "passed": true,
+    "root": "/home/host/clocktree7-portable-qa/clocktree7-sv-templates-20261110-rc1",
+    "verify": {
+      "pass": true,
+      "files": 230,
+      "root": "/home/host/clocktree7-portable-qa/clocktree7-sv-templates-20261110-rc1"
+    },
+    "native": {
+      "passed": true,
+      "kdb": true,
+      "sv_vcs_compiled": true,
+      "terminal_inputs": 2,
+      "initial_generated": 1,
+      "initial_skipped": 1,
+      "final_generated": 2,
+      "gate_order": [
+        "sv_top.C[6]",
+        "sv_top.C[5]",
+        "sv_top.C[4]"
+      ],
+      "missing_literal": "1'b1",
+      "mux_values": {
+        "var_clkip": "sv_top.cd",
+        "var_div": "sv_top.D[9:6]",
+        "var_gt0": "sv_top.C[7]",
+        "var_gt1": "1'b1",
+        "var_gt2": "1'b1",
+        "var_pll0": "sv_top.a",
+        "var_pll1": "sv_top.b",
+        "var_pll2": "1'b1",
+        "var_pll3": "1'b1",
+        "var_pllsel": "sv_top.D[5:2]",
+        "var_swdone": "sv_top.E[10]"
+      },
+      "no_mux_values": {
+        "var_clkip": "sv_top.ng3",
+        "var_div": "sv_top.C[3:0]",
+        "var_gt0": "sv_top.C[6]",
+        "var_gt1": "sv_top.C[5]",
+        "var_gt2": "sv_top.C[4]",
+        "var_pll0": "sv_top.a",
+        "var_pll1": "1'b1",
+        "var_pll2": "1'b1",
+        "var_pll3": "1'b1",
+        "var_swdone": "sv_top.E[11]"
+      }
+    },
+    "scale": {
+      "passed": true,
+      "synthetic": true,
+      "nodes": 1007,
+      "terminal_inputs": 1000,
+      "plan_seconds": 0.8857202060025884,
+      "export_seconds": 0.5194445189990802,
+      "peak_rss_mib": 20.703125,
+      "generated": 500,
+      "skipped": 500,
+      "last_page": 100,
+      "cancellation_preserves_prior_file": true
+    },
+    "gui": [
+      {
+        "passed": true,
+        "errors": []
+      },
+      {
+        "passed": true,
+        "errors": []
+      }
+    ],
+    "doctor_status": "pass",
+    "source_dirty": true
+  }
+}

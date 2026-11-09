@@ -1,5 +1,6 @@
 import argparse
 import json
+from pathlib import Path
 
 from .extract import extract
 from .memory import MemoryResumeError
@@ -15,6 +16,10 @@ def main():
     registers.add_argument('--request',required=True)
     registers.add_argument('--out',required=True)
     registers.add_argument('--resume',action='store_true',help='Resume committed ports with the same request and unchanged RTL/elab')
+    svplan=commands.add_parser('sv-plan',help='Prepare one template block per terminal clock input')
+    svplan.add_argument('--graph',required=True);svplan.add_argument('--registers',required=True);svplan.add_argument('--out',required=True)
+    svexport=commands.add_parser('sv-export',help='Expand user templates for every reviewed clock branch into one SV file')
+    svexport.add_argument('--plan',required=True);svexport.add_argument('--templates',required=True);svexport.add_argument('--out',required=True)
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
     run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
@@ -44,6 +49,18 @@ def main():
     where.add_argument('--gui-latest',action='store_true',help='Inspect this user\'s latest and previous GUI sessions')
     diagnosis.add_argument('--json',action='store_true')
     args = parser.parse_args()
+    if args.command in ('sv-plan','sv-export'):
+        from .sv_templates import prepare,SVPlan,read_source
+        try:
+            if args.command=='sv-plan':
+                plan=prepare(read_source(args.graph),args.registers,args.out)
+                result={'plan':str(plan.path),'branches':plan.branches(limit=0)[0]}
+            else:
+                settings=json.loads(Path(args.templates).read_text(encoding='utf-8-sig'))
+                if not isinstance(settings,dict):raise ValueError('模板 JSON 必须是对象')
+                result=SVPlan(args.plan).export(settings,args.out,settings.get('selections'))
+        except (ValueError,RuntimeError,OSError,KeyboardInterrupt) as error:parser.exit(1,'ClockTree7 SV: '+str(error)+'\n')
+        print(json.dumps(result,ensure_ascii=False,indent=2));return 0
     if args.command == 'trace-registers':
         from .register_trace import run as trace_registers
         try:result=trace_registers(args.request,args.out,args.resume)

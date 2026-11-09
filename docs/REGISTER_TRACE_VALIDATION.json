@@ -602,5 +602,204 @@
         "errors": []
       }
     ]
+  },
+  "portable_formal": {
+    "passed": true,
+    "root": "/home/host/clocktree7-portable-qa/clocktree7-register-trace-20261110",
+    "verify": {
+      "pass": true,
+      "files": 223,
+      "root": "/home/host/clocktree7-portable-qa/clocktree7-register-trace-20261110"
+    },
+    "native": {
+      "passed": true,
+      "real_verdi": true,
+      "kdb": true,
+      "fanout": 1000,
+      "rows": 1037,
+      "seconds": 7.682,
+      "summary": {
+        "ports": 17,
+        "counts": {
+          "boundary": 2,
+          "constant": 1,
+          "cycle": 1,
+          "register": 1032,
+          "unresolved": 1
+        },
+        "conditional_mappings": 3,
+        "finished": true,
+        "traced_bits": 33,
+        "register_bits": 29,
+        "all_bits_have_register": false,
+        "complete": false,
+        "verdi_restarts": 0,
+        "timeout_instances": 0,
+        "peak_rss_gib": 0.224
+      },
+      "original_tree": {
+        "seconds": 2.105,
+        "summary": {
+          "instances": 16,
+          "edges": 2,
+          "roots": 14,
+          "tree_type": "clock",
+          "extraction_mode": "target",
+          "physical_loads_checked": false,
+          "terminal_semantics": "selected_structure",
+          "validated_outputs": 16,
+          "terminals": 14,
+          "components": 1,
+          "clock_sources": 2,
+          "layers": {
+            "1": 5,
+            "2": 10,
+            "3": 1
+          },
+          "terminal_layers": {
+            "1": 4,
+            "2": 9,
+            "3": 1
+          },
+          "expected_pin_traces": 21,
+          "observed_pin_traces": 21,
+          "unresolved": 0,
+          "diagnostics": 10,
+          "trace_timeout_instances": 0,
+          "trace_timeout_ports": 0,
+          "trace_skipped_ports": 0,
+          "trace_scope": "",
+          "scope_limited": false,
+          "scope_boundaries": 0,
+          "scope_output_instances": 0,
+          "extraction_finished": true,
+          "connectivity_complete": true,
+          "topology_valid": false
+        },
+        "rss_peak_gib": 0.215,
+        "language_stats": {
+          "driver_queries": 4,
+          "cache_hits": 17,
+          "output_index_hits": 2
+        },
+        "elaborated_probes": []
+      },
+      "resume_deduplicated": true
+    },
+    "recovery": {
+      "passed": true,
+      "native_verdi": true,
+      "injection": "QA only; real workers killed/restarted; RSS samples forced, not physical 64 GiB allocation",
+      "cases": [
+        {
+          "case": "baseline-language-only",
+          "passed": true,
+          "summary": {
+            "ports": 4,
+            "counts": {
+              "register": 1011
+            },
+            "conditional_mappings": 0,
+            "finished": true,
+            "traced_bits": 10,
+            "register_bits": 10,
+            "all_bits_have_register": true,
+            "complete": true,
+            "verdi_restarts": 0,
+            "timeout_instances": 0,
+            "peak_rss_gib": 0.225
+          }
+        },
+        {
+          "case": "rotate",
+          "passed": true,
+          "rows_equal": true,
+          "summary": {
+            "ports": 4,
+            "counts": {
+              "register": 1011
+            },
+            "conditional_mappings": 0,
+            "finished": true,
+            "traced_bits": 10,
+            "register_bits": 10,
+            "all_bits_have_register": true,
+            "complete": true,
+            "verdi_restarts": 1,
+            "timeout_instances": 0,
+            "peak_rss_gib": 0.227
+          }
+        },
+        {
+          "case": "threshold",
+          "passed": true,
+          "rows_equal": true,
+          "summary": {
+            "ports": 4,
+            "counts": {
+              "register": 1011
+            },
+            "conditional_mappings": 0,
+            "finished": true,
+            "traced_bits": 10,
+            "register_bits": 10,
+            "all_bits_have_register": true,
+            "complete": true,
+            "verdi_restarts": 1,
+            "timeout_instances": 0,
+            "peak_rss_gib": 4.04
+          }
+        },
+        {
+          "case": "hard-crash-and-resume",
+          "passed": true,
+          "committed_rows_unchanged": 4,
+          "orphan_reaped": true
+        },
+        {
+          "case": "native-query-timeout",
+          "passed": true,
+          "summary": {
+            "ports": 4,
+            "counts": {
+              "register": 5,
+              "skipped": 1,
+              "timeout": 1
+            },
+            "conditional_mappings": 0,
+            "finished": true,
+            "traced_bits": 7,
+            "register_bits": 5,
+            "all_bits_have_register": false,
+            "complete": false,
+            "verdi_restarts": 1,
+            "timeout_instances": 1,
+            "peak_rss_gib": 0.214
+          }
+        },
+        {
+          "case": "changed-input-rejected",
+          "passed": true
+        },
+        {
+          "case": "three-no-progress-retries-stop",
+          "passed": true,
+          "prior_ports_retained": 3
+        }
+      ]
+    },
+    "gui": [
+      {
+        "passed": true,
+        "errors": []
+      },
+      {
+        "passed": true,
+        "errors": []
+      }
+    ],
+    "source_commit": "e92ce69e8872a50bdf9e62b1450adc5e029bfa10",
+    "source_dirty": false,
+    "doctor_status": "pass"
   }
 }

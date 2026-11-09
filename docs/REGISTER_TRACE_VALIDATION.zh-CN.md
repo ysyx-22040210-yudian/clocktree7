@@ -82,10 +82,14 @@ Verdi 自身单次 Language Model API 的内部内存仍由厂商实现决定。
 | 保护与恢复 | 7 场景通过，包括连续 3 次无进展停止；真实工作进程被终止/重启。 |
 | 原生 GUI 两次启动 | 新任务、分页、证据查看和自动恢复全部通过，0 callback 错误；无第三方 Python 包模式。 |
 
-候选包为提交前快照，MANIFEST 的 `source_dirty: true`。正式包及提交信息在干净提交出包后补录。详细操作见 [GUI 手册第 32 章](GUI_USER_MANUAL.zh-CN.md#register-trace)。
+候选包为提交前快照，MANIFEST 的 `source_dirty: true`。正式寄存器包 `clocktree7-register-trace-20261110` 从干净提交 `e92ce69e8872a50bdf9e62b1450adc5e029bfa10` 生成，223 个内容文件及清单在独立目录全部匹配。正式包 doctor、KDB、7 项故障恢复、两次原生 GUI 启动均已通过。zip SHA-256 为 `65b2f65a6f6f3a45ffd2240ccda80c21436aa162a45da8097f989d52f35e21b2`，tar.gz 为 `606db621bd5042302e05c75f992eb5a654ada7c891dea441431caeca36eeec2e`。该快照之后新增的 SV 模板功能见 [独立验收报告](SV_TEMPLATES_VALIDATION.zh-CN.md)，新便携包同时包含寄存器追踪与 SV 功能。
+
+详细操作见 [GUI 手册第 32 章](GUI_USER_MANUAL.zh-CN.md#register-trace)。
 
 ## 验收过程中的问题记录
 
 VM 的默认 Xvfb `:99` 存在遗留 socket，首次 GUI 检查未进入 Tk 窗口；换用未占用的隔离显示后，实际 GUI 功能全部完成。最初截图中详情面板过矮，已改为可拖动分隔条并重新查看截图。独立目录脚本最初在汇总含阶段前缀的 doctor 输出时解析 JSON 失败；各检查已经结束，修复汇总器后从既有证据重新汇总，没有把未运行的步骤标成通过。
+
+正式寄存器包的第一轮恢复验收在连续重启 Verdi 时失去 Xvfb 显示，日志为 `Can't open display`；换用带 `-noreset` 的独立显示后完整重跑 7 场景与两次 GUI，结果已写入正式验收。该环境失败未记为产品通过。
 
 Windows Anaconda 的两次全量重复检查在不同旧用例初始化 Tcl 时出现 `init.tcl` 临时读取失败；对应 37 项局部检查随后通过，最终一次全量为 216 passed、1 skipped。此问题没有通过跳过测试或更改产品逻辑处理；VM Python 3.6/Tk 8.5 的独立实际功能验收通过。

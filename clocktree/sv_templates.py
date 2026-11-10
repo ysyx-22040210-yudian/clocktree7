@@ -21,10 +21,8 @@ from .register_worker import RegisterWorker
 from .storage import write_graph,IndexedGraph,ResultStore,ARRAY_KEYS
 from .ui_state import design_key
 from .layer_reset import branch_reset_binding,without_resets
+from .sv_template_text import ROLES,CLOCK_VARS,variables,render,template_tokens
 
-ROLES={'var_pllsel':'pll_sel','var_div':'div','var_swdone':'sw_done','var_gt0':'gt','var_gt1':'gt','var_gt2':'gt','var_gt':'gt'}
-CLOCK_VARS={'var_pll0','var_pll1','var_pll2','var_pll3','var_clkip','var_rst'}
-TOKEN=re.compile(r'(?<!\$)\$(var_[A-Za-z0-9_]+)\b')
 SIGNAL=re.compile(r'[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*(?:\.[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*)*\Z')
 
 
@@ -75,19 +73,6 @@ def vector_expression(lsb):
         steps={b-a for a,b in zip(indices,indices[1:])}
         if steps in ({1},{-1}):return '{}[{}:{}]'.format(parts[0].group(1),indices[-1],indices[0])
     return '{'+', '.join(reversed(lsb))+'}'
-
-
-def variables(template):
-    names=set(TOKEN.findall(template));unknown=names-set(ROLES)-CLOCK_VARS
-    if unknown:raise ValueError('未知模板变量：'+', '.join('$'+v for v in sorted(unknown)))
-    return names
-
-
-def render(template,values):
-    names=variables(template);missing=names-set(values)
-    if missing:raise ValueError('缺少变量：'+', '.join('$'+v for v in sorted(missing)))
-    # Replacement values are literal and are never recursively substituted.
-    return TOKEN.sub(lambda m:values[m.group(1)],template)
 
 
 def branch_scope(db,instance,pin=None,table='walk',include_terminal=True):
@@ -391,7 +376,7 @@ class SVPlan:
                         evidence.write(encoded[:-1]+',"available_choices":{')
                         first_var=True
                         if result['issues']:
-                            for var in sorted(set(TOKEN.findall(templates.get(result['mode'],''))) & set(ROLES)):
+                            for var in sorted({t.name for t in template_tokens(templates.get(result['mode'],''))} & set(ROLES)):
                                 if not first_var:evidence.write(',')
                                 first_var=False;evidence.write(json.dumps(var)+':[');choice_offset=0;first_choice=True
                                 while True:

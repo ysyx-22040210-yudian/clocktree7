@@ -44,7 +44,7 @@ def setup(tmp_path,multiple=False):
 
 
 def test_exact_template_names_only_and_no_recursive_or_python_execution():
-    template='initial $display("%b", $var_gt); // $var_gt_suffix $$var_gt'
+    template='initial $display("%b", $var_gt); // $var_unknown $$var_gt'
     with pytest.raises(ValueError,match='未知'):render(template,{'var_gt':'chip.C[7]'})
     assert render('initial $display("%b", $var_gt); // $$var_gt',{'var_gt':'chip.C[7]'})=='initial $display("%b", chip.C[7]); // $$var_gt'
     assert render('$var_gt',{'var_gt':'$var_clkip'})=='$var_clkip'

@@ -2095,7 +2095,7 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <li>打开已完成的<strong>时钟树</strong>结果，确认末端和连接正确，完成第 32 章的辅助寄存器追踪。此入口目前不用于复位树。</li>
 <li>点击画布工具栏 <strong>“分支 SV 模板”</strong>，或从导出菜单进入“时钟树分支 SV 模板生成”。</li>
 <li>检查寄存器结果目录。默认读取本设计最近任务；“选择”可以打开该任务的 <code>manifest.json</code> 或 <code>register-trace.json</code>。目录需要保留 <code>registers.sqlite</code>，仅有导出的 CSV 不足以生成。</li>
-<li>在两个页签分别输入 <strong>“起始有选择器”</strong>、<strong>“起始无选择器”</strong> 的代码模板。支持多行文本、撤销、水平滚动，也可以导入/保存包含两套文本的 JSON。</li>
+<li>在两个页签分别输入 <strong>“起始有选择器”</strong>、<strong>“起始无选择器”</strong> 的代码模板。原生 Tk 代码编辑器提供深色 SystemVerilog 语法高亮、行号、变量按钮、缩进、撤销/重做和查找，也可以导入/保存包含两套文本的 JSON。编辑方法见第 33.5.1 节。</li>
 <li>点击 <strong>“分析全部分支”</strong>。后台按真实连接寻找每个末端输入的上游器件，读取已保存的逐位寄存器映射。若旧结果只有整个总线的连接表达式，会启动独立 Verdi 进程读取精确 bit 连接；因此此步骤可能仍需要原 elab 与 EDA 环境。</li>
 <li>在 <strong>“分支映射与代码预览”</strong> 查看末端实例、输入口、<code>$var_clkip</code>、模板类型及状态。每页 100 个末端，可搜索实例、端口或信号；编辑模板后点“查找 / 重新核对模板”刷新状态。</li>
 <li>选中一个分支，下方显示变量的实际替换值、待处理原因或生成代码。需要处理多寄存器时，点击相应的 <strong>“选择 $var_swdone”</strong> 等按钮，搜索/翻页查看全部候选并确认一项。</li>
@@ -2195,7 +2195,7 @@ end
            $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2);
 end
 </code></pre>
-<p>模板执行的是字面文本替换，不运行 Python/Tcl/SV，不自动插入 module 包装、时序断言或仿真任务。<code>$display</code>、<code>$time</code> 等系统名原样保留；字符串/注释内的 <code>$var_*</code> 同样会替换。用户负责模板自身的 SV 语法、重复声明名及所在验证环境；工具不会凭模板生成成功就声称验证逻辑正确。</p>
+<p>模板只替换已知变量；单独使用时保留信号路径，拼接名称时按第 33.5.2 节转换。模板不运行 Python/Tcl/SV，不自动插入 module 包装、时序断言或仿真任务。<code>$display</code>、<code>$time</code> 等系统名原样保留；字符串/注释内的 <code>$var_*</code> 同样会替换。用户负责模板自身的 SV 语法、重复声明名及所在验证环境；工具不会凭模板生成成功就声称验证逻辑正确。</p>
 <p>两套模板 JSON 使用 <code>with_mux</code> 和 <code>without_mux</code> 两个字符串字段，换行用 JSON 的 <code>\n</code> 表示。GUI 的“保存两套模板 JSON”会正确处理换行与引号，无需手工转义。CLI 可直接使用同一文件：</p>
 <pre><code class="language-bash">python3 -m clocktree sv-plan \
   --graph /path/tree/clocktree.json \
@@ -2207,6 +2207,92 @@ python3 -m clocktree sv-export \
 <p>CLI 返回 JSON 中的 <code>blocks</code>、<code>skipped</code>、<code>terminals</code> 和 <code>sv_written</code> 是实际结果。正常完成但部分跳过仍返回退出码 0；自动流程必须同时检查 <code>skipped==0</code>，不能只看退出码。模板选择通过可选 <code>selections</code> 字段保存，GUI 任务目录的 <code>templates.json</code> 含当前全部选择，可用于重跑。</p>
 <p>分析及导出均在后台进程中运行。“取消当前任务”终止当前工作；导出使用临时文件，完成后替换目标。分析取消后可再次分析，会用新的目录。取消未完成导出时保留原文件。任务日志、分支计划及模板请求在 <code>&lt;runs&gt;/.sv-templates/&lt;任务 ID&gt;/</code>，可据 <code>status.json</code>、<code>plan.log</code>、<code>export.log</code> 定位失败阶段。</p>
 <p>实际 KDB、Tk、万分支、取消与便携验收结果见 <a href="SV_TEMPLATES_VALIDATION.zh-CN.md">SV 模板验收报告</a>。</p>
+<h3 id="3351">33.5.1 代码编辑器与变量按钮</h3>
+<p><a class="figure" href="images/sv-code-editor.png" target="_blank"><img alt="原生 Tk：SystemVerilog 模板编辑器与变量按钮" src="images/sv-code-editor.png" /></a></p>
+<p>两个模板页均使用相同的深色编辑器。关键字、数据类型、数值、字符串、注释、系统任务与模板变量分色显示；未知变量以红色下划线标出，底栏显示具体原因。着色属于编辑辅助，不能代替 SV 编译或功能验证。</p>
+<p>先把光标放到插入位置，再点击编辑器顶部的变量按钮。例如点击 <strong><code>$var_pll0</code></strong> 会插入完整字符串 <code>$var_pll0</code>，不丢失末尾的 <code>0</code>。若当前选中了文字，则替换选中内容。按钮操作作用于所在模板页，支持一次撤销和重做；不会跳到另一套模板。</p>
+<table>
+<thead>
+<tr>
+<th>操作</th>
+<th>快捷键 / 行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>缩进</td>
+<td><code>Tab</code> 插入到下一个 4 空格位置；选中多行时整体缩进</td>
+</tr>
+<tr>
+<td>减少缩进</td>
+<td><code>Shift+Tab</code>，删除每行最多 4 个前导空格或一个 Tab</td>
+</tr>
+<tr>
+<td>换行</td>
+<td>保留当前缩进；行尾 <code>begin/fork/generate</code> 后增加一级</td>
+</tr>
+<tr>
+<td>撤销 / 重做</td>
+<td><code>Ctrl+Z</code> / <code>Ctrl+Y</code>，也支持 <code>Ctrl+Shift+Z</code></td>
+</tr>
+<tr>
+<td>全选</td>
+<td><code>Ctrl+A</code></td>
+</tr>
+<tr>
+<td>查找</td>
+<td><code>Ctrl+F</code>，按 Enter 或“下一个”循环查找；编辑区内可用 <code>F3</code></td>
+</tr>
+<tr>
+<td>关闭查找</td>
+<td>查找框内 <code>Esc</code> 或“关闭”</td>
+</tr>
+<tr>
+<td>查看位置</td>
+<td>底栏显示当前行列；左侧行号随滚动同步</td>
+</tr>
+</tbody>
+</table>
+<p>长模板采用延迟合并、分批着色；继续输入时会取消过期的着色任务，关闭编辑器也会清理待执行任务。两套模板的保存、JSON 导入导出、正常关闭后恢复方式保持一致。该编辑器使用原生 Tk，无需安装 VS Code、Monaco、浏览器或联网组件。</p>
+<h3 id="3352">33.5.2 前后缀名称与真实信号路径</h3>
+<p><code>check_$var_clkip_sva</code> 会识别为固定前缀 <code>check_</code>、变量 <code>$var_clkip</code> 和固定后缀 <code>_sva</code>，不会再把 <code>var_clkip_sva</code> 当作未知变量。</p>
+<p>假设本分支 <code>$var_clkip = top.u.clk</code>：</p>
+<table>
+<thead>
+<tr>
+<th>模板文本</th>
+<th>生成文本</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>@(posedge $var_clkip)</code></td>
+<td><code>@(posedge top.u.clk)</code></td>
+</tr>
+<tr>
+<td><code>check_$var_clkip_sva</code></td>
+<td><code>check_top_u_clk_sva</code></td>
+</tr>
+<tr>
+<td><code>check_${var_clkip}_sva</code></td>
+<td><code>check_top_u_clk_sva</code></td>
+</tr>
+<tr>
+<td><code>$var_clkip</code></td>
+<td><code>top.u.clk</code></td>
+</tr>
+</tbody>
+</table>
+<p>所有已知变量遵循同一规则：当变量与普通标识符前后缀相连时，完整路径中的点、位选括号、冒号等分隔符转换为下划线，例如 <code>top.u.clk[3]</code> 转成 <code>top_u_clk_3</code>；单独出现的变量仍保留实际信号路径、bit 或表达式。转换得到的片段若以数字开头，会补前导下划线。映射表中的变量值仍保存原始路径。</p>
+<p>也可使用 <code>${var_clkip}</code> 这种明确边界的写法。变量名区分大小写，<code>$var_pll10</code>、<code>$var_gt00</code> 等拼写仍会报错，不会被截短为 <code>$var_pll1</code> 或 <code>$var_gt0</code>。<code>$$var_clkip</code> 保留原样，包含两个 <code>$</code>；变量替换结果不会递归再次替换。</p>
+<p>下面的例子中，同一变量分别用于合法的 SVA 名称和真实时钟表达式：</p>
+<pre><code class="language-systemverilog">property check_$var_clkip_sva;
+    @(posedge $var_clkip) disable iff (!$var_rst)
+        1'b1 |-&gt; ($var_gt0 || $var_gt1 || $var_gt2);
+endproperty
+assert property (check_$var_clkip_sva);
+</code></pre>
+<p>这项修改不需要重新提取 RTL 或重新追踪寄存器。打开已有分支计划，编辑模板后重新核对并导出即可；模板自身的声明重名和所在 SV 作用域仍需按验证环境安排。界面、长模板与 VCS 编译实测见 <a href="SV_EDITOR_VALIDATION_20261110.zh-CN.md">代码编辑器验收报告</a>。</p>
 <p><a id="layer-reset"></a></p>
 <h3 id="336-var_rst">33.6 填写每层复位信号与 <code>$var_rst</code></h3>
 <p>在左侧选择 L1、L2 等层级，填写 <strong>“RTL 父层路径”</strong> 后，在紧邻的 <strong>“该层复位信号 · $var_rst”</strong> 输入框填写该层复位。每层独立保存；切换层、添加/删除层级、导入/保存配置，以及退出后恢复均保留对应关系。时钟/复位两种工作区独立保存此字段，SV 模板入口仍用于时钟树。</p>

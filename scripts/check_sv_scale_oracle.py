@@ -19,7 +19,7 @@ def expected(index):
     values=dict(var_rst='sv_top.rst_n' if mux else 'sv_top.rst_alt_n',
                 var_clkip='sv_top.cd' if mux else 'sv_top.ng3',
                 var_div='sv_top.D[9:6]' if mux else 'sv_top.C[3:0]',
-                var_swdone='sv_top.E[10]' if mux else 'sv_top.E[11]',
+                var_swdone='sv_top.done0' if mux else 'sv_top.done1',
                 var_gt0='sv_top.C[7]' if mux else 'sv_top.C[6]',
                 var_gt1="1'b1" if mux else 'sv_top.C[5]',
                 var_gt2="1'b1" if mux else 'sv_top.C[4]',
@@ -46,8 +46,9 @@ def main():
         if index%2:
             assert not row['ready'] and row['issues']
             candidates=row['available_choices']['var_swdone']
-            assert {c['expression'] for c in candidates}=={'sv_top.E[11]','sv_top.E[12]'}
-            chosen=next(c for c in candidates if c['expression']=='sv_top.E[11]')
+            assert {c['expression'] for c in candidates}=={'sv_top.done1'}
+            assert {c['capture_expression'] for c in candidates}=={'sv_top.E[11]','sv_top.E[12]'}
+            chosen=next(c for c in candidates if c['capture_expression']=='sv_top.E[11]')
             selections[row['id']]={'var_swdone':chosen['id']};want.pop('var_swdone')
         else:assert row['ready'] and not row['issues']
         assert row['values']==want,(index,row['values'],want)
@@ -70,6 +71,9 @@ def main():
                 assert value['reset']['basis']=='branch_origin'
                 assert value['reset']['layer']==(1 if index%2==0 else 2)
                 text=TEMPLATES['with_mux' if index%2==0 else 'without_mux']
+                # Fixture-specific label oracle, independent of the product's
+                # tokenizer and identifier conversion implementation.
+                text=text.replace('check_$var_clkip_sva','check_sv_top_cd_sva' if index%2==0 else 'check_sv_top_ng3_sva')
                 for key,replacement in want.items():text=text.replace('$'+key,replacement)
                 block='\n// CT7 branch {} | {}.{} | {}\n{}\n'.format(branch['id'],branch['instance'],branch['pin'],want['var_clkip'],text)
                 assert generated.read(len(block))==block,'Incorrect emitted block '+str(index)

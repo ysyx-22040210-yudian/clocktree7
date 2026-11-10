@@ -19,6 +19,8 @@ from check_target_mode import run as extract
 TEMPLATES={
  'with_mux':'initial begin\n  $display("MUX branch", $var_pllsel, $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip, $var_rst);\nend',
  'without_mux':'initial begin\n  $display("NO MUX branch", $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip, $var_rst);\nend'}
+for key in TEMPLATES:
+    TEMPLATES[key]+='\nproperty check_$var_clkip_sva;\n  @(posedge $var_clkip) disable iff (!$var_rst) 1\'b1 |-> ($var_gt0 || $var_gt1 || $var_gt2);\nendproperty\nassert property (check_$var_clkip_sva);'
 
 
 def native(out):
@@ -114,6 +116,12 @@ def gui(out,phase,screenshots):
         app.ui_state.update(app.graph['config'],register_trace_directory=str(out/'registers'))
         dialog=SVDialog(app)
         for key,editor in dialog.editors.items():editor.delete('1.0','end');editor.insert('1.0',TEMPLATES[key])
+        for number,key in enumerate(('with_mux','without_mux')):
+            dialog.tabs.select(number);pane=dialog.code_editors[key];pump(app,lambda:not pane.highlight_busy)
+            before=dialog.templates();pane.text.mark_set('insert','1.0');pane.variable_buttons['var_pll0'].invoke();pump(app)
+            assert dialog.templates()[key]=='$var_pll0'+before[key]
+            other='without_mux' if key=='with_mux' else 'with_mux';assert dialog.templates()[other]==before[other]
+            pane.undo();pump(app);assert dialog.templates()==before
         dialog.selections={};dialog.analyze();pump(app,lambda:dialog.process is not None and dialog.process.poll() is not None and dialog.analyze_button.instate(['!disabled']))
         assert dialog.plan is not None,dialog.status.get()
         assert dialog.plan.branches()[0]==2
@@ -127,11 +135,19 @@ def gui(out,phase,screenshots):
         item=next(k for k,r in picker.items.items() if r.get('capture_expression',r['expression'])=='sv_top.E[11]');picker.table.selection_set(item);picker.choose();pump(app)
         dialog.export(out/'gui-generated.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
         assert json.loads((out/'gui-generated.sv.mapping.json').read_text())['block_count']==2
-        content=(out/'gui-generated.sv').read_text();assert content.count('sv_top.rst_alt_n')==1 and content.count('sv_top.rst_n')==1 and 'sv_top.rst_upstream_n' not in content
+        content=(out/'gui-generated.sv').read_text()
+        assert content.count('sv_top.rst_alt_n')==TEMPLATES['with_mux'].count('$var_rst') and content.count('sv_top.rst_n')==TEMPLATES['without_mux'].count('$var_rst') and 'sv_top.rst_upstream_n' not in content
         dialog.table.selection_set(other['id']);dialog.detail();pump(app)
         assert dialog.export_button.winfo_y()+dialog.export_button.winfo_height()<=dialog.export_button.master.winfo_height()
         assert dialog.export_button.winfo_rooty()+dialog.export_button.winfo_height()<=dialog.winfo_rooty()+dialog.winfo_height()
         if screenshots:capture(dialog,out/'sv-template-workbench.png')
+        dialog.tabs.select(0);pump(app,lambda:not dialog.code_editors['with_mux'].highlight_busy)
+        if screenshots:capture(dialog,out/'sv-template-code-editor.png')
+        dialog.geometry('1050x700+0+0');pump(app)
+        for button in dialog.code_editors['with_mux'].variable_buttons.values():
+            assert button.winfo_rootx()+button.winfo_width()<=dialog.winfo_rootx()+dialog.winfo_width()
+        assert dialog.code_editors['with_mux'].text.winfo_height()>150
+        assert dialog.export_button.winfo_rooty()+dialog.export_button.winfo_height()<=dialog.winfo_rooty()+dialog.winfo_height()
         dialog.close();app._save_session_now();pump(app)
     else:
         assert app.active_layer==1 and app.layer_reset_var.get()=='rst_alt_n'

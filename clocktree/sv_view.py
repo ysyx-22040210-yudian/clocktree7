@@ -11,6 +11,7 @@ from .storage import write_graph
 from .register_view import RegisterDialog,RELATIONS
 from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates
 from .runtime import tail_text
+from .sv_editor import SVCodeEditor
 
 
 class CandidateDialog(tk.Toplevel):
@@ -66,13 +67,12 @@ class SVDialog(tk.Toplevel):
         ttk.Label(frame,textvariable=self.status,wraplength=1330).pack(fill='x',pady=5)
         # Reserve actions before allocating the expanding notebook on Tk 8.5.
         footer=ttk.Frame(frame);footer.pack(side='bottom',fill='x',pady=(9,0))
-        self.tabs=ttk.Notebook(frame);self.tabs.pack(fill='both',expand=True);self.editors={}
+        self.tabs=ttk.Notebook(frame);self.tabs.pack(fill='both',expand=True);self.editors={};self.code_editors={}
         templates=saved.get('sv_templates',{})
         for key,label in [('with_mux','起始有选择器 · 模板'),('without_mux','起始无选择器 · 模板')]:
             pane=ttk.Frame(self.tabs);self.tabs.add(pane,text=label)
-            editor=tk.Text(pane,wrap='none',undo=True,font=('Consolas',11));scroll=ttk.Scrollbar(pane,command=editor.yview);scroll.pack(side='right',fill='y')
-            horizontal=ttk.Scrollbar(pane,orient='horizontal',command=editor.xview);horizontal.pack(side='bottom',fill='x')
-            editor.configure(yscrollcommand=scroll.set,xscrollcommand=horizontal.set);editor.pack(fill='both',expand=True);editor.insert('1.0',templates.get(key,''));self.editors[key]=editor
+            editor=SVCodeEditor(pane,filename=key+'.sv',initial=templates.get(key,''));editor.pack(fill='both',expand=True)
+            self.code_editors[key]=editor;self.editors[key]=editor.text
         review=ttk.Frame(self.tabs,padding=5);self.tabs.add(review,text='分支映射与代码预览');self.review=review
         toolbar=ttk.Frame(review);toolbar.pack(fill='x',pady=4);self.search=tk.StringVar()
         ttk.Entry(toolbar,textvariable=self.search).pack(side='left',fill='x',expand=True)

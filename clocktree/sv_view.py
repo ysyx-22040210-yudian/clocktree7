@@ -15,16 +15,19 @@ from .runtime import tail_text
 
 class CandidateDialog(tk.Toplevel):
     def __init__(self,parent,branch,var,callback):
-        super().__init__(parent);self.title('$'+var+' · 选择已追到的寄存器映射');self.geometry('1000x520');self.transient(parent)
+        super().__init__(parent);self.title('$'+var+' · 选择已追到的寄存器映射');self.geometry('1160x520');self.transient(parent)
         self.parent=parent;self.branch=branch;self.var=var;self.callback=callback;self.offset=0;self.items={}
         self.search=tk.StringVar();bar=ttk.Frame(self,padding=10);bar.pack(fill='x')
         ttk.Entry(bar,textvariable=self.search).pack(side='left',fill='x',expand=True)
         ttk.Button(bar,text='搜索',command=lambda:self.refresh(True)).pack(side='left')
-        self.table=ttk.Treeview(self,columns=('instance','pin','expression','certainty'),show='headings')
-        for col,label,width in [('instance','器件实例',230),('pin','实际辅助端口',140),('expression','寄存器信号 / 精确向量',420),('certainty','关系（请核对）',150)]:
+        table_frame=ttk.Frame(self);table_frame.pack(fill='both',expand=True,padx=10)
+        table_frame.rowconfigure(0,weight=1);table_frame.columnconfigure(0,weight=1)
+        self.table=ttk.Treeview(table_frame,columns=('instance','pin','expression','capture','certainty'),show='headings')
+        for col,label,width in [('instance','器件实例',190),('pin','实际辅助端口',100),('expression','模板信号 / 精确向量',300),('capture','接收寄存器位（sw_done）',250),('certainty','关系（请核对）',150)]:
             self.table.heading(col,text=label);self.table.column(col,width=width)
-        scroll=ttk.Scrollbar(self,command=self.table.yview);scroll.pack(side='right',fill='y')
-        self.table.configure(yscrollcommand=scroll.set);self.table.pack(fill='both',expand=True,padx=10)
+        scroll=ttk.Scrollbar(table_frame,command=self.table.yview);scroll.grid(row=0,column=1,sticky='ns')
+        horizontal=ttk.Scrollbar(table_frame,orient='horizontal',command=self.table.xview);horizontal.grid(row=1,column=0,sticky='ew')
+        self.table.configure(yscrollcommand=scroll.set,xscrollcommand=horizontal.set);self.table.grid(row=0,column=0,sticky='nsew')
         bar=ttk.Frame(self,padding=10);bar.pack(fill='x')
         ttk.Button(bar,text='上一页',command=lambda:self.page(-1)).pack(side='left')
         ttk.Button(bar,text='下一页',command=lambda:self.page(1)).pack(side='left',padx=8)
@@ -36,7 +39,7 @@ class CandidateDialog(tk.Toplevel):
         rows=self.parent.plan.candidates(self.branch,self.var,self.search.get(),self.offset,100);self.items={r['id']:r for r in rows}
         for row in rows:
             label='、'.join(RELATIONS.get(v,'跨多个寄存器' if v=='multiple_registers' else v) for v in row['certainty'].replace(';',',').split(','))
-            self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['expression'],label))
+            self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['expression'],row.get('capture_expression',''),label))
     def page(self,delta):self.offset=max(0,self.offset+delta*100);self.refresh()
     def choose(self):
         selection=self.table.selection()

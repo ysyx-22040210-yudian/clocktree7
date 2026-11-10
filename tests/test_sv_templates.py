@@ -165,6 +165,42 @@ def test_ambiguity_requires_choice_and_never_multiplies_branch_count(tmp_path):
     assert choices[1]['expression'] in (tmp_path/'all.sv').read_text()
 
 
+@pytest.mark.parametrize('multiple',[False,True])
+def test_swdone_binds_proven_d_input_and_keeps_distinct_register_choices(tmp_path,multiple):
+    import sqlite3
+    graph,reg=setup(tmp_path,multiple)
+    with sqlite3.connect(str(reg/'registers.sqlite')) as db:
+        for identifier,target in db.execute("SELECT id,endpoint FROM results WHERE side='D'").fetchall():
+            db.execute('UPDATE results SET detail=? WHERE id=?',(json.dumps({'data_input':'chip.B','capture_target':target}),identifier))
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    branch=next(r for r in plan.branches()[1] if r['mode']=='with_mux')
+    choices=plan.candidates(branch,'var_swdone')
+    assert plan.candidates(branch,'var_swdone','chip.E[10]')[0]['capture_expression']=='chip.E[10]'
+    assert len(choices)==(2 if multiple else 1)
+    assert all(c['expression']=='chip.B' for c in choices)
+    assert {c['capture_expression'] for c in choices}==({'chip.E[10]','chip.E[11]'} if multiple else {'chip.E[10]'})
+    template={'with_mux':'check($var_swdone);'}
+    result=plan.resolve(branch,template)
+    assert result['ready'] is (not multiple)
+    if multiple:result=plan.resolve(branch,template,{'var_swdone':choices[0]['id']})
+    assert result['ready'] and result['code']=='check(chip.B);'
+    assert result['selected']['var_swdone']['capture_expression'] in ('chip.E[10]','chip.E[11]')
+
+
+def test_legacy_plan_candidates_remain_searchable_without_capture_column(tmp_path):
+    import sqlite3
+    from clocktree.sv_templates import SVPlan
+    graph,reg=setup(tmp_path);plan=prepare(graph,reg,tmp_path/'plan',False)
+    with sqlite3.connect(str(plan.path)) as db:
+        db.execute('ALTER TABLE candidates RENAME TO new_candidates')
+        db.execute('CREATE TABLE candidates AS SELECT id,instance,role,pin,expression,certainty,bits FROM new_candidates')
+        db.execute('DROP TABLE new_candidates')
+    legacy=SVPlan(plan.path);branch=next(r for r in legacy.branches()[1] if r['pin']=='clk_mux')
+    choices=legacy.candidates(branch,'var_swdone','chip.E[10]')
+    assert len(choices)==1 and 'capture_expression' not in choices[0]
+    assert legacy.resolve(branch,{'with_mux':'$var_swdone'})['code']=='chip.E[10]'
+
+
 def test_no_ready_branch_keeps_old_file_and_writes_feedback(tmp_path):
     graph,reg=setup(tmp_path);plan=prepare(graph,reg,tmp_path/'plan',False)
     target=tmp_path/'existing.sv';target.write_text('prior code')

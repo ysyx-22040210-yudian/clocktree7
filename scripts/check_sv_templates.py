@@ -60,7 +60,7 @@ endmodule
     plan=prepare(graph,out/'registers',out/'plan');total,branches=plan.branches();assert total==2
     mux=next(b for b in branches if b['mode']=='with_mux');other=next(b for b in branches if b['mode']=='without_mux')
     first=plan.resolve(mux,TEMPLATES);assert first['ready'],first['issues']
-    assert first['values']=={'var_rst':'sv_top.rst_n','var_clkip':'sv_top.cd','var_pllsel':'sv_top.D[5:2]','var_div':'sv_top.D[9:6]','var_swdone':'sv_top.E[10]',
+    assert first['values']=={'var_rst':'sv_top.rst_n','var_clkip':'sv_top.cd','var_pllsel':'sv_top.D[5:2]','var_div':'sv_top.D[9:6]','var_swdone':'sv_top.done0',
                             'var_gt0':'sv_top.C[7]','var_gt1':"1'b1",'var_gt2':"1'b1",'var_pll0':'sv_top.a','var_pll1':'sv_top.b','var_pll2':"1'b1",'var_pll3':"1'b1"},first['values']
     second=plan.resolve(other,TEMPLATES);assert not second['ready'] and any('多组' in p for p in second['issues'])
     assert [second['values']['var_gt'+str(i)] for i in range(3)]==['sv_top.C[6]','sv_top.C[5]','sv_top.C[4]']
@@ -69,8 +69,10 @@ endmodule
     assert second['values']['var_rst']=='sv_top.rst_alt_n' and second['reset']['layer']==2 and second['reset']['instance']=='sv_top.z_first'
     output=out/'all-branches.sv';partial=plan.export(TEMPLATES,output);assert partial['blocks']==partial['skipped']==1
     write_graph(out/'partial-report.json',json.loads((out/'all-branches.sv.mapping.json').read_text()))
-    choices=plan.candidates(other,'var_swdone');assert {c['expression'] for c in choices}=={'sv_top.E[11]','sv_top.E[12]'}
-    selected=next(c for c in choices if c['expression']=='sv_top.E[11]')
+    choices=plan.candidates(other,'var_swdone')
+    assert len(choices)==2 and {c['expression'] for c in choices}=={'sv_top.done1'}
+    assert {c['capture_expression'] for c in choices}=={'sv_top.E[11]','sv_top.E[12]'}
+    selected=next(c for c in choices if c['capture_expression']=='sv_top.E[11]')
     selections={other['id']:{'var_swdone':selected['id']}};complete=plan.export(TEMPLATES,output,selections)
     assert complete['blocks']==2 and complete['skipped']==0
     content=output.read_text();assert content.count('// CT7 branch ')==2 and content.count('$display')==2 and '$var_' not in content
@@ -119,7 +121,10 @@ def gui(out,phase,screenshots):
         assert json.loads((out/'gui-generated.sv.mapping.json').read_text())['block_count']==1
         other=next(r for r in dialog.rows.values() if r['mode']=='without_mux');dialog.table.selection_set(other['id']);dialog.detail()
         dialog.pick('var_swdone');picker=next(w for w in dialog.winfo_children() if isinstance(w,CandidateDialog));pump(app)
-        item=next(k for k,r in picker.items.items() if r['expression']=='sv_top.E[11]');picker.table.selection_set(item);picker.choose();pump(app)
+        assert len(picker.items)==2
+        if screenshots:capture(picker,out/'sv-swdone-candidates.png')
+        picker.search.set('sv_top.E[11]');picker.refresh(True);pump(app);assert len(picker.items)==1
+        item=next(k for k,r in picker.items.items() if r.get('capture_expression',r['expression'])=='sv_top.E[11]');picker.table.selection_set(item);picker.choose();pump(app)
         dialog.export(out/'gui-generated.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
         assert json.loads((out/'gui-generated.sv.mapping.json').read_text())['block_count']==2
         content=(out/'gui-generated.sv').read_text();assert content.count('sv_top.rst_alt_n')==1 and content.count('sv_top.rst_n')==1 and 'sv_top.rst_upstream_n' not in content

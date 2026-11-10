@@ -32,7 +32,7 @@ def identity(*parts):return hashlib.sha256(json.dumps(parts,ensure_ascii=False).
 
 
 def architecture_signature(graph):
-    return identity('branch-origin-reset-v1',graph.get('config'),graph.get('metadata'),graph.get('summary'))
+    return identity('branch-origin-reset-d-input-v2',graph.get('config'),graph.get('metadata'),graph.get('summary'))
 
 
 def graph_for_templates(graph,draft):
@@ -124,10 +124,12 @@ def add_candidates(db,registers):
             seed=json.loads(job['seed']);summary=json.loads(job['summary'])
             instance,pin,role=seed['instance'],seed['pin'],seed['role']
             bit_names=[v[len(instance)+1:] for v in summary.get('bits',[])]
-            choices=defaultdict(set);relations=set();bad=[]
+            choices=defaultdict(set);relations=set();bad=[];data_inputs=defaultdict(set)
             for row in source.execute('SELECT * FROM results WHERE job=?',(job['id'],)):
                 if row['status']!='register':bad.append(row['status']+': '+row['reason']);continue
                 choices[row['bit']].add(row['endpoint']);relations.add(row['relation'])
+                if role=='sw_done' and row['side']=='D':
+                    data_inputs[(row['bit'],row['endpoint'])].add(json.loads(row['detail']).get('data_input') or row['endpoint'])
             vectors=[];incomplete=[]
             if job['state']!='complete' or not bit_names or any(not choices[b] for b in bit_names):bad.append('端口尚无完整逐位寄存器映射')
             elif all(len(choices[b])==1 for b in bit_names):vectors=[[next(iter(choices[b])) for b in bit_names]]
@@ -148,15 +150,25 @@ def add_candidates(db,registers):
             if incomplete:
                 db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,'另有未覆盖全部端口 bit 的寄存器候选：'+', '.join(incomplete)))
             for vector in vectors:
-                try:expression=vector_expression(vector)
+                mapped=vector;capture=''
+                if role=='sw_done':
+                    # Group by the real destination first: two registers fed
+                    # by the same D net remain two choices, never one success.
+                    inputs=[data_inputs.get((bit,target),{target}) for bit,target in zip(bit_names,vector)]
+                    if any(len(values)!=1 for values in inputs):
+                        db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,'同一接收位存在多个时序数据输入：'+', '.join(sorted({v for values in inputs for v in values}))));continue
+                    mapped=[next(iter(values)) for values in inputs]
+                try:
+                    expression=vector_expression(mapped)
+                    if role=='sw_done':capture=vector_expression(vector)
                 except ValueError as error:
                     db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,str(error)));continue
                 certainty='direct' if relations=={'direct'} else ','.join(sorted(relations))
                 if len({re.sub(r'\[-?\d+\]$','',v) for v in vector})>1:
                     certainty+=';multiple_registers'
-                key=identity(instance,role,pin,vector,certainty)
-                db.execute('INSERT OR IGNORE INTO candidates VALUES(?,?,?,?,?,?,?)',
-                           (key,instance,role,pin,expression,certainty,json.dumps(vector)))
+                key=identity(instance,role,pin,vector,mapped,certainty)
+                db.execute('INSERT OR IGNORE INTO candidates VALUES(?,?,?,?,?,?,?,?)',
+                           (key,instance,role,pin,expression,certainty,json.dumps(mapped),capture))
 
 
 def prepare(graph,registers,directory,resolve_connections=True):
@@ -215,7 +227,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
              CREATE TABLE edges(source TEXT,target TEXT,pin TEXT);
              CREATE INDEX edge_target ON edges(target,pin);
              CREATE INDEX edge_source ON edges(source);
-             CREATE TABLE candidates(id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,bits TEXT);
+             CREATE TABLE candidates(id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,bits TEXT,capture_expression TEXT);
              CREATE INDEX candidate_instance ON candidates(instance,role);
              CREATE TABLE problems(instance TEXT,role TEXT,pin TEXT,reason TEXT);
              CREATE INDEX problem_instance ON problems(instance,role);
@@ -296,6 +308,7 @@ class SVPlan:
     def __init__(self,path):
         self.path=Path(path)
         if not self.path.is_file():raise ValueError('分支计划不存在：'+str(path))
+        self._candidate_search=None
     def source(self):
         with closing(database(self.path)) as db:return json.loads(db.execute("SELECT value FROM meta WHERE key='source'").fetchone()[0])
     def branches(self,search='',offset=0,limit=100,_db=None):
@@ -308,7 +321,10 @@ class SVPlan:
         if var in ROLES and not instance:return []
         with connection(self.path,_db) as db:
             if not instance:branch_scope(db,branch['instance'],branch['pin'])
-            sql=('SELECT c.* FROM candidates c' if instance else 'SELECT c.* FROM walk JOIN candidates c ON c.instance=walk.id')+' WHERE c.role=? AND instr(lower(c.instance||c.expression),lower(?))>0'
+            if self._candidate_search is None:
+                columns={r['name'] for r in db.execute('PRAGMA table_info(candidates)')}
+                self._candidate_search='c.instance||c.expression'+("||coalesce(c.capture_expression,'')" if 'capture_expression' in columns else '')
+            sql=('SELECT c.* FROM candidates c' if instance else 'SELECT c.* FROM walk JOIN candidates c ON c.instance=walk.id')+' WHERE c.role=? AND instr(lower('+self._candidate_search+'),lower(?))>0'
             if instance:sql+=' AND c.instance=?'
             return [dict(r) for r in db.execute(sql+' ORDER BY c.instance,c.pin,c.expression LIMIT ? OFFSET ?',(role,search)+((instance,) if instance else ())+(limit,offset))]
     def resolve(self,branch,templates,selection=None,_db=None):

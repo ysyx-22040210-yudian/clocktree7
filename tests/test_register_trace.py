@@ -126,6 +126,111 @@ def test_dft_prunes_load_only_branch_and_keeps_all_functional_fanout():
     assert found==['top.E[10]','top.E[11]']
 
 
+@pytest.mark.parametrize('left,right,expected',[(7,0,[4,5,6,7]),(0,7,[3,2,1,0]),(5,0,[4,5])])
+def test_sequential_concat_confirms_input_net_and_exact_capture_bits(left,right,expected):
+    b=net('top.B',3,0)
+    rhs=op('npiConcatOp',b,net('top.C',1,0),net('top.D',1,0),width=8)
+    row=assignment(net('top.A',left,right,kind='npiReg'),rhs,True)
+    flow=Flow(Worker({}),'top',[])
+    for bit in range(4):
+        found=list(flow.row_actions('top.B[{}]'.format(bit),'load',row,None))
+        if bit>=len(expected):assert found==[{'status':'pruned'}];continue
+        assert len(found)==1 and found[0]['status']=='register'
+        assert found[0]['data_input']=='top.B[{}]'.format(bit)
+        assert found[0]['endpoint']==found[0]['capture_target']=='top.A[{}]'.format(expected[bit])
+        assert found[0]['side']=='D' and found[0]['relation']=='direct'
+        assert found[0]['proof']['basis']=='edge_triggered_always'
+
+
+def test_concat_unrelated_dynamic_lane_does_not_erase_proven_data_input():
+    dynamic=dict(type='npiNetBit',parent=net('top.payload',7,0),indices=[''],width=1)
+    rhs=op('npiConcatOp',net('top.B',3,0),dynamic,net('top.D',1,0),width=7)
+    row=assignment(net('top.A',6,0),rhs,True)
+    flow=Flow(Worker({('top.B[1]','load'):[row]}),'top',[])
+    found=list(flow.actions('top.B[1]','load'))
+    assert len(found)==1 and found[0]['status']=='register'
+    assert found[0]['data_input']=='top.B[1]' and found[0]['capture_target']=='top.A[4]'
+    with pytest.raises(MappingError,match='dynamic'):flow.expr.vector(rhs)
+
+
+@pytest.mark.parametrize('opaque',[
+    dict(type='npiNetBit',parent=net('top.B',3,0),indices=[''],width=1),
+    dict(type='npiFuncCall',width=1,text='opaque()')])
+def test_concat_keeps_known_input_and_reports_potential_unknown_fanout(opaque):
+    rhs=op('npiConcatOp',net('top.B',3,0),opaque,width=5)
+    row=assignment(net('top.A',4,0),rhs,True)
+    flow=Flow(Worker({('top.B[2]','load'):[row]}),'top',[])
+    found=list(flow.actions('top.B[2]','load'))
+    assert len(found)==2 and found[0]['data_input']=='top.B[2]' and found[0]['capture_target']=='top.A[3]'
+    assert found[1]['status']=='unresolved'
+
+
+def test_concat_unknown_lane_width_does_not_guess_input_offset():
+    rhs=op('npiConcatOp',net('top.B'),dict(type='unknown',width=-1),width=2)
+    row=assignment(net('top.A',1,0),rhs,True)
+    found=list(Flow(Worker({('top.B','load'):[row]}),'top',[]).actions('top.B','load'))
+    assert len(found)==1 and found[0]['status']=='unresolved' and found[0]['reason']=='unknown_width'
+
+
+def test_truncated_opaque_concat_lane_is_not_a_register_destination():
+    rhs=op('npiConcatOp',dict(type='npiFuncCall',width=4),net('top.B'),width=5)
+    row=assignment(net('top.A'),rhs,True)
+    found=list(Flow(Worker({('top.B','load'):[row]}),'top',[]).actions('top.B','load'))
+    assert len(found)==1 and found[0]['data_input']=='top.B' and found[0]['capture_target']=='top.A'
+
+
+def test_dft_selected_nested_concat_and_repetition_keep_exact_input_mapping():
+    b=select(net('top.B',3,0),2)
+    joined=op('npiConcatOp',net('top.C'),op('npiMultiConcatOp',constant(2,32),b,width=2),width=3)
+    rhs=op('npiConditionOp',net('top.dft_mode'),dict(type='unsupported',width=3),joined,width=3)
+    row=assignment(net('top.A',2,0),rhs,True)
+    found=list(Flow(Worker({('top.B[2]','load'):[row]}),'top',['dft_mode']).actions('top.B[2]','load'))
+    assert {r['capture_target'] for r in found}=={'top.A[0]','top.A[1]'}
+    assert all(r['data_input']=='top.B[2]' for r in found)
+
+
+def test_combination_concat_is_not_a_register_and_logic_is_not_direct_d_input():
+    rhs=op('npiConcatOp',net('top.B'),net('top.C'),width=2)
+    row=assignment(net('top.A',1,0,kind='npiReg'),rhs)
+    flow=Flow(Worker({('top.B','load'):[row]}),'top',[])
+    assert list(flow.actions('top.B','load'))[0]['next']=='top.A[1]'
+    row=assignment(net('top.A'),op('npiBitNegOp',net('top.B')),True)
+    found=list(flow.row_actions('top.B','load',row,None))[0]
+    assert found['status']=='register' and found['relation']=='inverted' and 'data_input' not in found
+
+
+def test_data_input_is_visible_searchable_and_exported_with_capture_evidence(tmp_path):
+    import csv
+    from clocktree.register_trace import add_result
+    seed=dict(instance='top.u',role='sw_done',pin='done',direction='load')
+    db=create_database(tmp_path/'registers.sqlite')
+    db.execute('INSERT INTO jobs VALUES(1,?,?,?)',(json.dumps(seed),'complete','{}'))
+    add_result(db,1,'done','direct',None,dict(status='register',endpoint='top.A[7]',side='D',
+               data_input='top.B',capture_target='top.A[7]',proof={'basis':'edge_triggered_always'}))
+    db.commit();db.close()
+    index=RegisterIndex(tmp_path);total,rows=index.query('top.B')
+    assert total==1 and rows[0][5]=='top.A[7]' and rows[0][-1]=='top.B'
+    assert index.detail(rows[0][0])['capture_target']=='top.A[7]'
+    index.export(tmp_path/'map.csv')
+    with (tmp_path/'map.csv').open(encoding='utf-8-sig') as f:values=list(csv.reader(f))
+    assert values[1][7]=='已确认寄存器' and values[1][-1]=='top.B'
+
+
+def test_same_capture_bit_preserves_distinct_named_inputs_without_duplicate_proofs(tmp_path):
+    from clocktree.register_trace import add_result
+    db=create_database(tmp_path/'registers.sqlite')
+    for input_name in ('top.B','top.alias','top.B'):
+        action=dict(status='register',endpoint='top.A[7]',side='D',data_input=input_name,
+                    capture_target='top.A[7]',proof={'basis':'edge_triggered_always','source':input_name})
+        add_result(db,1,'done','direct',None,action)
+    rows=list(db.execute('SELECT detail FROM results'))
+    assert len(rows)==2 and {json.loads(r[0])['data_input'] for r in rows}=={'top.B','top.alias'}
+    action['proof']['source']='another valid statement'
+    add_result(db,1,'done','direct',None,action)
+    assert db.execute('SELECT count(*) FROM results').fetchone()[0]==2
+    db.close()
+
+
 def test_condition_alias_can_resolve_dft_zero_without_tracing_its_clock():
     queries={('top.alias','driver'):[assignment(net('top.alias'),net('top.dft_mode'),ancestors=[])]}
     flow=Flow(Worker(queries),'top',['dft_mode'])

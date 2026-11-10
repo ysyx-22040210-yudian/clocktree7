@@ -28,7 +28,7 @@ class RegisterDialog(tk.Toplevel):
         self.title('辅助端口 → 寄存器信号路径');self.geometry('1360x860');self.minsize(980,650);self.transient(app)
         frame=ttk.Frame(self,padding=16);frame.pack(fill='both',expand=True)
         ttk.Label(frame,text='辅助端口寄存器追踪',font=(app.family,15,'bold')).pack(anchor='w')
-        ttk.Label(frame,text='pll_sel / div / gt 反查至时序输出；sw_done 沿负载到目的寄存器写入位。逐 bit 保存；不修改树连线。').pack(anchor='w',pady=7)
+        ttk.Label(frame,text='pll_sel / div / gt 反查至时序输出；sw_done 确认时序数据输入，并保留接收寄存器位。逐 bit 保存；不修改树连线。').pack(anchor='w',pady=7)
         settings=ttk.Frame(frame);settings.pack(fill='x',pady=4)
         self.root_var=tk.StringVar(value=self.graph['config'].get('trace_scope') or self.graph['config']['design']['top'])
         self.dft_var=tk.StringVar(value='dft_mode')
@@ -57,9 +57,11 @@ class RegisterDialog(tk.Toplevel):
         panes=ttk.Panedwindow(frame,orient='vertical');panes.pack(fill='both',expand=True)
         table_pane=ttk.Frame(panes);panes.add(table_pane,weight=3)
         container=ttk.Frame(table_pane);container.pack(fill='both',expand=True)
-        columns=('instance','role','pin','bit','endpoint','side','relation','status','reason')
-        self.table=ttk.Treeview(container,columns=columns,show='headings',selectmode='browse',height=9)
-        widths=(245,80,130,130,270,125,110,110,220)
+        columns=('instance','role','pin','bit','endpoint','side','relation','status','reason','data_input')
+        self.table=ttk.Treeview(container,columns=columns,
+                              displaycolumns=('instance','role','pin','bit','data_input','endpoint','side','relation','status','reason'),
+                              show='headings',selectmode='browse',height=9)
+        widths=(245,80,130,130,270,125,110,110,220,270)
         for col,label,width in zip(columns,RegisterIndex.columns,widths):
             self.table.heading(col,text=label);self.table.column(col,width=width,minwidth=60,stretch=False)
         vertical=ttk.Scrollbar(container,orient='vertical',command=self.table.yview);vertical.pack(side='right',fill='y')
@@ -167,6 +169,8 @@ class RegisterDialog(tk.Toplevel):
         if not selected or not self.index:return
         data=self.index.detail(int(selected[0]));proof=data.get('proof',{})
         text='状态：{}\n端点：{} {}\n'.format(LABELS.get(data.get('status'),data.get('status','')),data.get('endpoint',''),SIDES.get(data.get('side'),''))
+        if data.get('data_input'):
+            text+='已确认时序数据输入：'+data['data_input']+'\n接收寄存器位：'+data.get('capture_target',data.get('endpoint',''))+'\n'
         if proof:
             basis={'edge_triggered_always':'边沿触发的 always 赋值（触发器）','all_writers_share_conditional_hold':'全部写入语句具有共同保持条件（锁存器）','npiSeqPrim':'NPI 确认的时序 UDP'}.get(proof.get('basis'),proof.get('basis',''))
             text+='时序依据：{}\n'.format(basis)+'触发条件：'+', '.join(proof.get('events',[]))+'\n'

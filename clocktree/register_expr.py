@@ -101,6 +101,65 @@ class Expressions:
             raise MappingError('non_signal_lvalue')
         return [b.signals[0] for b in bits]
 
+    def may_reference(self,expr,name):
+        """Conservative data-reference check, without parsing decompiled text.
+
+        Opaque function bodies may read non-local signals, so absence of an
+        argument is not proof of absence. A dynamic select of a different net
+        cannot carry this data bit (index/control uses are not load data).
+        """
+        if not expr:return True
+        kind=expr.get('type','')
+        if kind in ('npiConstant','npiParameter','npiParameterBit','npiGenVar'):return False
+        if kind in ('npiExtRef','npiRefObj'):return self.may_reference(expr.get('actual'),name)
+        if kind=='npiOperation':
+            args=expr.get('args',[])
+            return not args or any(self.may_reference(arg,name) for arg in args)
+        if kind in ('npiPartSelect','npiIndexedPartSelect','npiBitSelect','npiNetBit','npiRegBit','npiVarBit'):
+            return self.may_reference(expr.get('parent'),name)
+        if kind in ('npiNet','npiReg','npiLogicVar','npiBitVar','npiIntVar','npiIntegerVar','npiVar'):
+            full=expr.get('full')
+            return not full or name==full or name.startswith(full+'[')
+        return True
+
+    def load_vector(self,expr,width,name):
+        """Keep independent concatenation lanes when another lane is opaque.
+
+        Every lane still occupies its elaborated width, so following bits never
+        shift. Unsupported lanes that could contain this source remain explicit
+        issues. Unknown widths cannot be used to infer an offset.
+        """
+        def partial(e,context=None,depth=0):
+            if depth>128:raise MappingError('expression_depth')
+            try:return self.vector(e,context)
+            except MappingError as error:
+                if not e:raise
+                op=e.get('op') if e.get('type')=='npiOperation' else None
+                args=e.get('args',[])
+                if op=='npiConcatOp':
+                    bits=[b for arg in reversed(args) for b in partial(arg,depth=depth+1)]
+                    if len(bits)!=e.get('width'):raise MappingError('concat_width_mismatch')
+                elif op=='npiMultiConcatOp':
+                    count=number(self.vector(args[0]))
+                    if count is None or count<0:raise MappingError('dynamic_repeat')
+                    bits=[b for arg in reversed(args[1:]) for b in partial(arg,depth=depth+1)]*count
+                    if len(bits)!=e.get('width'):raise MappingError('repeat_width_mismatch')
+                elif op=='npiConditionOp' and self.condition(args[0]).value is not None:
+                    # Only the functional branch is visited under dft_mode=0.
+                    selected=args[1] if self.condition(args[0]).value else args[2]
+                    bits=partial(selected,max(e.get('width',0),context or 0),depth+1)
+                else:
+                    size=e.get('width',-1)
+                    if not isinstance(size,int) or size<1:raise MappingError('unknown_width')
+                    marker='unresolved:'+str(error) if self.may_reference(e,name) else 'unresolved'
+                    bits=[Bit((),None,marker)]*size
+                return resize(bits,context,e.get('signed',False)) if context is not None else bits
+        bits=partial(expr,width)
+        # An unsupported lane discarded by assignment truncation cannot be a
+        # destination for this data bit, and must not block a valid low lane.
+        issues=sorted({b.relation.split(':',1)[1] for b in bits if b.relation.startswith('unresolved:')})
+        return bits,issues
+
     def vector(self,e,width=None,resolve=True,depth=0,context_signed=None):
         if not e:raise MappingError('unconnected')
         if depth>128:raise MappingError('expression_depth')

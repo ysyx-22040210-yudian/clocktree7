@@ -174,7 +174,9 @@ class Flow:
         lhs,rhs=assignments(row)
         if not rhs:
             yield {'status':'boundary','reason':'unconnected_or_top_port','endpoint':name,'evidence':row};return
-        names=self.expr.names(lhs);bits=self.expr.vector(rhs,len(names))
+        names=self.expr.names(lhs)
+        if direction=='load':bits,load_issues=self.expr.load_vector(rhs,len(names),name)
+        else:bits=self.expr.vector(rhs,len(names))
         if direction=='driver':
             if name not in names:raise MappingError('driver_lhs_bit_mismatch')
             bit=bits[names.index(name)]
@@ -191,10 +193,19 @@ class Flow:
                 # Enable/reset guards affect capture, not the identity of D.
                 mode=bit.relation if target_proof else ('conditional' if conditional else bit.relation)
                 if target_proof:
-                    yield {'status':'register','endpoint':target,'side':'D','relation':mode,'proof':target_proof,
-                           'data_expression':rhs.get('text',''),'evidence':row}
+                    action={'status':'register','endpoint':target,'side':'D','relation':mode,'proof':target_proof,
+                            'data_expression':rhs.get('text',''),'evidence':row}
+                    # The input net need not be declared reg. Its direct lane
+                    # in an edge/hold-proven assignment is the D-side signal.
+                    # Keep the captured Q bit as a separate, stable identity.
+                    if bit.relation=='direct' and bit.signals==(name,):
+                        action['data_input']=name
+                        action['capture_target']=target
+                    yield action
                 else:yield {'next':target,'relation':mode,'evidence':row}
-            if not found:yield {'status':'pruned'}
+            for issue in load_issues:
+                yield {'status':'unresolved','endpoint':name,'reason':issue,'evidence':row}
+            if not found and not load_issues:yield {'status':'pruned'}
 
 
 def create_database(path):
@@ -202,15 +213,21 @@ def create_database(path):
     db.execute('CREATE TABLE IF NOT EXISTS jobs (id INTEGER PRIMARY KEY, seed TEXT, state TEXT, summary TEXT)')
     db.execute('CREATE TABLE IF NOT EXISTS paths (id INTEGER PRIMARY KEY, job INTEGER, parent INTEGER, signal TEXT, evidence TEXT)')
     db.execute('CREATE TABLE IF NOT EXISTS queue (id INTEGER PRIMARY KEY, job INTEGER, bit TEXT, signal TEXT, relation TEXT, path INTEGER, UNIQUE(job,bit,signal,relation))')
-    db.execute('CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY, job INTEGER, bit TEXT, endpoint TEXT, side TEXT, relation TEXT, status TEXT, reason TEXT, path INTEGER, detail TEXT, UNIQUE(job,bit,endpoint,side,relation,status,reason))')
+    db.execute('CREATE TABLE IF NOT EXISTS results (id INTEGER PRIMARY KEY, job INTEGER, bit TEXT, endpoint TEXT, side TEXT, relation TEXT, status TEXT, reason TEXT, path INTEGER, detail TEXT, UNIQUE(job,bit,endpoint,side,relation,status,reason,detail))')
     db.execute('CREATE INDEX IF NOT EXISTS results_job ON results(job)')
     db.execute('CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state,id)')
     db.commit();return db
 
 
 def add_result(db,job,bit,mode,path,action):
+    keys=(job,bit,action.get('endpoint',''),action.get('side',''),mode,action['status'],action.get('reason',''))
+    # One captured bit can have different named D inputs in separate branches.
+    # Preserve those mappings, while retaining the first proof for each mapping.
+    # No SQLite JSON extension is needed on older offline EDA installations.
+    for previous, in db.execute('SELECT detail FROM results WHERE job=? AND bit=? AND endpoint=? AND side=? AND relation=? AND status=? AND reason=?',keys):
+        if json.loads(previous).get('data_input','')==action.get('data_input',''):return
     db.execute('INSERT OR IGNORE INTO results VALUES (NULL,?,?,?,?,?,?,?,?,?)',
-               (job,bit,action.get('endpoint',''),action.get('side',''),mode,action['status'],action.get('reason',''),path,
+               keys+(path,
                 json.dumps({k:v for k,v in action.items() if k!='evidence'},ensure_ascii=False)))
 
 
@@ -376,17 +393,19 @@ def run(request_path,output,resume=False):
 
 
 class RegisterIndex:
-    columns=('实例','辅助功能','实际端口','端口 bit','寄存器信号 / 边界','端点方向','映射','状态','说明')
+    columns=('实例','辅助功能','实际端口','端口 bit','寄存器信号 / 接收位 / 边界','端点方向','映射','状态','说明','已确认时序数据输入')
     def __init__(self,directory):self.directory=Path(directory);self.path=self.directory/'registers.sqlite'
     def query(self,search='',offset=0,limit=100):
         search=next((key for key,label in LABELS.items() if search==label),search)
         with closing(sqlite3.connect(str(self.path))) as db:
-            where=" WHERE instr(lower(j.seed||r.bit||r.endpoint||r.status||r.reason),lower(?))>0"
-            total=db.execute('SELECT count(*) FROM results r JOIN jobs j ON j.id=r.job'+where,(search,)).fetchone()[0]
+            where=" WHERE instr(lower(j.seed||r.bit||r.endpoint||r.status||r.reason||r.detail),lower(?))>0" if search else ''
+            params=(search,) if search else ()
+            total=db.execute('SELECT count(*) FROM results r JOIN jobs j ON j.id=r.job'+where,params).fetchone()[0]
             rows=[]
-            for row in db.execute('SELECT r.id,j.seed,r.bit,r.endpoint,r.side,r.relation,r.status,r.reason FROM results r JOIN jobs j ON j.id=r.job'+where+' ORDER BY r.id LIMIT ? OFFSET ?',(search,limit,offset)):
+            for row in db.execute('SELECT r.id,j.seed,r.bit,r.endpoint,r.side,r.relation,r.status,r.reason,r.detail FROM results r JOIN jobs j ON j.id=r.job'+where+' ORDER BY r.id LIMIT ? OFFSET ?',params+(limit,offset)):
                 identifier,seed,*values=row;seed=json.loads(seed)
-                rows.append((identifier,seed['instance'],seed['role'],seed['pin'])+tuple(values))
+                detail=json.loads(values.pop())
+                rows.append((identifier,seed['instance'],seed['role'],seed['pin'])+tuple(values)+(detail.get('data_input',''),))
         return total,rows
     def detail(self,identifier):
         with closing(sqlite3.connect(str(self.path))) as db:
@@ -406,7 +425,7 @@ class RegisterIndex:
             while True:
                 total,rows=self.query(offset=offset,limit=1000)
                 for row in rows:
-                    values=list(row[1:]);values[-2]=LABELS.get(values[-2],values[-2])
+                    values=list(row[1:]);values[7]=LABELS.get(values[7],values[7])
                     writer.writerow(["'"+str(v) if str(v).startswith(('=','+','-','@')) else v for v in values])
                 offset+=len(rows)
                 if offset>=total:break

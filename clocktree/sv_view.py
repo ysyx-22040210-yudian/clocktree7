@@ -60,7 +60,7 @@ class SVDialog(tk.Toplevel):
         ttk.Label(frame,text='$var_pllsel · $var_div · $var_swdone · $var_gt0～2 · $var_pll0～3 · $var_clkip · $var_rst  |  $var_rst 取最初器件所属层复位；门控/PLL 缺位补 1\'b1',wraplength=1330).pack(anchor='w',pady=6)
         bar=ttk.Frame(frame);bar.pack(fill='x',pady=5)
         self.registers=tk.StringVar();self.auto_registers=tk.BooleanVar(value=True);self._setting_registers=False
-        ttk.Label(bar,text='寄存器结果目录（L1 直达可留空）').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
+        ttk.Label(bar,text='寄存器结果目录（无控制映射时可留空）').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
         ttk.Button(bar,text='选择',command=self.choose_registers).pack(side='left')
         ttk.Checkbutton(bar,text='自动选择最新',variable=self.auto_registers,command=self.refresh_registers).pack(side='left',padx=8)
         ttk.Button(bar,text='打开寄存器追踪',command=self.open_register_trace).pack(side='left',padx=8)
@@ -86,7 +86,7 @@ class SVDialog(tk.Toplevel):
         panes=ttk.Panedwindow(review,orient='vertical');panes.pack(fill='both',expand=True)
         top=ttk.Frame(panes);panes.add(top,weight=2)
         self.table=ttk.Treeview(top,columns=('instance','pin','clkip','mode','status'),show='headings',height=10)
-        for col,label,width in [('instance','真实末端实例',300),('pin','末端输入',120),('clkip','$var_clkip',350),('mode','模板类型',140),('status','生成状态',140)]:
+        for col,label,width in [('instance','真实末端实例',300),('pin','末端端口',120),('clkip','$var_clkip',350),('mode','模板类型',140),('status','生成状态',140)]:
             self.table.heading(col,text=label);self.table.column(col,width=width)
         scroll=ttk.Scrollbar(top,command=self.table.yview);scroll.pack(side='right',fill='y');self.table.configure(yscrollcommand=scroll.set);self.table.pack(fill='both',expand=True)
         self.table.bind('<<TreeviewSelect>>',self.detail)
@@ -141,7 +141,7 @@ class SVDialog(tk.Toplevel):
             try:self.registers.set(path)
             finally:self._setting_registers=False
             self.register_notice.set('已自动选择本设计最新完成的寄存器结果（含待核对项的结果仍可分析）。' if path else
-                                     '未找到本设计已完成的寄存器结果；可开始追踪或手动选择。L1 直达分支可留空。')
+                                     '未找到本设计已完成的寄存器结果；可开始追踪或手动选择。未配置辅助口的单 L1 / L1 直达分支可留空。')
         else:self.register_notice.set('手动选择寄存器结果；勾选“自动选择最新”可恢复自动选择。')
         self.invalidate_register_plan()
     def open_register_trace(self):
@@ -159,7 +159,7 @@ class SVDialog(tk.Toplevel):
         if self.app.busy:self.status.set('请等待主界面当前任务完成，再分析分支。');return
         try:
             self.refresh_registers()
-            if self.registers.get().strip() and not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('寄存器结果目录无效；L1 直达分支可留空，普通分支仍需寄存器映射')
+            if self.registers.get().strip() and not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('寄存器结果目录无效；未配置辅助口的单 L1 / L1 直达分支可留空，实际控制口仍需寄存器映射')
             self.remember();self.directory=self.app.runs/'.sv-templates'/uuid.uuid4().hex;self.directory.mkdir(parents=True)
             graph_path=self.directory/'architecture.json';write_source(graph_path,self.graph)
             command=[sys.executable,'-m','clocktree','sv-plan','--graph',str(graph_path),'--registers',self.registers.get(),'--out',str(self.directory)]
@@ -206,6 +206,11 @@ class SVDialog(tk.Toplevel):
         if not row:return
         result=self.plan.resolve(row,self.templates(),self.selections.get(row['id']));self.mode.set(self.selections.get(row['id'],{}).get('mode','自动'))
         text='\n'.join('$'+k+' = '+v for k,v in result['values'].items())
+        info=result.get('branch') or {}
+        if info.get('origins'):
+            text+='\n\n分支最初器件：'+'；'.join('{} · L{} · {}'.format(r['instance'],r.get('layer','?'),r['kind']) for r in info['origins'])
+        if info.get('single_l1_device'):
+            text+='\n单个 L1 器件成支：有输出取输出，无输出取当前输入；真实控制映射优先，缺项使用默认值。'
         if result.get('l1_input'):text+='\n\nL1 直达来源：'+', '.join(result['l1_input']['signals'])+'\n采用无选择器模板；$var_clkip 取末端输出，无输出器件取对应输入。'
         reset=result.get('reset',{})
         if 'var_rst' in result['values']:

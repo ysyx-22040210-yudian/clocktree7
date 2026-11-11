@@ -86,6 +86,10 @@ def test_reset_uses_first_device_layer_and_leaves_missing_branches_out(tmp_path)
                                for i,rst in enumerate(('unused_l1_rst','mux_rst','middle_rst','','terminal_rst'),1)]
     for node in graph['nodes']:node['layer']=3
     graph['nodes'][0]['layer']=2;graph['nodes'][2]['layer']=4;graph['nodes'][-1]['layer']=5
+    # A later-layer first device now needs proven L1 interface entry. Its
+    # original reset binding still belongs to the first real device.
+    for node in (graph['nodes'][0],graph['nodes'][2]):
+        node['l1_inputs']={p:{'signal':'chip.l1_clock','status':'verified'} for p in node['inputs']}
     plan=prepare(graph,reg,tmp_path/'plan',False);templates=dict(with_mux='$var_rst $var_clkip',without_mux='$var_rst $var_clkip')
     result=plan.export(templates,tmp_path/'rst.sv');assert result['blocks']==1 and result['skipped']==1
     content=(tmp_path/'rst.sv').read_text();assert content.count('chip.mux_rst')==1 and 'unused_l1_rst' not in content and 'terminal_rst' not in content

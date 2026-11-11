@@ -323,7 +323,8 @@ class ClockDiagram(tk.Frame):
 
     def locate_edge(self, edge, direction, record=True):
         endpoint='source' if direction=='upstream' else 'target'
-        self.locate(self.model.original[edge[endpoint]],record=record,edge=edge,endpoint=endpoint)
+        from .l1_inputs import lookup_node
+        self.locate(lookup_node(self.model,edge[endpoint]),record=record,edge=edge,endpoint=endpoint)
 
     def locate(self, node, record=True, edge=None, endpoint=None, pin=None):
         if not self.model:
@@ -343,7 +344,9 @@ class ClockDiagram(tk.Frame):
             self.oy=self.canvas.winfo_height()/2-(y+h/2)*self.scale
             self.select(chosen,target=target);self.notify()
             if edge is not None:
-                self.on_hover('沿实际连接定位：{}.{} → {}.{}'.format(edge['source'],edge['source_pin'],edge['target'],edge['target_pin']))
+                if edge.get('l1_boundary'):
+                    self.on_hover('沿 L1 输入连接定位：{} → {}.{}'.format(self.model.l1_nodes[edge['source']]['l1_entry']['signal'],edge['target'],edge['target_pin']))
+                else:self.on_hover('沿实际连接定位：{}.{} → {}.{}'.format(edge['source'],edge['source_pin'],edge['target'],edge['target_pin']))
         # If a projected neighbourhood omitted the actual navigation edge,
         # rebuild it with that edge pinned instead of highlighting another path.
         edge_visible=edge is None or any(e['id']==edge['id'] for e in self.model.edges)
@@ -399,7 +402,9 @@ class ClockDiagram(tk.Frame):
         if not self._branch_highlight:
             self.highlights = set()
             actual=node.get('reference_of',node['id'])
-            if self.selection_target.get('edge'):
+            if node.get('kind')=='l1_input':
+                self.highlights={e['id'] for e in self.model.edges if e['source']==node['id']}
+            elif self.selection_target.get('edge'):
                 self.highlights={self.selection_target['edge']}
             elif node.get('reference_of'):
                 self.highlights={edge['id'] for edge in self.model.edges if edge['target']==node['id']}
@@ -419,6 +424,8 @@ class ClockDiagram(tk.Frame):
         actual=selected.get('reference_of',self.selected)
         if self.model and actual in self.model.original:
             self._branch_highlight=True
+            self._l1_trace_node=dict(selected)
+            self._l1_upstream=set()
             if selected.get('kind')=='wire' and (self.selection_target or {}).get('pin'):
                 from .connectivity import focused_pins
                 focused=dict(selected,_focus_pin=self.selection_target['pin'])
@@ -428,18 +435,26 @@ class ClockDiagram(tk.Frame):
                     self.highlights=SQLSelection(self.model.store,' UNION '.join(s.sql for s in selections))
                     self.highlights.owners=selections
                 else:self.highlights=set().union(*selections)
+                if direction in ('upstream','branch'):self._l1_upstream=selections[0]
             elif selected.get('reference_of') and selected.get('kind')=='subsystem':
                 self.highlights = self.model.path_edges(actual,'upstream',seed_pins=selected['inputs']) if direction!='downstream' else set()
+                self._l1_upstream=self.highlights
             elif direction == 'branch':
-                if hasattr(self.model,'branch_edges'):self.highlights=self.model.branch_edges(actual)
-                else:self.highlights=self.model.path_edges(actual,'upstream') | self.model.path_edges(actual,'downstream')
-            else:self.highlights = self.model.path_edges(actual, direction)
+                if hasattr(self.model,'branch_edges'):
+                    self.highlights=self.model.branch_edges(actual);self._l1_upstream=self.highlights.l1_upstream
+                else:
+                    self._l1_upstream=self.model.path_edges(actual,'upstream')
+                    self.highlights=self._l1_upstream | self.model.path_edges(actual,'downstream')
+            else:
+                self.highlights = self.model.path_edges(actual, direction)
+                if direction=='upstream':self._l1_upstream=self.highlights
+            self._l1_trace_direction=direction
             self.schedule()
             return len(self.highlights)
         return 0
 
     def clear_highlight(self):
-        self._branch_highlight=False;self.highlights=set();self.schedule()
+        self._branch_highlight=False;self._l1_upstream=set();self.highlights=set();self.schedule()
 
     def fit_highlight(self, projected=False):
         if self.layout_pending:return

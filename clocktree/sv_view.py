@@ -55,11 +55,11 @@ class SVDialog(tk.Toplevel):
         saved=app.ui_state.get(self.graph['config']);self.selections=dict(saved.get('sv_branch_selections',{}))
         self.title('时钟树分支 · 用户模板生成 SV');self.geometry('1400x900');self.minsize(1050,700);self.transient(app)
         frame=ttk.Frame(self,padding=14);frame.pack(fill='both',expand=True)
-        ttk.Label(frame,text='每个真实末端输入生成一段模板代码，全部写入一个 SV 文件',font=(app.family,14,'bold')).pack(anchor='w')
+        ttk.Label(frame,text='每个分支末端生成一段模板代码，全部写入一个 SV 文件',font=(app.family,14,'bold')).pack(anchor='w')
         ttk.Label(frame,text='$var_pllsel · $var_div · $var_swdone · $var_gt0～2 · $var_pll0～3 · $var_clkip · $var_rst  |  $var_rst 取最初器件所属层复位；门控/PLL 缺位补 1\'b1',wraplength=1330).pack(anchor='w',pady=6)
         bar=ttk.Frame(frame);bar.pack(fill='x',pady=5)
         self.registers=tk.StringVar(value=saved.get('register_trace_directory',''))
-        ttk.Label(bar,text='寄存器结果目录').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
+        ttk.Label(bar,text='寄存器结果目录（L1 直达可留空）').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
         ttk.Button(bar,text='选择',command=self.choose_registers).pack(side='left')
         ttk.Button(bar,text='打开寄存器追踪',command=lambda:RegisterDialog(app)).pack(side='left',padx=8)
         self.analyze_button=ttk.Button(bar,text='分析全部分支',command=self.analyze);self.analyze_button.pack(side='right')
@@ -124,7 +124,7 @@ class SVDialog(tk.Toplevel):
         if self.process and self.process.poll() is None:return
         if self.app.busy:self.status.set('请等待主界面当前任务完成，再分析分支。');return
         try:
-            if not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('请选择已保存的辅助端口寄存器结果')
+            if self.registers.get().strip() and not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('寄存器结果目录无效；L1 直达分支可留空，普通分支仍需寄存器映射')
             self.remember();self.directory=self.app.runs/'.sv-templates'/uuid.uuid4().hex;self.directory.mkdir(parents=True)
             graph_path=self.directory/'architecture.json';write_source(graph_path,self.graph)
             command=[sys.executable,'-m','clocktree','sv-plan','--graph',str(graph_path),'--registers',self.registers.get(),'--out',str(self.directory)]
@@ -157,7 +157,7 @@ class SVDialog(tk.Toplevel):
             result=self.plan.resolve(row,self.templates(),self.selections.get(row['id']));ready+=int(result['ready'])
             self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['clkip'],result['mode'],'已就绪' if result['ready'] else '需处理'))
         if selected and selected[0] in self.rows:self.table.selection_set(selected)
-        self.status.set('第 {}–{} / {} 个末端输入 · 本页 {} 个已就绪。导出前会重新检查全部分支。'.format(self.offset+1 if rows else 0,self.offset+len(rows),total,ready))
+        self.status.set('第 {}–{} / {} 个分支末端 · 本页 {} 个已就绪。导出前会重新检查全部分支。'.format(self.offset+1 if rows else 0,self.offset+len(rows),total,ready))
     def page(self,step):
         if not self.plan:return
         total,_=self.plan.branches(self.search.get(),limit=0);offset=self.offset+100*step
@@ -169,6 +169,7 @@ class SVDialog(tk.Toplevel):
         if not row:return
         result=self.plan.resolve(row,self.templates(),self.selections.get(row['id']));self.mode.set(self.selections.get(row['id'],{}).get('mode','自动'))
         text='\n'.join('$'+k+' = '+v for k,v in result['values'].items())
+        if result.get('l1_input'):text+='\n\nL1 直达来源：'+', '.join(result['l1_input']['signals'])+'\n采用无选择器模板；$var_clkip 取末端输出，无输出器件取对应输入。'
         reset=result.get('reset',{})
         if 'var_rst' in result['values']:
             for origin in reset.get('origins',[reset]):
@@ -193,7 +194,7 @@ class SVDialog(tk.Toplevel):
             self.remember();self.refresh();self.detail()
     def export(self,path=None):
         if not self.plan or self.process and self.process.poll() is None:return
-        if str(Path(self.registers.get()).resolve())!=self.plan.source().get('registers'):
+        if (str(Path(self.registers.get()).resolve()) if self.registers.get().strip() else '')!=self.plan.source().get('registers'):
             self.status.set('寄存器结果目录已改变，请重新分析全部分支。');return
         path=path or filedialog.asksaveasfilename(parent=self,defaultextension='.sv',initialfile='clock_branches.sv')
         if not path:return

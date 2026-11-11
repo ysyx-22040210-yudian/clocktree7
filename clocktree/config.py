@@ -134,7 +134,10 @@ def tcl_string(value):
 
 
 def write_tcl_config(config, path, output):
+    first = next((layer for layer in config['layers'] if layer['index'] == 1), {})
+    l1 = first.get('hierarchy', '').strip().rstrip('./') or config.get('trace_scope', '').strip().rstrip('./') or config['design'].get('top', '')
     lines = ["set ct_rules {}", 'set ct_tree_type ' + tcl_string(tree_type(config)),
+             'set ct_l1_scope ' + tcl_string(l1),
              'set ct_extraction_mode ' + tcl_string(config.get('extraction_mode', 'target')),
              'set ct_port_trace_timeout_s ' + str(config.get('port_trace_timeout_s', 0)),
              'set ct_trace_scope ' + tcl_string(config.get('trace_scope', '').strip().rstrip('./'))]

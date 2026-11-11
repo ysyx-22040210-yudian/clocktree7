@@ -10,6 +10,7 @@ from .devices import connection_label
 
 
 LABELS={
+    'multiple_l1_inputs':('多个 L1 输入来源','核对多驱动或位映射；不能自动选择其中一个 L1 端口'),
     'wire_connection_unresolved':('穿线内部未解析','核对输出是否由已配置输入直接连接；逻辑运算、常量、时序电路不作直连'),
     'unselected_wire_input':('穿线输入未配置','把实际参与穿线的输入加入器件规则后重新提取'),
     'trace_timeout':('端口超时','检查耗时端口；可调整端口阈值后重跑'),

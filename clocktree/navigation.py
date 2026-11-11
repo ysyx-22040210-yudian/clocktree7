@@ -3,6 +3,7 @@ import tkinter as tk
 from tkinter import ttk
 from .devices import connection_label
 from .connectivity import focused_pins
+from .l1_inputs import neighbours as l1_neighbours,lookup_node,CombinedEdges
 
 
 def _neighbour_filter(node,direction):
@@ -24,13 +25,15 @@ def neighbour_edges(model,node,direction):
     if hasattr(model,'store'):
         from .indexed_view import QuerySequence
         where,params=_neighbour_filter(node,direction)
-        return QuerySequence(model.store,'SELECT data FROM edges WHERE '+where+' ORDER BY seq',params,decode=True)
+        result=QuerySequence(model.store,'SELECT data FROM edges WHERE '+where+' ORDER BY seq',params,decode=True)
+        extra=l1_neighbours(model,node,direction)
+        return CombinedEdges(result,extra) if extra else result
     edges=model.incoming[instance] if direction=='upstream' else model.outgoing[instance]
     if node.get('reference_of'):
         edges=[e for e in edges if e['source']==node.get('reference_source') and e['target_pin'] in node['inputs']]
     pins=focused_pins(node,direction)
     if pins is not None:edges=[e for e in edges if e[('target_pin' if direction=='upstream' else 'source_pin')] in pins]
-    return edges
+    return list(edges)+l1_neighbours(model,node,direction)
 
 
 def neighbour_destinations(model,node,direction):
@@ -38,7 +41,7 @@ def neighbour_destinations(model,node,direction):
     if node.get('reference_of') and (direction!='upstream' or not node.get('reference_source')):
         return []
     other='source' if direction=='upstream' else 'target'
-    if hasattr(model,'store'):
+    if hasattr(model,'store') and not l1_neighbours(model,node,direction):
         where,params=_neighbour_filter(node,direction)
         sql='SELECT data FROM edges WHERE seq IN (SELECT MIN(seq) FROM edges WHERE '+where+' GROUP BY '+other+','+other+'_pin LIMIT 2) ORDER BY seq'
         return [model.store.decode(row[0]) for row in model.store.connection().execute(sql,params)]
@@ -99,7 +102,7 @@ class NeighbourDialog(tk.Toplevel):
         self.offset=0 if reset else max(0,self.offset+delta*100)
         model=self.model;query=self.search.get().strip().lower()
         endpoint,other,port,local=('target','source','source_pin','target_pin') if self.direction=='upstream' else ('source','target','target_pin','source_pin')
-        if hasattr(model,'store'):
+        if hasattr(model,'store') and not l1_neighbours(model,self.node,self.direction):
             from .indexed_view import QuerySequence
             sql='SELECT e.data FROM edges e JOIN nodes n ON n.id=e.'+other+' WHERE e.'+endpoint+'=?'
             params=[self.instance]
@@ -109,11 +112,11 @@ class NeighbourDialog(tk.Toplevel):
             edges=QuerySequence(model.store,sql+' ORDER BY e.seq',params,decode=True)
         else:
             edges=neighbour_edges(model,self.node,self.direction)
-            if query:edges=[e for e in edges if query in (e[other]+e[port]+connection_label(model.original[e[other]],e[port])).lower()]
+            if query:edges=[e for e in edges if query in (e[other]+e[port]+connection_label(lookup_node(model,e[other]),e[port])).lower()]
         total=len(edges);self.offset=min(self.offset,max(0,((total-1)//100)*100));self.rows={}
         self.table.delete(*self.table.get_children())
         for i,edge in enumerate(edges[self.offset:self.offset+100]):
-            self.rows[str(i)]=edge;node=model.original[edge[other]]
+            self.rows[str(i)]=edge;node=lookup_node(model,edge[other])
             self.table.insert('','end',iid=str(i),values=(edge[other],edge[port],connection_label(node,edge[port]),edge[local]))
         self.status.set('{}–{} / {} 条端口连接'.format(self.offset+1 if total else 0,min(total,self.offset+100),total))
 

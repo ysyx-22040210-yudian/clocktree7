@@ -17,7 +17,7 @@ def main():
     registers.add_argument('--out',required=True)
     registers.add_argument('--resume',action='store_true',help='Resume committed ports with the same request and unchanged RTL/elab')
     svplan=commands.add_parser('sv-plan',help='Prepare one template block per terminal clock input')
-    svplan.add_argument('--graph',required=True);svplan.add_argument('--registers',required=True);svplan.add_argument('--out',required=True)
+    svplan.add_argument('--graph',required=True);svplan.add_argument('--registers',default='');svplan.add_argument('--out',required=True)
     svexport=commands.add_parser('sv-export',help='Expand user templates for every reviewed clock branch into one SV file')
     svexport.add_argument('--plan',required=True);svexport.add_argument('--templates',required=True);svexport.add_argument('--out',required=True)
     run = commands.add_parser("extract")

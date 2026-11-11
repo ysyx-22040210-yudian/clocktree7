@@ -137,6 +137,13 @@ class BranchDialog(tk.Toplevel):
         self.details.insert('end', text); self.details.configure(state='disabled')
 
     def inspect_node(self, node):
+        if node.get('kind')=='l1_input':
+            from .l1_inputs import describe
+            self.selected_object=node
+            for button in (self.upstream,self.expand_button):button.configure(state='disabled')
+            self.downstream.configure(state='normal' if self._neighbours('downstream') else 'disabled')
+            self._details('\n\n'.join(label+'\n'+str(value) for label,value in describe(node)))
+            return
         self.selected_object = node
         self.expand_button.configure(state='normal' if node.get('aggregate') or node.get('kind') == 'subsystem' else 'disabled',
                                      text='展开此 RTL 层次' if node.get('aggregate') else '展开 / 收起总线各位')
@@ -168,6 +175,10 @@ class BranchDialog(tk.Toplevel):
         if node.get('reference_of'):
             return [node['reference_source']] if direction == 'upstream' and node.get('reference_source') else []
         model = self.diagram.model
+        from .l1_inputs import neighbours as l1_neighbours
+        if l1_neighbours(model,node,direction):
+            from .navigation import neighbour_destinations
+            return neighbour_destinations(model,node,direction)
         match, other = ('target', 'source') if direction == 'upstream' else ('source', 'target')
         if hasattr(model, 'store'):
             return [r[0] for r in model.store.connection().execute('SELECT DISTINCT '+other+' FROM edges WHERE '+match+'=? LIMIT 2', (node['id'],))]
@@ -192,8 +203,9 @@ class BranchDialog(tk.Toplevel):
         for bundle in displayed:
             actual = self.diagram.model.actual_edges(bundle)
             for edge in actual[:remaining]:
-                source = self.diagram.model.original[edge['source']]
-                target = self.diagram.model.original[edge['target']]
+                from .l1_inputs import lookup_node
+                source = lookup_node(self.diagram.model,edge['source'])
+                target = self.diagram.model.nodes.get(edge['target']) or lookup_node(self.diagram.model,edge['target'])
                 lines += ['{}.{}（{}）'.format(edge['source'], edge['source_pin'], connection_label(source, edge['source_pin'])),
                           ' → {}.{}（{}）'.format(edge['target'], edge['target_pin'], connection_label(target, edge['target_pin']))]
                 evidence = edge.get('evidence', {})

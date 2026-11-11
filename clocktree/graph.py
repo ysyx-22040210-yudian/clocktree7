@@ -22,11 +22,17 @@ def build_graph(events, config, evidence_store=None):
     trace_index = 0
     output_checks = {}
     timeout_instances = {}
+    l1_traces = []
 
     def consume(trace, result):
         if trace['direction'] == 'internal':
             trace.setdefault('internal', []).append(dict(result))
             return
+        if trace['direction'] == 'driver':
+            if result.get('l1_verified'):
+                trace.setdefault('l1_entries', []).append(result)
+            else:
+                trace['non_l1_result'] = True
         if result['status'] == 'sink':
             cell = result.get('cell', '')
             group = trace['sinks'].setdefault(cell, {'status': 'sink_group', 'cell': cell, 'count': 0,
@@ -69,6 +75,16 @@ def build_graph(events, config, evidence_store=None):
     def finish(trace):
         trace_keys.add((trace['instance'], trace['pin'], trace['direction']))
         boundaries.extend(trace['sinks'].values())
+        if trace['direction'] == 'driver' and trace.get('l1_entries') and not trace.get('non_l1_result'):
+            entries = {r['endpoint']: r for r in trace['l1_entries']}
+            if len(entries) == 1:
+                entry = next(iter(entries.values()))
+                path = evidence_store.trace_path(trace['trace_id'], entry['path_id']) if 'path_id' in entry else entry.get('path', [])
+                l1_traces.append((trace['instance'], trace['pin'], {'scope':entry['l1_scope'],
+                    'port':entry['l1_port'], 'signal':entry['endpoint'], 'status':'verified', 'evidence':path}))
+            else:
+                diagnostics.append({'code':'multiple_l1_inputs','instance':trace['instance'],'pin':trace['pin'],
+                                    'signals':sorted(entries), 'message':'输入追到多个 L1 端口，不能唯一生成直达分支'})
         if trace['direction'] == 'internal':
             owner, output = trace['instance'], trace['pin']
             results = trace.get('internal', [])
@@ -165,6 +181,9 @@ def build_graph(events, config, evidence_store=None):
         kind = resolve_kind(node, config)
         if kind:
             node['kind'], node['kind_source'] = kind, 'configured'
+    for instance, pin, entry in l1_traces:
+        if instance in nodes:
+            nodes[instance].setdefault('l1_inputs', {})[pin] = entry
     for trace in active.values():
         boundaries.extend(trace['sinks'].values())
         diagnostics.append({'code': 'trace_protocol', 'trace_id': trace['trace_id'], 'message': 'Missing trace_end'})
@@ -277,7 +296,7 @@ def build_graph(events, config, evidence_store=None):
         node['scope_input_boundary'] = node['id'] in scope_inputs
         node['scope_output_boundary'] = node['id'] in scope_outputs
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
-        if node["root"] and node["layer"] != 1 and not node['scope_input_boundary']:
+        if node["root"] and node["layer"] != 1 and not node['scope_input_boundary'] and not node.get('l1_inputs'):
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
     fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint', 'instance_trace_timeout'}
     coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
@@ -312,6 +331,7 @@ def build_graph(events, config, evidence_store=None):
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
                         "expected_pin_traces": expected_count, "observed_pin_traces": len(trace_keys),
                         "unresolved": unresolved_count, "diagnostics": len(diagnostics),
+                        'l1_input_connections': sum(len(n.get('l1_inputs', {})) for n in nodes.values()),
                         'trace_timeout_instances': len(timeout_instances),
                         'trace_timeout_ports': sum(s == 'trace_timeout' for s in timeout_pins.values()),
                         'trace_skipped_ports': sum(s == 'trace_skipped_timeout' for s in timeout_pins.values()),

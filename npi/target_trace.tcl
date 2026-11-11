@@ -55,12 +55,45 @@ proc ct_l_init {} {
     set ::ct_l_output_rules [dict create]
     set ::ct_l_wire_inputs [dict create]
     set ::ct_l_internal 0
+    set ::ct_l_l1_inputs [dict create]
     set ::ct_l_cache [dict create]
     set ::ct_l_cache_bytes 0
     set ::ct_l_cache_written 0
     set ::ct_l_totals [dict create driver_queries 0 cache_hits 0 output_index_hits 0]
     set ::ct_l_root [expr {$::ct_trace_scope ne "" ? $::ct_trace_scope : $::ct_top}]
 }
+proc ct_l_index_l1 {} {
+    if {![info exists ::ct_l1_scope] || $::ct_l1_scope eq ""} {return}
+    set root [npi_handle_by_name -name $::ct_l1_scope -scope ""]
+    if {$root eq ""} {return}
+    # Index only this interface's formal inputs. No hierarchy/load traversal.
+    foreach record [ct_input_ports $root] {
+        lassign $record pin width left right
+        if {$width == 1 && $left eq ""} {
+            dict set ::ct_l_l1_inputs "$::ct_l1_scope.$pin" $pin
+        } elseif {[string is integer -strict $left] && [string is integer -strict $right] && abs($left-$right)+1 == $width} {
+            set step [expr {$left <= $right ? 1 : -1}]
+            for {set i $left} {1} {incr i $step} {
+                dict set ::ct_l_l1_inputs "$::ct_l1_scope.$pin\[$i\]" "$pin\[$i\]"
+                if {$i == $right} {break}
+            }
+        }
+    }
+    npi_release_handle -object $root
+}
+proc ct_l_l1_fields {h} {
+    set name [ct_l_prop $h npiFullName]
+    if {![dict exists $::ct_l_l1_inputs $name] || [ct_l_size $h] != 1} {return {}}
+    set output_key [ct_l_key $h]
+    if {$output_key ne "" && [dict exists $::ct_l_outputs $output_key]} {return {}}
+    set formal [npi_handle_by_name -name $name -scope ""]
+    if {$formal eq ""} {return {}}
+    set match [npi_compare_objects -object1 $h -object2 $formal]
+    npi_release_handle -object $formal
+    if {!$match} {return {}}
+    return [list endpoint [ct_js $name] scope [ct_js $::ct_l1_scope] boundary_role [ct_js input] l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js [dict get $::ct_l_l1_inputs $name]] l1_verified true]
+}
+proc ct_l1_status {} {return [expr {$::ct_trace_scope ne "" && $::ct_trace_scope eq $::ct_l1_scope ? "scope_boundary" : "input_boundary"}]}
 proc ct_l_register_wire {path outputs} {
     foreach pin $outputs {
         dict set ::ct_pins_to_trace $::ct_pin_count [list "" internal $path $pin]
@@ -273,6 +306,19 @@ proc ct_l_expand {h} {
         if {$type eq "npiPort"} {
             set port_name [ct_l_prop $use npiName]
             set direction [ct_l_prop $use npiDirection]
+            if {!$::ct_l_internal && [info exists ::ct_l1_scope] && $owner eq $::ct_l1_scope && $direction eq "npiInput"} {
+                # The language driver supplies the exact formal bit in src.
+                # Only a real input interface is a confirmed L1 entry.
+                set endpoint [ct_l_prop $src npiFullName]
+                if {$endpoint eq ""} {set endpoint "$owner.$port_name"}
+                if {[ct_l_size $src] != 1 || ![ct_scope_match $endpoint $owner]} {
+                    lappend actions [ct_l_terminal unsupported_expression [list endpoint [ct_js $endpoint]] $evidence]
+                } else {
+                    set formal [string range $endpoint [expr {[string length $owner]+1}] end]
+                    lappend actions [ct_l_terminal [ct_l1_status] [list endpoint [ct_js $endpoint] scope [ct_js $owner] boundary_role [ct_js input] l1_scope [ct_js $owner] l1_port [ct_js $formal] l1_verified true] $evidence]
+                }
+                continue
+            }
             if {!$::ct_l_internal && $direction eq "npiOutput" && [dict exists $::ct_l_output_rules $owner]} {
                 set actual [npi_handle -type npiHighConn -refHandle $use]
                 if {$actual ne "" && ![ct_l_transparent $actual]} {
@@ -410,6 +456,10 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
         if {[dict exists $seen $key]} {dict incr ::ct_walk_stats duplicates; continue}
         dict set seen $key 1
         set path [ct_l_step $parent [ct_l_ev $h]]
+        if {!$::ct_l_internal} {
+            set l1_fields [ct_l_l1_fields $h]
+            if {[llength $l1_fields]} {ct_terminal [ct_result [ct_l1_status] $path {*}$l1_fields]; continue}
+        }
         if {![ct_l_transparent $h]} {ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $name]]; continue}
         if {$type eq "npiOperation" || [ct_l_size $h] != 1} {ct_terminal [ct_result unsupported_expression $path endpoint [ct_js [::npi_L1::npi_expr_decompile $h]]]; continue}
         if {[catch {ct_l_expand $h} actions]} {ct_terminal [ct_result error $path message [ct_js $actions]]; continue}

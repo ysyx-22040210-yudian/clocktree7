@@ -75,6 +75,9 @@ class CanvasScene:
         elif selected:
             for edge in d.model.edges:
                 if selected.intersection(edge.get('members',[edge['id']])): self.highlighted.add(edge['id'])
+        if d._branch_highlight and getattr(d,'_l1_trace_direction',None) in ('upstream','branch'):
+            from .l1_inputs import branch_highlights
+            self.highlighted.update(branch_highlights(d.model,getattr(d,'_l1_upstream',set()),getattr(d,'_l1_trace_node',{})))
         for key,item in self.wires.items(): self.style_wire(key,item)
 
     def style_wire(self,key,item):

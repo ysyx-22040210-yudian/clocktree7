@@ -402,6 +402,18 @@ proc ct_walk {seed direction owner pin trace_id} {
         set type [ct_prop $hdl npiNlType]
         set current_name [ct_prop $hdl npiNlFullName]
         if {$current_name ne ""} {set last_inside $current_name}
+        if {$direction eq "driver" && [info exists ::ct_l1_scope] && [string match *Port $type] &&
+                [ct_inst_prop $hdl npiNlFullName] eq $::ct_l1_scope && [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
+            set formal [ct_prop $hdl npiNlName]
+            if {[regexp {^(.*)\[-?[0-9]+:-?[0-9]+\]#\[(-?[0-9]+)\]$} $formal -> base bit]} {set formal "$base\[$bit\]"}
+            if {![dict exists $::ct_l_l1_inputs "$::ct_l1_scope.$formal"]} {
+                ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $current_name] message [ct_js "L1 formal bit could not be confirmed"]]
+                continue
+            }
+            ct_terminal [ct_result [ct_l1_status] $path endpoint [ct_js "$::ct_l1_scope.$formal"] scope [ct_js $::ct_l1_scope] boundary_role [ct_js input] \
+                l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js $formal] l1_verified true]
+            continue
+        }
         # Root interface ports are the strict boundary, including selected
         # roots. Never cross into the parent and then re-enter elsewhere.
         if {$ct_trace_scope ne "" && [string match *Port $type] &&
@@ -756,7 +768,7 @@ proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
     global ct_resume_completed_modules ct_resume_last_module ct_completed_modules ct_last_module ct_saved_module ct_total_modules
-    global ct_extraction_mode ct_port_trace_timeout_s ct_timeout_instances
+    global ct_extraction_mode ct_port_trace_timeout_s ct_timeout_instances ct_l1_scope
     ct_journal begin worker {} "read worker configuration"
     source $env(CT7_CONFIG)
     set ct_context [info exists env(CT7_RESUME)]
@@ -825,6 +837,7 @@ proc ct_main {} {
     puts "CT7_IMPORT_END"
     flush stdout
     ct_validate_compiler_log verdiLog/compiler.log
+    ct_l_index_l1
     set top_hdl [npi_handle_by_name -name $ct_top -scope ""]
     if {$top_hdl eq ""} {error "Requested top was not elaborated: $ct_top"}
     if {$ct_trace_scope ne "" && [npi_handle_by_name -name $ct_trace_scope -scope ""] eq ""} {

@@ -22,6 +22,7 @@ LABEL_TO_KIND['MUX'] = 'mux'
 
 
 def kind_label(kind, tree='clock'):
+    if kind == 'l1_input':return 'L1 层次输入口'
     if kind == 'mux' and tree == 'reset':
         return 'MUX'
     return DEVICE_TYPES[kind]['label'] if kind in DEVICE_TYPES else '未分类'
@@ -244,6 +245,16 @@ def symbol_parts(node, width, height, selected=False):
         line([(width-18, output[1]), output], fill='#8eabc8')
         text(22, 110, '输入', size=9)
         text(width-22, 110, '输出', size=9, anchor='e')
+    elif kind == 'l1_input':
+        color='#80ceea'
+        text(width-11,16,'L1 · INPUT',size=10,fill=color,bold=True,anchor='e')
+        cy=output[1]
+        add('polygon',points=[(22,cy-24),(width-72,cy-24),(width-48,cy),(width-72,cy+24),(22,cy+24)],
+            fill='#193c4d',stroke=color,width=1.5)
+        text(34,cy,node['output'],size=13,fill=color,bold=True,max_width=width-110,tooltip=node['l1_entry']['signal'])
+        line([(width-48,cy),output],fill=color)
+        text(12,height-16,'展开目标层次查看各口' if node['l1_entry'].get('aggregate_count') else node['l1_entry']['signal'],
+            size=10,fill='#9fcfc3',max_width=width-24,tooltip=node['l1_entry']['signal'])
     elif kind == 'wire':
         text(width-11, 16, '穿线 · L{}'.format(node.get('layer','?')), size=10, fill=color, bold=True, anchor='e')
         left, right = width*.35, width*.65

@@ -309,6 +309,7 @@ class IndexedGraphView(GraphView):
             'SELECT data FROM nodes WHERE instr(lower(id),?)>0 OR instr(lower(module),?)>0 ORDER BY seq', (query, query), decode=True)
 
     def actual_edges(self, edge):
+        if edge.get('l1_boundary'):return [edge]
         if 'members' not in edge:
             return [self.original_edges[edge['id']]]
         members = edge['members']
@@ -350,7 +351,9 @@ class IndexedGraphView(GraphView):
         conn.execute('CREATE TEMP TABLE '+name+'(id TEXT PRIMARY KEY)')
         for selection in (upstream,downstream):
             conn.execute('INSERT OR IGNORE INTO '+name+' '+selection.sql,selection.params)
-        return SQLSelection(self.store,'SELECT id FROM '+name,temporary=name)
+        result=SQLSelection(self.store,'SELECT id FROM '+name,temporary=name)
+        result.l1_upstream=upstream
+        return result
 
     def path_edges(self, instance, direction, seed_pins=None):
         if self.store.connection().execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone():

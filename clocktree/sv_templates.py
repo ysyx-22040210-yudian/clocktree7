@@ -22,6 +22,7 @@ from .storage import write_graph,IndexedGraph,ResultStore,ARRAY_KEYS
 from .ui_state import design_key
 from .layer_reset import branch_reset_binding,without_resets
 from .sv_template_text import ROLES,CLOCK_VARS,variables,render,template_tokens
+from .profiles import output_ports
 
 SIGNAL=re.compile(r'[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*(?:\.[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*)*\Z')
 
@@ -30,6 +31,8 @@ def identity(*parts):return hashlib.sha256(json.dumps(parts,ensure_ascii=False).
 
 
 def architecture_signature(graph):
+    if graph.get('summary',{}).get('l1_input_connections'):
+        return identity('l1-input-terminal-output-v1',graph.get('config'),graph.get('metadata'),graph.get('summary'))
     wire=any(r.get('kind')=='wire' for layer in graph.get('config',{}).get('layers',[]) for r in layer.get('modules',[]))
     return identity('branch-origin-reset-wire-channels-v3' if wire else 'branch-origin-reset-d-input-v2',graph.get('config'),graph.get('metadata'),graph.get('summary'))
 
@@ -124,6 +127,32 @@ def database(path):
     conn.execute('PRAGMA cache_size=-4096');conn.execute('PRAGMA temp_store=FILE');return conn
 
 
+def l1_control_bindings(db,has_wire,bindings,issues):
+    """Defaults cover absent control ports, never failed/ambiguous real jobs."""
+    devices=defaultdict(list)
+    for row in db.execute('SELECT n.* FROM walk JOIN nodes n ON n.id=walk.id ORDER BY n.position'):
+        devices[row['kind']].append(dict(row))
+    for kind,maximum in [('mux',1),('div',1),('gate',3)]:
+        if len(devices[kind])>maximum:issues.append('分支 {} 数量 {} 超过约定 {}'.format(kind,len(devices[kind]),maximum))
+    if has_wire and len(devices['gate'])<=3:
+        ancestors={}
+        for gate in devices['gate']:
+            branch_scope(db,gate['id'],table='ancestors',include_terminal=False)
+            ancestors[gate['id']]={r[0] for r in db.execute("SELECT n.id FROM ancestors a JOIN nodes n ON n.id=a.id WHERE n.kind='gate'")}
+        devices['gate'].sort(key=lambda g:len(ancestors[g['id']]))
+    for upstream,downstream in zip(devices['gate'],devices['gate'][1:]):
+        branch_scope(db,downstream['id'],table='ancestors',include_terminal=False)
+        if not db.execute('SELECT 1 FROM ancestors WHERE id=?',(upstream['id'],)).fetchone():
+            issues.append('门控存在并行关系，不能确定唯一从前到后顺序')
+    for i,gate in enumerate(devices['gate'][:3]):
+        if (json.loads(gate['data']).get('aux_ports') or {}).get('gt'):
+            bindings['var_gt'+str(i)]={'instance':gate['id']}
+    bindings['var_gt']=bindings['var_gt0']
+    for variable,kind,role in [('var_pllsel','mux','pll_sel'),('var_div','div','div'),('var_swdone','div','sw_done')]:
+        if len(devices[kind])==1 and (json.loads(devices[kind][0]['data']).get('aux_ports') or {}).get(role):
+            bindings[variable]={'instance':devices[kind][0]['id']}
+
+
 @contextmanager
 def connection(path,existing=None):
     if existing is not None:yield existing
@@ -190,7 +219,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
     path=directory/'plan.sqlite'
     if path.exists():raise ValueError('SV 分支目录已存在，请使用新目录')
     if graph.get('tree_type',graph['config'].get('tree_type','clock'))!='clock':raise ValueError('SV 分支模板当前用于时钟树')
-    manifest=json.loads((Path(registers)/'manifest.json').read_text(encoding='utf-8'))
+    manifest=json.loads((Path(registers)/'manifest.json').read_text(encoding='utf-8')) if registers else {'request':{'config':graph['config']}}
     if design_key(manifest['request']['config'])!=design_key(graph['config']):raise ValueError('寄存器结果与当前架构的设计入口不一致')
     worker=None
     previous=signal.getsignal(signal.SIGTERM)
@@ -224,7 +253,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
             if len(resolved)>=1024:resolved.clear()
             try:
                 port=list(worker.query('port',inst,base))[0];expr=Expressions(())
-                if port.get('direction')!='npiInput':raise MappingError('端口不是 input')
+                expected='npiOutput' if pin in output_ports(node) else 'npiInput'
+                if port.get('direction')!=expected:raise MappingError('端口方向不符合 '+expected)
                 low=expr.names(port['low']);high=expr.names(port['high'])
                 if len(low)!=len(high):raise MappingError('端口位宽不一致')
                 resolved[key]=dict(zip(low,high))
@@ -252,7 +282,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
             ''')
             outgoing=defaultdict(list);degree={}
             for n in graph['nodes']:
-                small={k:n.get(k) for k in ('id','kind','layer','inputs','port_connections','aux_ports','outputs','internal_connections','terminal_inputs')}
+                small={k:n.get(k) for k in ('id','kind','layer','inputs','output','port_connections','aux_ports','outputs','internal_connections','terminal_inputs')}
+                small['l1_inputs']={p:{k:v for k,v in value.items() if k!='evidence'} for p,value in n.get('l1_inputs',{}).items()}
                 if n.get('kind')=='wire':
                     small['internal_connections']=[{k:c[k] for k in ('input','output','status')} for c in n.get('internal_connections',[])]
                 db.execute('INSERT INTO nodes VALUES(?,?,?,?,?)',(n['id'],n['kind'],int(bool(n.get('terminal'))),0,json.dumps(small)))
@@ -271,7 +302,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
             cyclic={n for n,d in degree.items() if d};del degree,outgoing,pending
             has_wire=db.execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone() is not None
             if has_wire:cyclic={key for d in graph.get('diagnostics',[]) if d.get('code')=='cycle_or_cycle_downstream' for key in d.get('instances',[])}
-            report('registers','读取逐位寄存器映射',{});add_candidates(db,registers)
+            report('registers','读取逐位寄存器映射',{})
+            if registers:add_candidates(db,registers)
             complete=bool(graph.get('summary',{}).get('connectivity_complete'))
             seq=0
             for row in db.execute('SELECT * FROM nodes WHERE terminal=1 ORDER BY id'):
@@ -282,7 +314,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
                     if not clkip:issues.append('$var_clkip 未解析：'+bindings['var_clkip'].get('error',''))
                     if not complete:issues.append('当前架构连接不完整，不能保证覆盖全部分支')
                     if inst in cyclic:issues.append('上游包含组合环路')
-                    branch_scope(db,inst,pin)
+                    scope_pin=None if graph.get('summary',{}).get('l1_input_connections') and node['kind'] not in ('subsystem','wire') and len(node.get('inputs') or [])>1 else pin
+                    branch_scope(db,inst,scope_pin)
                     roots=[dict(r) for r in db.execute('''SELECT n.* FROM walk JOIN nodes n ON n.id=walk.id
                         WHERE n.id!=? AND NOT EXISTS(SELECT 1 FROM edges WHERE target=n.id)''',(inst,))]
                     if has_wire:
@@ -291,6 +324,50 @@ def prepare(graph,registers,directory,resolve_connections=True):
                             WHERE NOT EXISTS(SELECT 1 FROM edges e WHERE e.target=p.id AND e.pin=p.pin)'''))
                     if not roots:roots=[dict(row)] if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(inst,pin)).fetchone() else []
                     bindings['var_rst']=branch_reset_binding([json.loads(root['data']) for root in roots],graph['config'])
+                    # L1 devices retain the existing controlled-tree semantics.
+                    # A later-layer entry with no configured upstream device is
+                    # the new bypass case, proven at the real L1 input interface.
+                    direct=[];root_pins=[]
+                    for source_row in db.execute('SELECT n.data FROM walk w JOIN nodes n ON n.id=w.id'):
+                        start=json.loads(source_row['data'])
+                        pins=[scope_pin] if start['id']==inst and scope_pin is not None else start.get('inputs') or []
+                        if has_wire and start['kind']=='wire':
+                            pins=[r[0] for r in db.execute('SELECT pin FROM walk_inputs WHERE id=?',(start['id'],))]
+                        pins=[p for p in pins if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(start['id'],p)).fetchone()]
+                        root_pins.extend((start,p) for p in pins)
+                        direct.extend(start.get('l1_inputs',{}).get(p) for p in pins if (start.get('layer') or 1)>1 and start.get('l1_inputs',{}).get(p))
+                    if direct:
+                        signals={value['signal'] for value in direct}
+                        bindings['_l1']={'signals':sorted(signals),'status':'verified_boundary','terminal_rule':'output_if_present_else_input'}
+                        if len(signals)!=1 or len(direct)!=len(root_pins):
+                            issues.append('L1 直达来源不唯一或与普通器件起点混合：'+', '.join(sorted(signals)))
+                        for var in ('var_pllsel','var_swdone','var_gt','var_gt0','var_gt1','var_gt2','var_pll1','var_pll2','var_pll3'):
+                            bindings[var]={'value':"1'b1",'origin':'l1_input_default'}
+                        bindings['var_div']={'value':'0','origin':'l1_input_default'}
+                        l1_control_bindings(db,has_wire,bindings,issues)
+                        bindings['var_pll0']={'value':next(iter(signals)),'origin':'l1_input'} if len(signals)==1 else {'error':'L1 输入来源不唯一'}
+                        terminals=output_ports(node)
+                        if node['kind']=='wire':
+                            terminals=[c['output'] for c in node.get('internal_connections',[]) if c['input']==pin and c['status']=='verified' and
+                                       not db.execute('SELECT 1 FROM edges WHERE source=? AND source_pin=?',(inst,c['output'])).fetchone()]
+                        terminals=terminals or [pin]
+                        for end_pin in terminals:
+                            final=dict(bindings,var_clkip=connection(node,end_pin))
+                            final_issues=[value for value in issues if not value.startswith('$var_clkip 未解析')]
+                            value=final['var_clkip'].get('value','')
+                            if not value:final_issues.append('$var_clkip 未解析：'+final['var_clkip'].get('error',''))
+                            identifier=identity(inst,'l1',end_pin)
+                            previous_branch=db.execute('SELECT bindings,issues FROM branches WHERE id=?',(identifier,)).fetchone()
+                            if previous_branch:
+                                seq-=1
+                                if json.loads(previous_branch['bindings']).get('var_pll0')!=final['var_pll0']:
+                                    old=json.loads(previous_branch['issues']);old.append('同一末端输出追到多个 L1 输入，不能选择唯一 $var_pll0')
+                                    db.execute('UPDATE branches SET issues=? WHERE id=?',(json.dumps(old,ensure_ascii=False),identifier))
+                            else:
+                                db.execute('INSERT INTO branches VALUES(?,?,?,?,?,?,?,?)',(identifier,seq,inst,end_pin,value,'without_mux',json.dumps(final_issues,ensure_ascii=False),json.dumps(final,ensure_ascii=False)))
+                            if end_pin!=terminals[-1]:seq+=1
+                        report('branches','分析 L1 直达末端',{'branch':seq,'instance':inst,'pin':pin})
+                        continue
                     modes={r['kind']=='mux' for r in roots}
                     mode='with_mux' if modes=={True} else 'without_mux' if modes=={False} else 'mixed'
                     devices=defaultdict(list)
@@ -325,7 +402,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
                         bindings['var_pll0']={'value':next(iter(unique))} if len(unique)==1 and all(r.get('value') for r in starts) else {'error':'无选择器分支没有唯一且已解析的起始输入信号'}
                     db.execute('INSERT INTO branches VALUES(?,?,?,?,?,?,?,?)',(identity(inst,pin),seq,inst,pin,clkip,mode,json.dumps(issues,ensure_ascii=False),json.dumps(bindings,ensure_ascii=False)))
                     report('branches','分析末端分支',{'branch':seq,'instance':inst,'pin':pin})
-            db.execute('INSERT INTO meta VALUES(?,?)',('source',json.dumps({'architecture_signature':architecture_signature(graph),'config':graph['config'],'registers':str(Path(registers).resolve()),'register_fingerprint':manifest.get('fingerprint'), 'dft_zero':manifest['request'].get('dft_zero',[]),'branches':seq},ensure_ascii=False)))
+            db.execute('INSERT INTO meta VALUES(?,?)',('source',json.dumps({'architecture_signature':architecture_signature(graph),'config':graph['config'],'registers':str(Path(registers).resolve()) if registers else '', 'register_fingerprint':manifest.get('fingerprint'), 'dft_zero':manifest['request'].get('dft_zero',[]),'branches':seq},ensure_ascii=False)))
             db.commit()
             report('finished','分支分析完成',{'branches':seq})
         return SVPlan(path)
@@ -389,7 +466,8 @@ class SVPlan:
                 if actual.get(role)!=row['pin']:issues.append('$'+var+' 与当前器件辅助配置不一致');continue
                 values[var]=row['expression'];chosen[var]=dict(row)
         result={'id':branch['id'],'instance':branch['instance'],'pin':branch['pin'],'clkip':branch['clkip'],
-                'mode':mode,'values':values,'selected':chosen,'issues':issues,'ready':not issues,'reset':bindings.get('var_rst',{})}
+                'mode':mode,'values':values,'selected':chosen,'issues':issues,'ready':not issues,'reset':bindings.get('var_rst',{}),
+                'l1_input':bindings.get('_l1')}
         result['code']=render(template,values) if not issues else ''
         return result
     def export(self,templates,path,selections=None):

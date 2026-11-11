@@ -1766,6 +1766,16 @@ class ClockTreeApp(tk.Tk):
         text.yview_moveto(0)
 
     def inspect_node(self,node):
+        if node.get('kind')=='l1_input':
+            from .l1_inputs import describe
+            self.selected_object=node
+            for button in (self.expand_button,self.upstream_button):button.configure(state='disabled')
+            extra=[e for e in self.diagram.model.edges if e['source']==node['id']]
+            self.downstream_button.configure(text='下游 ({})'.format(len(extra)),state='normal' if extra else 'disabled')
+            self._properties('L1 输入端口',describe(node))
+            self._fill_connections(extra,{node['id']})
+            self.inspector_tabs.select(0)
+            return
         if node.get('reference_of'):
             node=dict(node,id=node['reference_of'])
         self.selected_object=node
@@ -1806,6 +1816,9 @@ class ClockTreeApp(tk.Tk):
                 fields.insert(1,('器件引用','同一个真实子系统；此引用只显示当前分支相关输入。'))
             else:edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]
             members={node['id']}
+        from .l1_inputs import neighbours as l1_neighbours,CombinedEdges
+        extra=l1_neighbours(self.diagram.model,node,'upstream') if not node.get('aggregate') else []
+        if extra:edges=CombinedEdges(edges,extra)
         for direction,button,endpoint in [('upstream',self.upstream_button,'source'),('downstream',self.downstream_button,'target')]:
             if node.get('kind')=='wire' and node.get('_focus_pin'):
                 from .navigation import neighbour_edges
@@ -1816,6 +1829,7 @@ class ClockTreeApp(tk.Tk):
                 match='target' if direction=='upstream' else 'source'
                 count=self.graph.store.connection().execute('SELECT COUNT(DISTINCT '+endpoint+') FROM edges WHERE '+match+'=?',(node['id'],)).fetchone()[0]
             else:count=len({e[endpoint] for e in (self.diagram.model.incoming[node['id']] if direction=='upstream' else self.diagram.model.outgoing[node['id']])})
+            if direction=='upstream' and not (node.get('kind')=='wire' and node.get('_focus_pin')):count+=len({e['source'] for e in extra})
             button.configure(text='{} ({})'.format('上游' if direction=='upstream' else '下游',count),state='normal' if count else 'disabled')
         self._properties(title,fields)
         self._fill_connections(edges,members)
@@ -1837,6 +1851,7 @@ class ClockTreeApp(tk.Tk):
             upstream=members and edge['target'] in members
             other=edge['source'] if upstream else edge['target']
             label='.'.join(other.split('.')[-2:])
+            if upstream and edge.get('l1_boundary'):label='L1 · '+edge['source_pin']
             key=str(i)
             self.related_edges[key]=edge
             self.connections.insert('','end',iid=key,text=label,values=('上游' if upstream else '下游',edge['source_pin'] if upstream else edge['target_pin']))
@@ -1845,7 +1860,9 @@ class ClockTreeApp(tk.Tk):
         self.connection_next.configure(state='normal' if self._connection_offset+500<total else 'disabled')
 
     def inspect_edges(self,display_edges):
-        if isinstance(self.graph,IndexedGraph):
+        if any(e.get('l1_boundary') for e in display_edges):
+            edges=list({e['id']:e for e in display_edges if e.get('l1_boundary')}.values())
+        elif isinstance(self.graph,IndexedGraph):
             # A clipped line may represent several bundles. SQL UNION preserves
             # exact unique edge counts and enables paging without materializing.
             from .indexed_view import QuerySequence
@@ -1874,11 +1891,17 @@ class ClockTreeApp(tk.Tk):
 
     def _edge_evidence(self,edge):
         from .devices import connection_label
-        source=self.diagram.model.original[edge['source']];target=self.diagram.model.original[edge['target']]
+        from .l1_inputs import lookup_node
+        source=lookup_node(self.diagram.model,edge['source']);target=self.diagram.model.nodes.get(edge['target']) or lookup_node(self.diagram.model,edge['target'])
         directions=edge.get('evidence',{})
         lines=['{}.{}（{}）'.format(edge['source'],edge['source_pin'],connection_label(source,edge['source_pin'])),
                '  → {}.{}（{}）'.format(edge['target'],edge['target_pin'],connection_label(target,edge['target_pin'])),'']
-        if directions.get('load') and directions.get('driver'):
+        if edge.get('l1_boundary'):
+            lines=['L1 输入：'+source['l1_entry']['signal'],'  → '+edge['target']+'.'+edge['target_pin'],
+                   '输入反查已确认；L1 输入端口不计为器件实例。']
+        if edge.get('l1_boundary'):
+            lines.append('接口方向为 input；箭头表示信号进入 L1 内部。')
+        elif directions.get('load') and directions.get('driver'):
             lines.append('验证结论：输入反查与输出负载双向证据一致。')
         elif directions.get('driver'):
             lines.append('验证结论：输入反查已找到此输出。')
@@ -1896,7 +1919,7 @@ class ClockTreeApp(tk.Tk):
         lines=['实际端口连接','═'*24,'来源实例',edge['source'],'输出口  '+edge['source_pin'],'',
                '目标实例',edge['target'],'输入口  '+edge['target_pin'],'','层差  {}'.format(edge['layer_delta'])]
         for endpoint,pin_key,label in [('source','source_pin','来源端例化连接'),('target','target_pin','目标端例化连接')]:
-            node=self.diagram.model.original[edge[endpoint]]
+            node=lookup_node(self.diagram.model,edge[endpoint])
             lines+=['',label,connection_details(node,[edge[pin_key]])]
         for direction,label in [('load','输出 → 全部负载'),('driver','输入 ← 实际驱动')]:
             lines+=['','─'*24,label,'']
@@ -1935,6 +1958,8 @@ class ClockTreeApp(tk.Tk):
     def open_branch(self,node,source_model=None):
         model=source_model or self.diagram.model
         if model is None:return
+        if node.get('kind')=='l1_input':
+            self.set_status('这是 L1 层次输入口；双击其下游真实器件可打开对应分支。');return
         if node.get('aggregate'):
             self.set_status('请先展开 RTL 聚合框，再双击具体器件。');return
         from .branch_view import BranchDialog

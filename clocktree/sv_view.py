@@ -9,7 +9,7 @@ import uuid
 
 from .storage import write_graph
 from .register_view import RegisterDialog,RELATIONS
-from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates
+from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates,sv_output_path
 from .runtime import tail_text
 from .sv_editor import SVCodeEditor
 from .register_results import latest_register_result,register_result_stamp,result_directory
@@ -53,7 +53,8 @@ class SVDialog(tk.Toplevel):
     def __init__(self,app):
         graph=graph_for_templates(app.graph,app.get_config(validate=False))
         super().__init__(app);self.app=app;self.graph=graph;self.plan=None;self.directory=None;self.process=None;self.stream=None;self.offset=0;self.closed=False;self.rows={}
-        saved=app.ui_state.get(self.graph['config']);self.selections=dict(saved.get('sv_branch_selections',{}))
+        saved=app.ui_state.get(self.graph['config']);self.selections=dict(saved.get('sv_branch_selections',{}));self.export_result=None
+        self.export_plan_path=saved.get('sv_export_plan_path','')
         self.title('时钟树分支 · 用户模板生成 SV');self.geometry('1400x900');self.minsize(1050,700);self.transient(app)
         frame=ttk.Frame(self,padding=14);frame.pack(fill='both',expand=True)
         ttk.Label(frame,text='每个分支末端生成一段模板代码，全部写入一个 SV 文件',font=(app.family,14,'bold')).pack(anchor='w')
@@ -99,10 +100,23 @@ class SVDialog(tk.Toplevel):
         self.preview=tk.Text(bottom,wrap='none',font=('Consolas',10),height=15);scroll=ttk.Scrollbar(bottom,command=self.preview.yview);scroll.pack(side='right',fill='y')
         horizontal=ttk.Scrollbar(bottom,orient='horizontal',command=self.preview.xview);horizontal.pack(side='bottom',fill='x')
         self.preview.configure(yscrollcommand=scroll.set,xscrollcommand=horizontal.set);self.preview.pack(fill='both',expand=True)
-        ttk.Button(footer,text='导入两套模板 JSON',command=self.import_templates).pack(side='left')
-        ttk.Button(footer,text='保存两套模板 JSON',command=self.save_templates).pack(side='left',padx=8)
+        output=ttk.Frame(self.tabs,padding=8);self.tabs.add(output,text='生成的 SV 文件');self.output_tab=output
+        self.output_name=tk.StringVar();self.output_notice=tk.StringVar(value='生成后在此直接查看实际 .sv 文件中的代码。')
+        ttk.Label(output,text='SV 代码文件',font=(app.family,11,'bold')).pack(anchor='w')
+        ttk.Entry(output,textvariable=self.output_name,state='readonly').pack(fill='x',pady=6)
+        ttk.Label(output,textvariable=self.output_notice,wraplength=1300).pack(fill='x',pady=5)
+        code_frame=ttk.Frame(output);code_frame.pack(fill='both',expand=True)
+        code_frame.rowconfigure(0,weight=1);code_frame.columnconfigure(0,weight=1)
+        self.output_code=tk.Text(code_frame,wrap='none',font=('TkFixedFont',11),background='#1e1e1e',foreground='#d4d4d4',
+                                 selectbackground='#264f78',state='disabled')
+        vscroll=ttk.Scrollbar(code_frame,command=self.output_code.yview);vscroll.grid(row=0,column=1,sticky='ns')
+        hscroll=ttk.Scrollbar(code_frame,orient='horizontal',command=self.output_code.xview);hscroll.grid(row=1,column=0,sticky='ew')
+        self.output_code.configure(yscrollcommand=vscroll.set,xscrollcommand=hscroll.set);self.output_code.grid(row=0,column=0,sticky='nsew')
+        ttk.Button(footer,text='导入模板配置',command=self.import_templates).pack(side='left')
+        self.save_templates_button=ttk.Button(footer,text='备份模板配置（非代码）',command=self.save_templates)
+        self.save_templates_button.pack(side='left',padx=8)
         ttk.Button(footer,text='取消当前任务',command=self.cancel).pack(side='left')
-        self.export_button=ttk.Button(footer,text='全部分支 → 一个 SV 文件',command=self.export,state='disabled');self.export_button.pack(side='right')
+        self.export_button=ttk.Button(footer,text='生成 SV 代码…',command=self.export,state='disabled');self.export_button.pack(side='right')
         self.protocol('WM_DELETE_WINDOW',self.close);self.grab_set()
         self.registers.trace('w',self.registers_edited)
         self.refresh_registers()
@@ -114,10 +128,13 @@ class SVDialog(tk.Toplevel):
                     self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh();self.export_button.configure(state='normal')
                 else:self.status.set('架构、复位配置或寄存器结果已更新，请重新分析全部分支；模板和候选选择已保留。')
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
+        if self.plan and self.export_plan_path==str(self.plan.path) and saved.get('sv_export_signature')==architecture_signature(self.graph) and saved.get('sv_export_result'):
+            self.show_export_result(saved['sv_export_result'],select=False)
     def templates(self):return {k:e.get('1.0','end-1c') for k,e in self.editors.items()}
     def remember(self):
         fields=dict(sv_templates=self.templates(),sv_branch_selections=self.selections,
                     sv_register_trace_directory=self.registers.get().strip(),sv_plan_path=str(self.plan.path) if self.plan else '')
+        if self.export_result:fields.update(sv_export_result=self.export_result,sv_export_signature=architecture_signature(self.graph),sv_export_plan_path=self.export_plan_path)
         self.app.ui_state.update(self.graph['config'],**fields)
     def plan_matches_registers(self,plan):
         source=plan.source();value=self.registers.get().strip()
@@ -125,6 +142,7 @@ class SVDialog(tk.Toplevel):
     def invalidate_register_plan(self):
         if self.plan and not self.plan_matches_registers(self.plan):
             self.plan=None;self.rows={};self.table.delete(*self.table.get_children());self.preview.delete('1.0','end')
+            if self.export_result:self.output_notice.set('这是上次生成的文件；寄存器结果已变化，请重新分析并生成当前代码。')
             self.export_button.configure(state='disabled')
             self.status.set('寄存器结果已更新，请重新分析全部分支；模板和候选选择已保留。')
     def registers_edited(self,*args):
@@ -175,16 +193,39 @@ class SVDialog(tk.Toplevel):
                 except (ValueError,OSError):pass
             self.after(200,self.poll);return
         self.stream.close();self.stream=None;self.analyze_button.configure(state='normal')
-        if self.process.returncode:
+        if self.operation=='export' and self.process.returncode in (0,2):
+            try:
+                result=json.loads((self.directory/'export.log').read_text(encoding='utf-8'))
+                self.show_export_result(result);self.remember()
+            except (OSError,ValueError,KeyError) as error:self.status.set('无法读取 SV 导出结果：'+str(error))
+        elif self.process.returncode:
             self.status.set(tail_text(self.directory/(self.operation+'.log'),1800))
         elif self.operation=='plan':
             self.plan=SVPlan(self.directory/'plan.sqlite');self.invalidate_register_plan()
             if self.plan:self.tabs.select(self.review);self.refresh(True)
             self.remember()
-        else:
-            result=json.loads((self.directory/'export.log').read_text(encoding='utf-8'))
-            self.status.set('已生成 {} 段，跳过 {} 个分支；{}。所有候选寄存器及原因在同名 .mapping.json 中。'.format(result['blocks'],result['skipped'],self.output_path if result['sv_written'] else '本次没有可生成的分支，原 SV 文件保留'))
         if self.plan:self.export_button.configure(state='normal')
+    def show_export_result(self,result,select=True):
+        self.export_result=result;self.output_name.set('')
+        if result.get('sv_written'):
+            path=Path(result['sv'])
+            try:
+                with path.open('r',encoding='utf-8') as source:
+                    content=source.read(262145)
+                truncated=len(content)>262144;content=content[:262144]
+                self.output_name.set(str(path))
+                message='已生成 SV 代码：{} 段，跳过 {} 个分支。{}'.format(result['blocks'],result['skipped'],path)
+                self.output_notice.set(('以下显示文件前 256 Ki 字符，完整代码已写入上述 .sv 文件。' if truncated else '以下内容直接读取自已生成的 .sv 文件。')+
+                    (' 有跳过分支，请在“分支映射与代码预览”处理后重新生成。' if result['skipped'] else ''))
+            except (OSError,UnicodeError) as error:
+                message='SV 文件无法读取：'+str(error);content=message;self.output_notice.set(message)
+        else:
+            message='未生成 SV：{} 个分支全部未就绪。请先处理下列问题，再生成代码；已有 SV 文件未改动。'.format(result.get('skipped',0))
+            content=message+'\n\n'+'\n\n'.join(result.get('issues',[]))
+            self.output_notice.set('本次没有生成代码。诊断已保存至任务记录；完整问题可在“分支映射与代码预览”分页查看。')
+        self.status.set(message)
+        self.output_code.configure(state='normal');self.output_code.delete('1.0','end');self.output_code.insert('1.0',content);self.output_code.configure(state='disabled')
+        if select:self.tabs.select(self.output_tab)
     def refresh(self,reset=False):
         if not self.plan:return
         if reset:self.offset=0
@@ -238,11 +279,17 @@ class SVDialog(tk.Toplevel):
         if not self.plan or self.process and self.process.poll() is None:return
         self.refresh_registers()
         if not self.plan:return
-        path=path or filedialog.asksaveasfilename(parent=self,defaultextension='.sv',initialfile='clock_branches.sv')
+        path=path or filedialog.asksaveasfilename(parent=self,title='生成 SystemVerilog 代码文件',filetypes=[('SystemVerilog 代码','*.sv')],defaultextension='.sv',initialfile='clock_branches.sv')
         if not path:return
+        try:path=sv_output_path(path)
+        except ValueError as error:self.status.set(str(error));return
         self.remember();request=self.directory/'templates.json';write_graph(request,dict(self.templates(),selections=self.selections))
+        self.export_plan_path=str(self.plan.path)
+        self.export_result=None;self.output_name.set('');self.output_notice.set('正在生成，请等待本次任务完成。')
+        self.output_code.configure(state='normal');self.output_code.delete('1.0','end');self.output_code.configure(state='disabled')
         self.output_path=str(path);self.status.set('正在检查并生成全部分支…')
-        self.start_process([sys.executable,'-m','clocktree','sv-export','--plan',str(self.plan.path),'--templates',str(request),'--out',str(path)],'export')
+        report=self.directory/('export-'+uuid.uuid4().hex+'.mapping.json')
+        self.start_process([sys.executable,'-m','clocktree','sv-export','--plan',str(self.plan.path),'--templates',str(request),'--out',str(path),'--report',str(report)],'export')
     def import_templates(self):
         path=filedialog.askopenfilename(parent=self,filetypes=[('JSON','*.json')])
         if path:
@@ -253,8 +300,11 @@ class SVDialog(tk.Toplevel):
                 self.remember();self.refresh()
             except (OSError,ValueError) as error:self.status.set(str(error))
     def save_templates(self):
-        path=filedialog.asksaveasfilename(parent=self,defaultextension='.json',initialfile='clock-sv-templates.json')
-        if path:write_graph(path,self.templates());self.remember()
+        path=filedialog.asksaveasfilename(parent=self,title='备份模板配置（不生成 SV 代码）',filetypes=[('模板配置 JSON','*.json')],defaultextension='.json',initialfile='clock-sv-templates.json')
+        if path:
+            if Path(path).suffix.lower()!='.json':self.status.set('模板备份必须使用 .json 后缀；需要 .sv 代码请点击“生成 SV 代码…”。');return
+            write_graph(path,self.templates());self.remember()
+            self.status.set('已备份模板配置：{}。要生成代码，请点击右下角“生成 SV 代码…”。'.format(path))
     def cancel(self):
         if self.process and self.process.poll() is None:self.process.terminate()
     def close(self):

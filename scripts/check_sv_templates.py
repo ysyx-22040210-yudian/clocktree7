@@ -126,7 +126,7 @@ def gui(out,phase,screenshots):
         assert dialog.plan is not None,dialog.status.get()
         assert dialog.plan.branches()[0]==2
         dialog.export(out/'gui-generated.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
-        assert json.loads((out/'gui-generated.sv.mapping.json').read_text())['block_count']==1
+        assert json.loads(Path(dialog.export_result['mapping']).read_text())['block_count']==1
         other=next(r for r in dialog.rows.values() if r['mode']=='without_mux');dialog.table.selection_set(other['id']);dialog.detail()
         dialog.pick('var_swdone');picker=next(w for w in dialog.winfo_children() if isinstance(w,CandidateDialog));pump(app)
         assert len(picker.items)==2
@@ -134,7 +134,7 @@ def gui(out,phase,screenshots):
         picker.search.set('sv_top.E[11]');picker.refresh(True);pump(app);assert len(picker.items)==1
         item=next(k for k,r in picker.items.items() if r.get('capture_expression',r['expression'])=='sv_top.E[11]');picker.table.selection_set(item);picker.choose();pump(app)
         dialog.export(out/'gui-generated.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
-        assert json.loads((out/'gui-generated.sv.mapping.json').read_text())['block_count']==2
+        assert json.loads(Path(dialog.export_result['mapping']).read_text())['block_count']==2
         content=(out/'gui-generated.sv').read_text()
         assert content.count('sv_top.rst_alt_n')==TEMPLATES['with_mux'].count('$var_rst') and content.count('sv_top.rst_n')==TEMPLATES['without_mux'].count('$var_rst') and 'sv_top.rst_upstream_n' not in content
         dialog.table.selection_set(other['id']);dialog.detail();pump(app)

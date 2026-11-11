@@ -165,7 +165,7 @@ def gui(out,source,phase):
     assert 'sv_ends.outs[0]' in dialog.preview.get('1.0','end') and '单个 L1 器件成支' in dialog.preview.get('1.0','end')
     if phase=='gui-write':
         dialog.export(out/'gui-all.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
-        assert json.loads((out/'gui-all.sv.mapping.json').read_text())['block_count']==15
+        assert json.loads(Path(dialog.export_result['mapping']).read_text())['block_count']==15
         capture(dialog,out/'sv-branch-endpoints.png')
     dialog.close();app._save_session_now();pump(app);assert not errors,errors
     write_graph(out/(phase+'.json'),dict(passed=True,errors=errors,branches=15,phase=phase))

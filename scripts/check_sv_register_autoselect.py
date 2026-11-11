@@ -50,7 +50,7 @@ def run(source, out, phase):
     def export(dialog,name,expected):
         path=out/name;dialog.export(path)
         pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
-        report=json.loads(Path(str(path)+'.mapping.json').read_text(encoding='utf-8'))
+        report=json.loads(Path(dialog.export_result['mapping']).read_text(encoding='utf-8'))
         assert report['block_count']==2,report
         assert report['source']['registers']==str(expected)
 

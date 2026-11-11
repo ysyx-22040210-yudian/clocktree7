@@ -31,6 +31,14 @@ SIGNAL=re.compile(r'[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*(?:\.[A-Za-
 def identity(*parts):return hashlib.sha256(json.dumps(parts,ensure_ascii=False).encode('utf-8')).hexdigest()[:24]
 
 
+def sv_output_path(path):
+    """The requested deliverable is source code, never a JSON/config file."""
+    path=Path(path).expanduser()
+    if not path.suffix:path=path.with_suffix('.sv')
+    if path.suffix.lower()!='.sv':raise ValueError('SV 代码文件必须使用 .sv 后缀；JSON 仅用于模板配置或诊断，请另选 .sv 文件名')
+    return path.resolve()
+
+
 def architecture_signature(graph):
     return identity('branch-endpoint-single-l1-v4',graph.get('config'),graph.get('metadata'),graph.get('summary'))
 
@@ -517,15 +525,18 @@ class SVPlan:
                 'l1_input':bindings.get('_l1'),'branch':bindings.get('_branch')}
         result['code']=render(template,values) if not issues else ''
         return result
-    def export(self,templates,path,selections=None):
+    def export(self,templates,path,selections=None,report_path=None):
         if not isinstance(templates,dict) or any(not isinstance(templates.get(k,''),str) for k in ('with_mux','without_mux')):
             raise ValueError('模板必须是包含 with_mux / without_mux 文本的 JSON 对象')
         if selections is not None and (not isinstance(selections,dict) or any(not isinstance(v,dict) for v in selections.values())):
             raise ValueError('selections 必须按分支 ID 保存变量选择对象')
-        selections=selections or {};path=Path(path).resolve();path.parent.mkdir(parents=True,exist_ok=True)
+        selections=selections or {};path=sv_output_path(path);path.parent.mkdir(parents=True,exist_ok=True)
         if path==self.path.resolve():raise ValueError('输出路径不能覆盖计划数据库')
-        temporary=path.with_name(path.name+'.'+uuid.uuid4().hex+'.tmp');report_path=path.with_name(path.name+'.mapping.json')
-        temp_report=temporary.with_name(temporary.name+'.json');count=0;generated=0;skipped=0;failed=[]
+        report_path=Path(report_path).resolve() if report_path is not None else path.with_name(path.name+'.mapping.json')
+        if report_path in (path,self.path.resolve()):raise ValueError('诊断文件不能覆盖 SV 代码文件或计划数据库')
+        report_path.parent.mkdir(parents=True,exist_ok=True)
+        token=uuid.uuid4().hex;temporary=path.with_name(path.name+'.'+token+'.tmp')
+        temp_report=report_path.with_name(report_path.name+'.'+token+'.tmp');count=0;generated=0;skipped=0;failed=[]
         previous=signal.getsignal(signal.SIGTERM)
         def cancel(signum,frame):raise KeyboardInterrupt('SV 导出已取消')
         signal.signal(signal.SIGTERM,cancel)

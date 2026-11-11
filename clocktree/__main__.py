@@ -20,6 +20,7 @@ def main():
     svplan.add_argument('--graph',required=True);svplan.add_argument('--registers',default='');svplan.add_argument('--out',required=True)
     svexport=commands.add_parser('sv-export',help='Expand user templates for every reviewed clock branch into one SV file')
     svexport.add_argument('--plan',required=True);svexport.add_argument('--templates',required=True);svexport.add_argument('--out',required=True)
+    svexport.add_argument('--report',help='Optional separate diagnostic JSON path; --out is always SV source')
     run = commands.add_parser("extract")
     run.add_argument("--config", required=True)
     run.add_argument("--out", default=".", help="Output directory; defaults to the current directory and can be reused")
@@ -58,9 +59,10 @@ def main():
             else:
                 settings=json.loads(Path(args.templates).read_text(encoding='utf-8-sig'))
                 if not isinstance(settings,dict):raise ValueError('模板 JSON 必须是对象')
-                result=SVPlan(args.plan).export(settings,args.out,settings.get('selections'))
+                result=SVPlan(args.plan).export(settings,args.out,settings.get('selections'),args.report)
         except (ValueError,RuntimeError,OSError,KeyboardInterrupt) as error:parser.exit(1,'ClockTree7 SV: '+str(error)+'\n')
-        print(json.dumps(result,ensure_ascii=False,indent=2));return 0
+        print(json.dumps(result,ensure_ascii=False,indent=2))
+        return 2 if args.command=='sv-export' and not result['sv_written'] else 0
     if args.command == 'trace-registers':
         from .register_trace import run as trace_registers
         try:result=trace_registers(args.request,args.out,args.resume)

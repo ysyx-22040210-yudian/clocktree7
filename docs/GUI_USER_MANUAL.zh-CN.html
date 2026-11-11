@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.9 · 更新日期：2026-11-12 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.10 · 更新日期：2026-11-12 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -2106,9 +2106,14 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <li>点击 <strong>“分析全部分支”</strong>。后台按真实连接寻找每个分支末端的上游器件，读取已保存的逐位寄存器映射。若旧结果只有整个总线的连接表达式，会启动独立 Verdi 进程读取精确 bit 连接；因此此步骤可能仍需要原 elab 与 EDA 环境。</li>
 <li>在 <strong>“分支映射与代码预览”</strong> 查看末端实例、末端端口、<code>$var_clkip</code>、模板类型及状态。每页 100 个末端，可搜索实例、端口或信号；选中后可查看实际最初器件、层号及单 L1 规则。编辑模板后点“查找 / 重新核对模板”刷新状态。</li>
 <li>选中一个分支，下方显示变量的实际替换值、待处理原因或生成代码。需要处理多寄存器时，点击相应的 <strong>“选择 $var_swdone”</strong> 等按钮，搜索/翻页查看全部候选并确认一项。</li>
-<li>点击 <strong>“全部分支 → 一个 SV 文件”</strong>。就绪的分支生成到同一个文件，有歧义的分支跳过；状态栏明确显示生成数和跳过数。同名 <code>.sv.mapping.json</code> 保留全部分支、变量值、选择与问题，跳过分支的相关候选全部列出，不限于当前页。</li>
-<li>处理被跳过的分支后再次选择同一个文件。工具按当前两套模板与选择<strong>完整重新生成并替换</strong>，不会追加重复代码。所有分支都无法生成时，原 SV 文件保留，反馈 JSON 更新。</li>
+<li>点击右下角 <strong>“生成 SV 代码…”</strong>，在保存对话框中选择 <code>.sv</code> 文件。就绪分支的模板替换结果写入同一个代码文件。完成后自动切换到 <strong>“生成的 SV 文件”</strong>，显示文件完整路径和直接从磁盘读取的代码。大文件预览最多显示前 256 Ki 字符，完整代码仍全部保存在文件中。</li>
+<li>处理被跳过的分支后再次选择同一个 <code>.sv</code> 文件。工具按当前两套模板与选择<strong>完整重新生成并替换</strong>，不会追加重复代码。全部分支未就绪时明确显示 <strong>“未生成 SV”</strong> 和具体问题，已有 SV 文件保持不变；不能把诊断 JSON 当成代码交付。</li>
 </ol>
+<p><strong>“备份模板配置（非代码）”只保存模板设置，不执行代码生成。</strong> 此按钮只接受 <code>.json</code>；“生成 SV 代码…”只接受 <code>.sv</code>，无扩展名时补 <code>.sv</code>。两种文件不能相互冒充。</p>
+<p>GUI 导出的目标目录只写用户指定的 SV 文件。完整映射、候选和问题另存于 <code>&lt;runs&gt;/.sv-templates/&lt;任务 ID&gt;/export-&lt;唯一 ID&gt;.mapping.json</code>，每次导出单独保留；所有问题也可在“分支映射与代码预览”分页查询。重新打开窗口时，仍与当前架构和寄存器计划匹配的上次输出可继续查看。</p>
+<p><a class="figure" href="images/generated-sv-file.png" target="_blank"><img alt="成功生成后直接展示实际 SV 代码文件" src="images/generated-sv-file.png" /></a></p>
+<p><a class="figure" href="images/sv-export-blocked.png" target="_blank"><img alt="全部分支未就绪时明确提示未生成 SV" src="images/sv-export-blocked.png" /></a></p>
+<p>实际按钮、原生保存对话框、文件内容及 VCS 验收见 <a href="SV_OUTPUT_FIX_VALIDATION_20261112.zh-CN.md">SV 导出修复验收</a>。</p>
 <p><a class="figure" href="images/sv-templates.png" target="_blank"><img alt="原生 Tk：两套模板、末端映射、三个门控及寄存器选择" src="images/sv-templates.png" /></a></p>
 <p>关闭窗口保存模板、已选映射及分支计划。退出主 GUI 并重开后，本设计的历史会恢复；切换设计不会混用配置。每次打开 SV 窗口默认重新选择最新完成结果，在本次窗口内手动指定的结果不会被分析操作改回。由此窗口打开“寄存器追踪”，返回时也会刷新自动选择。</p>
 <p>发现新结果、寄存器结果在原目录更新，或架构/辅助/复位配置变化时，旧分支计划停止用于导出，提示重新 <strong>“分析全部分支”</strong>；模板和候选选择保留。旧版本未记录寄存器结果版本的计划需重新分析一次，不需要为此重新追踪寄存器。不要删除历史计划依赖的任务目录。自动选择、手动覆盖和两次独立启动的验收见 <a href="SV_REGISTER_AUTO_VALIDATION_20261111.zh-CN.md">自动选择寄存器结果验收报告</a>。</p>
@@ -2242,7 +2247,7 @@ end
 end
 </code></pre>
 <p>模板只替换已知变量；单独使用时保留信号路径，拼接名称时按第 33.5.2 节转换。模板不运行 Python/Tcl/SV，不自动插入 module 包装、时序断言或仿真任务。<code>$display</code>、<code>$time</code> 等系统名原样保留；字符串/注释内的 <code>$var_*</code> 同样会替换。用户负责模板自身的 SV 语法、重复声明名及所在验证环境；工具不会凭模板生成成功就声称验证逻辑正确。</p>
-<p>两套模板 JSON 使用 <code>with_mux</code> 和 <code>without_mux</code> 两个字符串字段，换行用 JSON 的 <code>\n</code> 表示。GUI 的“保存两套模板 JSON”会正确处理换行与引号，无需手工转义。CLI 可直接使用同一文件：</p>
+<p>两套模板 JSON 使用 <code>with_mux</code> 和 <code>without_mux</code> 两个字符串字段，换行用 JSON 的 <code>\n</code> 表示。GUI 的“备份模板配置（非代码）”会正确处理换行与引号，无需手工转义。这是可复用的模板设置，实际 SV 文件由“生成 SV 代码…”产生。CLI 可直接使用同一配置文件：</p>
 <pre><code class="language-bash">python3 -m clocktree sv-plan \
   --graph /path/tree/clocktree.json \
   --registers /path/register-task --out /path/new-sv-plan
@@ -2250,7 +2255,8 @@ python3 -m clocktree sv-export \
   --plan /path/new-sv-plan/plan.sqlite \
   --templates /path/templates.json --out /path/clock_branches.sv
 </code></pre>
-<p>CLI 返回 JSON 中的 <code>blocks</code>、<code>skipped</code>、<code>terminals</code> 和 <code>sv_written</code> 是实际结果。正常完成但部分跳过仍返回退出码 0；自动流程必须同时检查 <code>skipped==0</code>，不能只看退出码。模板选择通过可选 <code>selections</code> 字段保存，GUI 任务目录的 <code>templates.json</code> 含当前全部选择，可用于重跑。</p>
+<p><code>--out</code> 指定真正的 SV 源码文件；终端打印的 JSON 是机器可读的执行摘要，不能将它重定向后当作 SV 源码。可加 <code>--report /path/logs/clock_mapping.json</code> 指定诊断文件的独立位置；CLI 未指定此参数时保留原有同名 <code>.sv.mapping.json</code> 行为。</p>
+<p>CLI 摘要中的 <code>blocks</code>、<code>skipped</code>、<code>terminals</code> 和 <code>sv_written</code> 是实际结果。生成至少一段时返回退出码 <code>0</code>；全分支均跳过、没有写出 SV 时返回 <code>2</code>；运行错误返回 <code>1</code>。部分生成仍需检查 <code>skipped==0</code> 才能认为覆盖全部分支。模板选择通过可选 <code>selections</code> 字段保存，GUI 任务目录的 <code>templates.json</code> 含当前全部选择，可用于重跑。</p>
 <p>分析及导出均在后台进程中运行。“取消当前任务”终止当前工作；导出使用临时文件，完成后替换目标。分析取消后可再次分析，会用新的目录。取消未完成导出时保留原文件。任务日志、分支计划及模板请求在 <code>&lt;runs&gt;/.sv-templates/&lt;任务 ID&gt;/</code>，可据 <code>status.json</code>、<code>plan.log</code>、<code>export.log</code> 定位失败阶段。</p>
 <p>实际 KDB、Tk、万分支、取消与便携验收结果见 <a href="SV_TEMPLATES_VALIDATION.zh-CN.md">SV 模板验收报告</a>。</p>
 <h3 id="3351">33.5.1 代码编辑器与变量按钮</h3>

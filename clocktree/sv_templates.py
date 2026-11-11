@@ -23,6 +23,7 @@ from .ui_state import design_key
 from .layer_reset import branch_reset_binding,without_resets
 from .sv_template_text import ROLES,CLOCK_VARS,variables,render,template_tokens
 from .profiles import output_ports
+from .register_results import register_result_stamp
 
 SIGNAL=re.compile(r'[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*(?:\.[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*)*\Z')
 
@@ -402,7 +403,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
                         bindings['var_pll0']={'value':next(iter(unique))} if len(unique)==1 and all(r.get('value') for r in starts) else {'error':'无选择器分支没有唯一且已解析的起始输入信号'}
                     db.execute('INSERT INTO branches VALUES(?,?,?,?,?,?,?,?)',(identity(inst,pin),seq,inst,pin,clkip,mode,json.dumps(issues,ensure_ascii=False),json.dumps(bindings,ensure_ascii=False)))
                     report('branches','分析末端分支',{'branch':seq,'instance':inst,'pin':pin})
-            db.execute('INSERT INTO meta VALUES(?,?)',('source',json.dumps({'architecture_signature':architecture_signature(graph),'config':graph['config'],'registers':str(Path(registers).resolve()) if registers else '', 'register_fingerprint':manifest.get('fingerprint'), 'dft_zero':manifest['request'].get('dft_zero',[]),'branches':seq},ensure_ascii=False)))
+            db.execute('INSERT INTO meta VALUES(?,?)',('source',json.dumps({'architecture_signature':architecture_signature(graph),'config':graph['config'],'registers':str(Path(registers).resolve()) if registers else '', 'register_result_stamp':register_result_stamp(registers), 'register_fingerprint':manifest.get('fingerprint'), 'dft_zero':manifest['request'].get('dft_zero',[]),'branches':seq},ensure_ascii=False)))
             db.commit()
             report('finished','分支分析完成',{'branches':seq})
         return SVPlan(path)

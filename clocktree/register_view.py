@@ -143,6 +143,7 @@ class RegisterDialog(tk.Toplevel):
         result=self.directory/'register-trace.json'
         if self.process.returncode in (0,2) and result.exists():
             summary=json.loads(result.read_text(encoding='utf-8'))['summary']
+            self.app.ui_state.update(self.graph['config'],register_trace_completed_directory=str(self.directory))
             self.status.set('已完成 {} 个辅助端口 · {} 个 bit 找到寄存器 · {} 条寄存器映射 · {} · {}'.format(
                 summary['ports'],summary['register_bits'],summary['counts'].get('register',0),
                 '存在未解析/边界/条件，请查看状态列' if not summary['complete'] else '追踪完成',str(self.directory)))

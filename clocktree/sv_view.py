@@ -12,6 +12,7 @@ from .register_view import RegisterDialog,RELATIONS
 from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates
 from .runtime import tail_text
 from .sv_editor import SVCodeEditor
+from .register_results import latest_register_result,register_result_stamp,result_directory
 
 
 class CandidateDialog(tk.Toplevel):
@@ -58,11 +59,14 @@ class SVDialog(tk.Toplevel):
         ttk.Label(frame,text='每个分支末端生成一段模板代码，全部写入一个 SV 文件',font=(app.family,14,'bold')).pack(anchor='w')
         ttk.Label(frame,text='$var_pllsel · $var_div · $var_swdone · $var_gt0～2 · $var_pll0～3 · $var_clkip · $var_rst  |  $var_rst 取最初器件所属层复位；门控/PLL 缺位补 1\'b1',wraplength=1330).pack(anchor='w',pady=6)
         bar=ttk.Frame(frame);bar.pack(fill='x',pady=5)
-        self.registers=tk.StringVar(value=saved.get('register_trace_directory',''))
+        self.registers=tk.StringVar();self.auto_registers=tk.BooleanVar(value=True);self._setting_registers=False
         ttk.Label(bar,text='寄存器结果目录（L1 直达可留空）').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
         ttk.Button(bar,text='选择',command=self.choose_registers).pack(side='left')
-        ttk.Button(bar,text='打开寄存器追踪',command=lambda:RegisterDialog(app)).pack(side='left',padx=8)
+        ttk.Checkbutton(bar,text='自动选择最新',variable=self.auto_registers,command=self.refresh_registers).pack(side='left',padx=8)
+        ttk.Button(bar,text='打开寄存器追踪',command=self.open_register_trace).pack(side='left',padx=8)
         self.analyze_button=ttk.Button(bar,text='分析全部分支',command=self.analyze);self.analyze_button.pack(side='right')
+        self.register_notice=tk.StringVar()
+        ttk.Label(frame,textvariable=self.register_notice,wraplength=1330).pack(fill='x')
         self.status=tk.StringVar(value='填写两套模板，然后分析分支。多寄存器或未解析分支跳过，其余先生成；选定映射后重新生成同一个文件，不重复追加。')
         ttk.Label(frame,textvariable=self.status,wraplength=1330).pack(fill='x',pady=5)
         # Reserve actions before allocating the expanding notebook on Tk 8.5.
@@ -100,19 +104,49 @@ class SVDialog(tk.Toplevel):
         ttk.Button(footer,text='取消当前任务',command=self.cancel).pack(side='left')
         self.export_button=ttk.Button(footer,text='全部分支 → 一个 SV 文件',command=self.export,state='disabled');self.export_button.pack(side='right')
         self.protocol('WM_DELETE_WINDOW',self.close);self.grab_set()
+        self.registers.trace('w',self.registers_edited)
+        self.refresh_registers()
         previous=saved.get('sv_plan_path')
         if previous and Path(previous).exists():
             try:
                 plan=SVPlan(previous)
-                if plan.source().get('architecture_signature')==architecture_signature(self.graph):
+                if plan.source().get('architecture_signature')==architecture_signature(self.graph) and self.plan_matches_registers(plan):
                     self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh();self.export_button.configure(state='normal')
-                else:self.status.set('架构或复位配置已改变，请重新分析全部分支；模板和候选选择已保留。')
+                else:self.status.set('架构、复位配置或寄存器结果已更新，请重新分析全部分支；模板和候选选择已保留。')
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
     def templates(self):return {k:e.get('1.0','end-1c') for k,e in self.editors.items()}
     def remember(self):
-        fields=dict(sv_templates=self.templates(),sv_branch_selections=self.selections)
-        if self.plan:fields['sv_plan_path']=str(self.plan.path)
+        fields=dict(sv_templates=self.templates(),sv_branch_selections=self.selections,
+                    sv_register_trace_directory=self.registers.get().strip(),sv_plan_path=str(self.plan.path) if self.plan else '')
         self.app.ui_state.update(self.graph['config'],**fields)
+    def plan_matches_registers(self,plan):
+        source=plan.source();value=self.registers.get().strip()
+        return source.get('registers','')==(str(result_directory(value)) if value else '') and source.get('register_result_stamp')==register_result_stamp(value)
+    def invalidate_register_plan(self):
+        if self.plan and not self.plan_matches_registers(self.plan):
+            self.plan=None;self.rows={};self.table.delete(*self.table.get_children());self.preview.delete('1.0','end')
+            self.export_button.configure(state='disabled')
+            self.status.set('寄存器结果已更新，请重新分析全部分支；模板和候选选择已保留。')
+    def registers_edited(self,*args):
+        if self._setting_registers:return
+        self.auto_registers.set(False);self.register_notice.set('手动选择寄存器结果；勾选“自动选择最新”可恢复自动选择。')
+        self.invalidate_register_plan()
+    def refresh_registers(self):
+        if self.auto_registers.get():
+            saved=self.app.ui_state.get(self.graph['config'])
+            known=[self.registers.get()]+[saved.get(key) for key in
+                   ('register_trace_directory','register_trace_completed_directory','sv_register_trace_directory')]
+            path=latest_register_result(self.graph['config'],self.app.runs,known)
+            self._setting_registers=True
+            try:self.registers.set(path)
+            finally:self._setting_registers=False
+            self.register_notice.set('已自动选择本设计最新完成的寄存器结果（含待核对项的结果仍可分析）。' if path else
+                                     '未找到本设计已完成的寄存器结果；可开始追踪或手动选择。L1 直达分支可留空。')
+        else:self.register_notice.set('手动选择寄存器结果；勾选“自动选择最新”可恢复自动选择。')
+        self.invalidate_register_plan()
+    def open_register_trace(self):
+        dialog=RegisterDialog(self.app);self.wait_window(dialog)
+        if not self.closed:self.grab_set();self.refresh_registers()
     def choose_registers(self):
         path=filedialog.askopenfilename(parent=self,title='选择寄存器 manifest.json / register-trace.json',filetypes=[('JSON','*.json')])
         if path:self.registers.set(str(Path(path).parent))
@@ -124,6 +158,7 @@ class SVDialog(tk.Toplevel):
         if self.process and self.process.poll() is None:return
         if self.app.busy:self.status.set('请等待主界面当前任务完成，再分析分支。');return
         try:
+            self.refresh_registers()
             if self.registers.get().strip() and not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('寄存器结果目录无效；L1 直达分支可留空，普通分支仍需寄存器映射')
             self.remember();self.directory=self.app.runs/'.sv-templates'/uuid.uuid4().hex;self.directory.mkdir(parents=True)
             graph_path=self.directory/'architecture.json';write_source(graph_path,self.graph)
@@ -143,7 +178,9 @@ class SVDialog(tk.Toplevel):
         if self.process.returncode:
             self.status.set(tail_text(self.directory/(self.operation+'.log'),1800))
         elif self.operation=='plan':
-            self.plan=SVPlan(self.directory/'plan.sqlite');self.tabs.select(self.review);self.refresh(True);self.remember()
+            self.plan=SVPlan(self.directory/'plan.sqlite');self.invalidate_register_plan()
+            if self.plan:self.tabs.select(self.review);self.refresh(True)
+            self.remember()
         else:
             result=json.loads((self.directory/'export.log').read_text(encoding='utf-8'))
             self.status.set('已生成 {} 段，跳过 {} 个分支；{}。所有候选寄存器及原因在同名 .mapping.json 中。'.format(result['blocks'],result['skipped'],self.output_path if result['sv_written'] else '本次没有可生成的分支，原 SV 文件保留'))
@@ -194,8 +231,8 @@ class SVDialog(tk.Toplevel):
             self.remember();self.refresh();self.detail()
     def export(self,path=None):
         if not self.plan or self.process and self.process.poll() is None:return
-        if (str(Path(self.registers.get()).resolve()) if self.registers.get().strip() else '')!=self.plan.source().get('registers'):
-            self.status.set('寄存器结果目录已改变，请重新分析全部分支。');return
+        self.refresh_registers()
+        if not self.plan:return
         path=path or filedialog.asksaveasfilename(parent=self,defaultextension='.sv',initialfile='clock_branches.sv')
         if not path:return
         self.remember();request=self.directory/'templates.json';write_graph(request,dict(self.templates(),selections=self.selections))

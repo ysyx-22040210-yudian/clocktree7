@@ -54,7 +54,7 @@ Windows 主机使用现有 Python/Tcl 运行自动测试。一次以上批量启
 
 ## 5. 便携与证据
 
-候选便携包 `clocktree7-wire-20261111-rc1` 解压到 `/home/host/clocktree7-portable-qa/clocktree7-wire-20261111-rc1`，清除 `PYTHONPATH` 并设置 `PYTHONNOUSERSITE=1`，从该目录重新生成独立 RTL 与工作目录。**276 个文件的 MANIFEST 校验通过**；8 项原生矩阵（含超时、两次断点轮换）、真实 bit 的 7 分支 SV 导出，以及 Tk 两次独立启动恢复全部通过。没有使用共享目录的 Python 源码，也没有把 EDA 安装或许可打入包中。
+候选便携包 `clocktree7-wire-20261111-rc1` 解压到 `/home/host/clocktree7-portable-qa/clocktree7-wire-20261111-rc1`，清除 `PYTHONPATH` 并设置 `PYTHONNOUSERSITE=1`，从该目录重新生成独立 RTL 与工作目录。**MANIFEST 中 275 个项目文件逐项校验通过**（包内共 276 个文件，另一个是清单本身）；8 项原生矩阵（含超时、两次断点轮换）、真实 bit 的 7 分支 SV 导出，以及 Tk 两次独立启动恢复全部通过。没有使用共享目录的 Python 源码，也没有把 EDA 安装或许可打入包中。
 
 发布代码仍使用目标设备已有 Python/Tk、Verdi 和许可。源码、使用手册与验收脚本一同交付；测试日志、商业/第三方 KDB、用户历史及本机凭证均不包含在包内。
 

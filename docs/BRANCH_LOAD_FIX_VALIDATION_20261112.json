@@ -1,0 +1,708 @@
+{
+  "date": "2026-11-12",
+  "baseline": "fcadd8d",
+  "tests": {
+    "passed": 371,
+    "skipped": 1,
+    "seconds": 15.5
+  },
+  "limits": "Saved NPI results only; the underlying exception and database from the commercial design were not available.",
+  "native": {
+    "cases": [
+      {
+        "case": "synthetic-memory",
+        "instance": "top.a",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.442
+      },
+      {
+        "case": "synthetic-memory",
+        "instance": "top.b",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.41
+      },
+      {
+        "case": "synthetic-memory",
+        "instance": "top.w",
+        "kind": "wire",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.418
+      },
+      {
+        "case": "synthetic-memory",
+        "instance": "top.s",
+        "kind": "subsystem",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.461
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.a",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.425
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.b",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.42
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.s",
+        "kind": "subsystem",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.421
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.w",
+        "kind": "wire",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.433
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.d",
+        "kind": "div",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.478
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.first",
+        "kind": "occ",
+        "nodes": 5,
+        "edges": 5,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.488
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.g",
+        "kind": "gate",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 18.506
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.long_end",
+        "kind": "occ",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.524
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.merge",
+        "kind": "mux",
+        "nodes": 2,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.491
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.middle",
+        "kind": "occ",
+        "nodes": 4,
+        "edges": 3,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.542
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.mux",
+        "kind": "mux",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.555
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.occ",
+        "kind": "occ",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.563
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.rd",
+        "kind": "div",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.503
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.rg",
+        "kind": "gate",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.44
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.rm",
+        "kind": "mux",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.463
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.short_end",
+        "kind": "occ",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.537
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.sub",
+        "kind": "subsystem",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.501
+      },
+      {
+        "case": "native-0",
+        "instance": "sv_ends.wire0",
+        "kind": "wire",
+        "nodes": 1,
+        "edges": 0,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.495
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g0",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.488
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g1",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.576
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g2",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.49
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g3",
+        "kind": "gate",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.433
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g4",
+        "kind": "gate",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.434
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g5",
+        "kind": "gate",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.442
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.g6",
+        "kind": "gate",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.46
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.s0",
+        "kind": "mux",
+        "nodes": 4,
+        "edges": 3,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.487
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.s1",
+        "kind": "mux",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.438
+      },
+      {
+        "case": "native-1",
+        "instance": "wire_top.w",
+        "kind": "wire",
+        "nodes": 10,
+        "edges": 9,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.68
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g0",
+        "kind": "rsy_sync",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.461
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g1",
+        "kind": "rsy_sync",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.453
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g2",
+        "kind": "rsy_sync",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.447
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g3",
+        "kind": "rsy_sync",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.452
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g4",
+        "kind": "rsy_sync",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.443
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g5",
+        "kind": "rsy_sync",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.449
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.g6",
+        "kind": "rsy_sync",
+        "nodes": 2,
+        "edges": 1,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.451
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.s0",
+        "kind": "mux",
+        "nodes": 4,
+        "edges": 3,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.487
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.s1",
+        "kind": "mux",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.482
+      },
+      {
+        "case": "native-2",
+        "instance": "wire_top.w",
+        "kind": "wire",
+        "nodes": 10,
+        "edges": 9,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.599
+      }
+    ],
+    "faults": [
+      {
+        "phase": "prepare",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      },
+      {
+        "phase": "model",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      },
+      {
+        "phase": "layout",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      },
+      {
+        "phase": "render",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      }
+    ],
+    "active_cursor": true,
+    "cycles": 20,
+    "fd_counts": [
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11,
+      11
+    ],
+    "rss_kib": [
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58120,
+      58136,
+      58164,
+      58192,
+      58232,
+      58304,
+      58364,
+      58424
+    ],
+    "errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "sqlite": "3.7.17",
+    "tk": "8.5.13",
+    "nested_after_main_switch": true
+  },
+  "failure_display": {
+    "cases": [
+      {
+        "case": "synthetic-memory",
+        "instance": "top.a",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.43
+      },
+      {
+        "case": "synthetic-memory",
+        "instance": "top.b",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.4
+      },
+      {
+        "case": "synthetic-memory",
+        "instance": "top.w",
+        "kind": "wire",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.415
+      },
+      {
+        "case": "synthetic-memory",
+        "instance": "top.s",
+        "kind": "subsystem",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.412
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.a",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.421
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.b",
+        "kind": "gate",
+        "nodes": 3,
+        "edges": 2,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.43
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.s",
+        "kind": "subsystem",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.427
+      },
+      {
+        "case": "synthetic-index",
+        "instance": "top.w",
+        "kind": "wire",
+        "nodes": 4,
+        "edges": 4,
+        "native_double_click": true,
+        "reload": true,
+        "seconds": 0.435
+      }
+    ],
+    "faults": [
+      {
+        "phase": "prepare",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      },
+      {
+        "phase": "model",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      },
+      {
+        "phase": "layout",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      },
+      {
+        "phase": "render",
+        "logged": true,
+        "retry_passed": true,
+        "main_unchanged": true
+      }
+    ],
+    "active_cursor": true,
+    "cycles": 5,
+    "fd_counts": [
+      9,
+      9,
+      9,
+      9,
+      9,
+      9
+    ],
+    "rss_kib": [
+      52444,
+      52444,
+      52444,
+      52444,
+      52444
+    ],
+    "errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "sqlite": "3.7.17",
+    "tk": "8.5.13",
+    "nested_after_main_switch": true
+  },
+  "large": {
+    "clock": {
+      "nodes": 3,
+      "edges": 4,
+      "reference_nodes": 2,
+      "reference_edges": 2,
+      "original_unchanged": true,
+      "native_double_click": true,
+      "independent_navigation": true,
+      "main_result_switch": true
+    },
+    "reset": {
+      "nodes": 3,
+      "edges": 4,
+      "reference_nodes": 2,
+      "reference_edges": 2,
+      "original_unchanged": true,
+      "native_double_click": true,
+      "independent_navigation": true,
+      "main_result_switch": true
+    },
+    "large_npi": {
+      "source_instances": 8195,
+      "branch_instances": 2,
+      "branch_edges": 1,
+      "open_seconds": 0.2969562970029074
+    },
+    "stress": {
+      "nodes": 100000,
+      "edges": 99999,
+      "boxes": 2,
+      "open_seconds": 5.585426993005967
+    },
+    "cancelled_preparation": true,
+    "repeated_windows": {
+      "count": 5,
+      "rss_kib": [
+        78480,
+        78480,
+        78480,
+        78480,
+        78480
+      ],
+      "private_indexes_removed": true
+    },
+    "passed": true,
+    "callback_errors": [],
+    "python": "3.6.8 (default, Nov 14 2023, 16:29:52) \n[GCC 4.8.5 20150623 (Red Hat 4.8.5-44)]",
+    "tk": "8.5.13",
+    "main_exit_released_branches": true
+  },
+  "cursor_reproduction": {
+    "before": {
+      "passed": false,
+      "error": "database table is locked"
+    },
+    "after": {
+      "passed": true,
+      "edges": [
+        "0",
+        "2"
+      ]
+    }
+  }
+}

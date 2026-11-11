@@ -39,7 +39,9 @@ def indexed_paths(model, instance, direction, seed_pins=None, cancel=None):
     except BaseException:
         conn.execute('DROP TABLE '+name)
         raise
-    finally:conn.execute('DROP TABLE '+name+'_queue')
+    finally:
+        node.cache_clear()
+        conn.execute('DROP TABLE '+name+'_queue')
 
 
 def trim_wire(node, inputs, outputs, keep_all=False):

@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.10 · 更新日期：2026-11-12 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.11 · 更新日期：2026-11-12 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 的分析功能可切换 <strong>时钟树 / 复位树</strong>。时钟树支持 MUX、门控、OCC、DIV、SUBSYSTEM；复位树支持 MUX、RSY_SYNC、SUBSYSTEM。SUBSYSTEM 为只有输入的子系统模型，必须在器件编辑期间从 elab 读取端口、筛选并确认。两种分析均默认两级，可自定义层数，分别保存配置草稿、结果和搜索历史。完整新操作见 <a href="#workbench-v3">第 30 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -1714,7 +1714,10 @@ bash clocktree.sh gui
 <li>通过右侧“展开 / 收起总线各位”查看子系统的逐位输入。双击 RTL 虚线聚合框仍是展开层次；先展开到具体器件，再双击开分支窗口。</li>
 <li>大分支先显示概览，所有真实实例及连线仍保存在分支索引中，可搜索、展开和翻组。“导出当前视图 SVG”导出当前显示范围，概览导出仍为聚合图。</li>
 <li>在分支窗口再次双击器件，可继续打开另一个窗口；新窗口从最初的完整结果查找该器件的分支。关闭任一分支窗口不会关闭主画布或其他分支窗口。准备中关闭窗口会取消准备并清理临时数据。</li>
+<li>若新窗口为空并提示加载失败，查看右侧的<strong>失败阶段、实例、原因及日志路径</strong>。程序分别捕获分支准备、画布加载、布局和画布绘制异常，不会只留下没有原因的空白画布。鼠标移过画布不会覆盖这条错误提示。</li>
+<li>排除临时故障后点击上方 <strong>“重新加载分支”</strong>。工具释放这个窗口的旧快照与布局任务，从原始提取结果重新建立分支；主画布和其他分支窗口保留。此操作不会重新提取 elab，也不要求重新运行 Verdi。</li>
 </ol>
+<p>每个分支窗口的独立日志位于 GUI 日志目录下的 <code>branches/&lt;窗口标识&gt;/</code>，包含 <code>branch.log</code>、<code>branch-events.jsonl</code> 和 <code>branch-status.json</code>。右侧显示实际日志文件路径；完整异常堆栈保存在事件文件中。关闭窗口后日志保留，分支临时数据库会清理。需要反馈故障时，提供右侧的失败原因和该窗口的日志即可，无需发送商业 RTL。</p>
 <p>此操作只读取已经提取的结果，不启动 Verdi。窗口打开时建立独立分支快照，缺失连接不会被补画。临时分支窗口不写入启动恢复记录；重开工具仍恢复原主画布配置及结果。</p>
 <p><a class="figure" href="images/branch-canvas.png" target="_blank"><img alt="双击打开的独立分支画布" src="images/branch-canvas.png" /></a></p>
 <h3 id="304">30.4 搜索历史与布局偏好</h3>

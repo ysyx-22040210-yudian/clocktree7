@@ -74,6 +74,9 @@ class ClockDiagram(tk.Frame):
         self.family = font_family
         self.on_node, self.on_edge, self.on_view, self.on_hover = on_node, on_edge, on_view, on_hover
         self.on_branch = on_branch
+        self.on_layout_error = None
+        self.on_render_error = None
+        self.empty_message = None
         self.model = None
         self.tree_type = 'clock'
         self.mode, self.component, self.scope, self.depth = 'instances', None, '', 5
@@ -187,9 +190,11 @@ class ClockDiagram(tk.Frame):
             try:
                 data=job.result()
             except Exception as error:
+                self.cancel_layout()
                 self.on_hover('布局失败：'+str(error))
                 self._stage('failed','layout',str(error))
-                self.cancel_layout();return
+                if self.on_layout_error:self.on_layout_error(error)
+                return
             job.close();self._layout_job=None;self.layout_pending=False
             self._layout_cache[cache_key]=data
             while len(self._layout_cache)>3 or sum(len(v['positions'])+len(v['routes']) for v in self._layout_cache.values())>30000:
@@ -199,6 +204,7 @@ class ClockDiagram(tk.Frame):
 
     def load(self, graph):
         self.cancel_layout(restore=False)
+        self.empty_message = None
         self._committed_view=None
         self._layout_cache.clear()
         self.tree_type = tree_type(graph.get('config', graph))
@@ -221,6 +227,8 @@ class ClockDiagram(tk.Frame):
 
     def clear(self, mode='clock'):
         self.cancel_layout(restore=False)
+        self._record_first_paint=False
+        self.empty_message=None
         self._committed_view=None
         self._layout_cache.clear()
         self.scene.reset()
@@ -483,12 +491,16 @@ class ClockDiagram(tk.Frame):
         return x*self.scale+self.ox, y*self.scale+self.oy
 
     def paint(self):
-        record=self._record_first_paint
+        record=self._record_first_paint and self.model is not None
         self._record_first_paint=False
         if record:self._stage('begin','canvas','绘制新的架构视图',boxes=len(self.model.nodes))
         try:self._paint()
         except BaseException as error:
             if self.runtime_journal:self.runtime_journal.fail(error)
+            if isinstance(error,Exception) and self.on_render_error:
+                self._pending=None
+                self.on_render_error(error)
+                return
             raise
         if record:
             self._stage('end','canvas','架构视图绘制完成',visible_nodes=self.visible_nodes)
@@ -497,7 +509,7 @@ class ClockDiagram(tk.Frame):
     def _paint(self):
         self._pending = None
         if self.layout_pending:return
-        if self.model:
+        if self.model and not self.empty_message:
             self.scene.paint()
             if not self._zoom_active and hasattr(self,'_zoom_last'):
                 self.canvas.update_idletasks()
@@ -509,10 +521,10 @@ class ClockDiagram(tk.Frame):
         self.rendered_nodes, self.rendered_wires = {}, {}
         self.port_tooltips = {}
         cw, ch = c.winfo_width(), c.winfo_height()
-        if not self.model:
-            c.create_text(cw/2, ch/2-24, text='RTL RESET ARCHITECTURE' if self.tree_type=='reset' else 'RTL CLOCK ARCHITECTURE', fill='#8ea9ce', font=(self.family, 18, 'bold'))
-            c.create_text(cw/2, ch/2+14, text='默认两级 · 可添加层级 · 配置规则后开始提取', fill='#617d9f', font=(self.family, 11))
-            return
+        title,detail=self.empty_message or ('RTL RESET ARCHITECTURE' if self.tree_type=='reset' else 'RTL CLOCK ARCHITECTURE',
+                                            '默认两级 · 可添加层级 · 配置规则后开始提取')
+        c.create_text(cw/2, ch/2-24, text=title, fill='#8ea9ce', font=(self.family, 18, 'bold'))
+        c.create_text(cw/2, ch/2+14, text=detail, fill='#617d9f', font=(self.family, 11),width=max(100,cw-60))
     def _hit(self, x, y):
         candidates = self.canvas.find_overlapping(x-4, y-4, x+4, y+4)
         for item in reversed(candidates):

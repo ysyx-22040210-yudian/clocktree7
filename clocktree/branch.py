@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import threading
+import traceback
 
 from .storage import IndexedGraph, ResultStore
 
@@ -69,6 +70,7 @@ def _indexed_branch(model, node, cancel):
     instance, seed_pins = branch_seed(node)
     temporary = tempfile.TemporaryDirectory(prefix='ct7-branch-')
     store = None
+    reader = None
     try:
         store = BranchStore(Path(temporary.name)/'branch.sqlite3', model.store)
         store.temporary = temporary
@@ -82,9 +84,20 @@ def _indexed_branch(model, node, cancel):
         has_wire=conn.execute("SELECT 1 FROM origin.nodes WHERE kind='wire' LIMIT 1").fetchone()
         if has_wire:
             from .connectivity import indexed_paths
+            from .indexed_view import IndexedGraphView
+            # A branch owns its traversal connection. Reusing the caller's
+            # connection can make DROP TEMP TABLE collide with a live cursor;
+            # worker-local connections on that shared store also outlive jobs.
+            reader = ResultStore(model.store.path)
+            source = reader.graph()
+            for field in ('config', 'presentation'):
+                if field in model.graph:source[field] = model.graph[field]
+            traversal = IndexedGraphView(source)
             for direction in ('upstream','downstream'):
-                selection=indexed_paths(model,instance,direction,seed_pins,cancel)
-                conn.executemany('INSERT OR IGNORE INTO picked_edges VALUES(?)', model.store.connection().execute(selection.sql,selection.params))
+                selection=indexed_paths(traversal,instance,direction,seed_pins,cancel)
+                rows=reader.connection().execute(selection.sql,selection.params)
+                try:conn.executemany('INSERT OR IGNORE INTO picked_edges VALUES(?)', rows)
+                finally:rows.close()
                 del selection
         for direction in (() if has_wire else ('upstream', 'downstream')):
             check_cancel(cancel)
@@ -155,6 +168,8 @@ def _indexed_branch(model, node, cancel):
         if isinstance(error, sqlite3.OperationalError):
             check_cancel(cancel)
         raise
+    finally:
+        if reader is not None:reader.close()
 
 
 def build_branch(model, node, cancel=None):
@@ -192,6 +207,7 @@ class BranchJob:
         self.done = threading.Event()
         self.lock = threading.Lock()
         self.result = self.error = None
+        self.error_detail = None
         def worker():
             graph = None
             try:
@@ -203,6 +219,7 @@ class BranchJob:
                 pass
             except Exception as error:
                 self.error = str(error)
+                self.error_detail = traceback.format_exc()
             finally:
                 if graph is not None:
                     close_branch(graph)

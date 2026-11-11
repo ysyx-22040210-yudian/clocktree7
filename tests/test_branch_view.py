@@ -122,3 +122,83 @@ def test_branch_of_branch_keeps_original_lazy_evidence_after_parent_closed(tmp_p
         assert list(next(iter(second['edges']))['evidence']['driver']) == fixture()['edges'][0]['evidence']['driver']
     finally:
         close_branch(second)
+
+
+def wire_fixture():
+    graph = fixture()
+    wire = next(n for n in graph['nodes'] if n['id'] == 'side')
+    wire.update(kind='wire', output=None, outputs=['o'],
+                internal_connections=[dict(input='i', output='o', status='verified')])
+    return graph
+
+
+def test_wire_branch_does_not_share_callers_active_sql_cursor(tmp_path):
+    model = model_for(wire_fixture(), tmp_path, True)
+    # The caller can be iterating an indexed result while a branch is requested.
+    rows = model.store.connection().execute('SELECT id FROM nodes ORDER BY id')
+    assert rows.fetchone()
+    branch = None
+    try:
+        branch = build_branch(model, model.original['x'])
+        assert {e['id'] for e in branch['edges']} == set(map(str, range(7)))
+        assert rows.fetchone(), 'Preparing a branch must not close the caller cursor'
+    finally:
+        rows.close(); close_branch(branch)
+
+
+def test_wire_branch_worker_leaves_no_source_connection_or_temp_tables(tmp_path):
+    model = model_for(wire_fixture(), tmp_path, True)
+    before = list(model.store.connection().execute('SELECT name FROM sqlite_temp_master'))
+    worker_connections = []
+    original_connection = model.store.connection
+    def observe():
+        conn = original_connection()
+        if threading.current_thread() is not threading.main_thread():
+            worker_connections.append(conn)
+        return conn
+    model.store.connection = observe
+    job = BranchJob(model, model.original['x'])
+    assert job.done.wait(10)
+    graph, error = job.take()
+    try:
+        assert error is None
+        assert not worker_connections, 'Branch preparation must own its read connection'
+        assert list(model.store.connection().execute('SELECT name FROM sqlite_temp_master')) == before
+    finally:
+        job.close(); close_branch(graph)
+
+
+def test_wire_branch_cancel_mid_traversal_cleans_private_files(tmp_path, monkeypatch):
+    import clocktree.branch as branch_module
+    import clocktree.connectivity as connectivity
+    model = model_for(wire_fixture(), tmp_path, True)
+    cancel = threading.Event()
+    temporary_paths = []
+    real_directory = branch_module.tempfile.TemporaryDirectory
+    def directory(*args, **kwargs):
+        result = real_directory(*args, **kwargs)
+        temporary_paths.append(result.name)
+        return result
+    monkeypatch.setattr(branch_module.tempfile, 'TemporaryDirectory', directory)
+    allowed = connectivity.allowed_pins
+    def stop(node, direction, arrival=None):
+        cancel.set()
+        return allowed(node, direction, arrival)
+    monkeypatch.setattr(connectivity, 'allowed_pins', stop)
+    with pytest.raises(BranchCancelled):
+        build_branch(model, model.original['x'], cancel)
+    from pathlib import Path
+    assert temporary_paths and all(not Path(path).exists() for path in temporary_paths)
+    assert len(model.original) == 9
+
+
+def test_wire_branch_evidence_survives_private_reader_and_parent_snapshot(tmp_path):
+    model = model_for(wire_fixture(), tmp_path, True)
+    first = build_branch(model, model.original['x'])
+    child = build_branch(IndexedGraphView(first), next(n for n in first['nodes'] if n['id']=='y'))
+    close_branch(first)
+    try:
+        evidence = next(iter(child['edges']))['evidence']['driver']
+        assert evidence.store is model.store
+        assert list(evidence) == fixture()['edges'][0]['evidence']['driver']
+    finally:close_branch(child)

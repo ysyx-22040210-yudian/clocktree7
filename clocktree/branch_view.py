@@ -2,6 +2,8 @@
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
+import traceback
+import uuid
 
 from .branch import BranchJob, close_branch
 from .devices import connection_details, connection_label, kind_label, auxiliary_details, wire_details
@@ -19,6 +21,10 @@ class BranchDialog(tk.Toplevel):
         self.closed = False
         self._poll_id = None
         self._initial_selection = True
+        self.job = None
+        self.load_error = None
+        from .runtime import RunJournal
+        self.journal = RunJournal(app.gui_journal.directory/'branches'/uuid.uuid4().hex, prefix='branch')
         self._matches, self._match_index = [], -1
         self.family = app.family
         instance = node.get('reference_of', node['id'])
@@ -42,6 +48,8 @@ class BranchDialog(tk.Toplevel):
         ttk.Button(toolbar, text='+', width=3, command=lambda:self.diagram.zoom(1.2)).pack(side='left', padx=4)
         ttk.Button(toolbar, text='适配分支', command=lambda:self.diagram.fit()).pack(side='left')
         ttk.Button(toolbar, text='返回分支全图', command=lambda:self.diagram.reset_scope()).pack(side='left', padx=4)
+        self.retry_button = ttk.Button(toolbar, text='重新加载分支', command=self.reload_branch)
+        self.retry_button.pack(side='left', padx=4)
         self.mode = tk.StringVar(value='实例明细')
         combo = ttk.Combobox(toolbar, textvariable=self.mode, values=['实例明细', 'RTL 层次概览'], state='readonly', width=14)
         combo.pack(side='left', padx=4); combo.bind('<<ComboboxSelected>>', self.change_mode)
@@ -68,6 +76,10 @@ class BranchDialog(tk.Toplevel):
                                     on_branch=lambda chosen:app.open_branch(chosen, source_model))
         self.diagram.pack(fill='both', expand=True)
         self.diagram.layout_mode = 'branch'
+        self.diagram.runtime_journal = self.journal
+        self.diagram.runtime_context = {'instance':instance, 'window':'branch'}
+        self.diagram.on_layout_error = lambda error:self.load_failed('布局', error, traceback.format_exc())
+        self.diagram.on_render_error = lambda error:self.load_failed('画布绘制', error, traceback.format_exc())
         ttk.Label(inspector, text='分支内属性与连接', font=(self.family, 11, 'bold')).pack(anchor='w', pady=(0, 6))
         buttons = ttk.Frame(inspector); buttons.pack(fill='x')
         self.upstream = ttk.Button(buttons, text='上游', command=lambda:self.jump_neighbour('upstream'), state='disabled')
@@ -89,8 +101,50 @@ class BranchDialog(tk.Toplevel):
         self.protocol('WM_DELETE_WINDOW', self.close)
         self.bind('<Destroy>', self._destroyed, add='+')
         # No grab: the original canvas and other branch windows remain usable.
-        self.job = BranchJob(source_model, self.seed)
-        self._poll_id = self.after(30, self._poll)
+        self.reload_branch()
+
+    def reload_branch(self):
+        if self.closed:return
+        if self._poll_id is not None:
+            self.after_cancel(self._poll_id); self._poll_id = None
+        if self.job is not None:self.job.close()
+        self.diagram.clear(self.source_model.tree_type)
+        self.diagram.empty_message = ('正在准备分支…','只读取现有结果；关闭此窗口可以取消')
+        if self.graph is not None:close_branch(self.graph)
+        self.graph = None
+        self.selected_object = None
+        self._matches, self._match_index = [], -1
+        self._initial_selection = True
+        self.load_error = None
+        self.upstream.configure(state='disabled'); self.downstream.configure(state='disabled')
+        self.expand_button.configure(state='disabled')
+        self.prev.configure(state='disabled'); self.next.configure(state='disabled')
+        self.details.configure(state='normal'); self.details.delete('1.0','end'); self.details.configure(state='disabled')
+        self.retry_button.configure(state='disabled')
+        self.counts.set('正在准备分支… 可关闭窗口取消')
+        self.set_status('正在读取此器件的全部上游和下游连接…')
+        context={'instance':self.seed.get('reference_of',self.seed['id']), 'inputs':self.seed.get('inputs',[]),
+                 'source_index':str(self.source_model.store.path) if hasattr(self.source_model,'store') else 'JSON'}
+        self.journal.emit('begin','load','准备独立分支',context)
+        try:
+            self.job = BranchJob(self.source_model, self.seed)
+            self._poll_id = self.after(30, self._poll)
+        except Exception as error:self.load_failed('分支准备',error,traceback.format_exc())
+
+    def load_failed(self, stage, error, detail=None):
+        if self.closed:return
+        self.load_error = '{}失败：{}；可点击“重新加载分支”，详情见右侧。'.format(stage,str(error)[:180])
+        self.diagram.empty_message = ('分支加载失败',stage+'阶段失败；右侧查看原因，点击上方“重新加载分支”重试')
+        self.diagram.schedule()
+        self.counts.set('分支加载失败 · '+stage)
+        self.retry_button.configure(state='normal')
+        self.set_status(self.load_error)
+        text='失败阶段：{}\n实例：{}\n原因：{}\n\n日志：{}\n\n{}'.format(stage,
+             self.seed.get('reference_of',self.seed['id']),error,self.journal.log_file,detail or str(error))
+        self.details.configure(state='normal'); self.details.delete('1.0','end')
+        self.details.insert('1.0',text); self.details.configure(state='disabled')
+        self.journal.emit('failed',{'布局':'layout','画布绘制':'canvas'}.get(stage,'load'),str(error),
+                          {'instance':self.seed.get('reference_of',self.seed['id']), 'phase':stage},traceback=detail or '')
 
     def _poll(self):
         self._poll_id = None
@@ -100,19 +154,24 @@ class BranchDialog(tk.Toplevel):
             self._poll_id = self.after(40, self._poll); return
         graph, error = self.job.take()
         if error:
-            self.counts.set('分支准备失败'); self.set_status(error); return
+            self.load_failed('分支准备',error,self.job.error_detail); return
         if graph is None:
-            self.counts.set('已取消分支准备'); return
+            self.counts.set('已取消分支准备'); self.retry_button.configure(state='normal'); return
         self.graph = graph
-        self.diagram.load(graph)
+        self.journal.emit('end','load','分支记录已准备',{'instances':len(graph['nodes']),'edges':len(graph['edges'])})
+        try:self.diagram.load(graph)
+        except Exception as error:
+            self.diagram.cancel_layout(restore=False)
+            self.load_failed('画布加载',error,traceback.format_exc()); return
+        self.retry_button.configure(state='normal')
         self.set_status('滚轮缩放 · 拖动平移 · 双击器件可再开分支画布 · 主画布保留')
 
     def set_status(self, text):
         if not self.closed:
-            self.status.set(text)
+            self.status.set(self.load_error or text)
 
     def view_changed(self, info):
-        if self.graph is None:
+        if self.graph is None or self.load_error:
             return
         self.mode.set('RTL 层次概览' if info['mode'] == 'hierarchy' else '实例明细')
         self.counts.set('本分支 {:,} 个真实实例 / {:,} 条真实连接 · 当前 {:,} 个图元 · 缩放 {:.0f}% · 第 {}/{} 组{}'.format(
@@ -128,7 +187,7 @@ class BranchDialog(tk.Toplevel):
                 self.diagram.select(chosen)
 
     def change_mode(self, event=None):
-        if self.diagram.model:
+        if self.diagram.model and not self.load_error:
             self.diagram.mode = 'hierarchy' if self.mode.get() == 'RTL 层次概览' else 'instances'
             self.diagram.rebuild()
 
@@ -258,7 +317,7 @@ class BranchDialog(tk.Toplevel):
         self.closed = True
         if self._poll_id is not None:
             self.after_cancel(self._poll_id); self._poll_id = None
-        self.job.close()
+        if self.job is not None:self.job.close()
         self.diagram.cancel_layout(restore=False)
         # Widget callback cycles can otherwise be collected by the next SQL
         # worker, which would run StringVar finalizers outside the Tk thread.
@@ -267,6 +326,8 @@ class BranchDialog(tk.Toplevel):
             setattr(self, name, None)
         self.diagram.on_node = self.diagram.on_edge = self.diagram.on_view = self.diagram.on_hover = lambda *args: None
         self.diagram.on_branch = None
+        self.diagram.on_layout_error = None
+        self.diagram.on_render_error = None
         self.diagram._committed_view = None
         self.diagram._layout_cache.clear()
         self.diagram.model = None
@@ -275,3 +336,4 @@ class BranchDialog(tk.Toplevel):
             close_branch(self.graph)
         self.graph = None
         self.source_model = None
+        self.journal.emit('finished','display','分支窗口已关闭',clean_shutdown=True)

@@ -93,6 +93,20 @@ proc cr_expr {h {depth 0}} {
 proc cr_location {h} {
     return [list type [ct_js [cr_prop $h npiType]] file [ct_js [cr_prop $h npiFile]] line [cr_int $h npiLineNo]]
 }
+proc cr_case_items {h child} {
+    # Only this case's labels, in source priority order; never its statement
+    # bodies. Empty npiExpr is the documented default item.
+    set items {};set it [npi_iterate -type npiCaseItem -refHandle $h]
+    if {$it ne ""} {
+        while {[set item [npi_scan -iterator $it]] ne ""} {
+            set expressions {};set labels [npi_iterate -type npiExpr -refHandle $item]
+            if {$labels ne ""} {while {[set label [npi_scan -iterator $labels]] ne ""} {lappend expressions [cr_expr $label]}}
+            set selected [expr {[npi_compare_objects -object1 $item -object2 $child] ? "true" : "false"}]
+            lappend items [ct_object selected $selected expressions [ct_array $expressions]]
+        }
+    }
+    return [ct_array $items]
+}
 proc cr_ancestors {use} {
     set result {};set child $use;set h [cr_handle $child npiUpperStmt];set seen [dict create]
     while {$h ne "" && ![dict exists $seen $h]} {
@@ -107,6 +121,9 @@ proc cr_ancestors {use} {
             if {$yes ne "" && [npi_compare_objects -object1 $yes -object2 $child]} {set branch true}
             if {$no ne "" && [npi_compare_objects -object1 $no -object2 $child]} {set branch false}
             lappend fields branch [ct_js $branch]
+        }
+        if {$type eq "npiCase"} {
+            lappend fields case_type [ct_js [cr_prop $h npiCaseType]] case_items [cr_case_items $h $child]
         }
         lappend result [ct_object {*}$fields]
         set child $h;set h [cr_handle $h npiUpperStmt]

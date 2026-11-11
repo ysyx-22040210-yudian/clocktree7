@@ -81,7 +81,7 @@ class Flow:
         except (MappingError,QueryError):return None
         finally:self.active_constants.remove(name)
 
-    def enabled(self,row):
+    def enabled(self,row,sequential_data=False):
         conditional=False
         for parent in row.get('ancestors',[]):
             kind=parent['type']
@@ -91,6 +91,14 @@ class Flow:
                 value=self.expr.condition(parent.get('condition')).value
                 if value is not None and bool(value)!=(branch=='true'):return False,conditional
                 conditional=conditional or value is None
+            elif kind=='npiCase' and sequential_data:
+                value=self.expr.case_enabled(parent)
+                if value is False:return False,conditional
+                conditional=conditional or value is None
+            elif kind=='npiCaseItem' and sequential_data:
+                # The owner case records this item and the earlier alternatives.
+                if not any(p['type']=='npiCase' for p in row.get('ancestors',[])):
+                    raise MappingError('unavailable_case_branch')
             elif kind in ('npiCase','npiCaseItem','npiFor','npiWhile','npiRepeat','npiForeachStmt','npiWait','npiDelayControl'):
                 raise MappingError('unsupported_procedural_control:'+kind)
             elif kind=='npiInitial':raise MappingError('initial_is_not_sequential_storage')
@@ -155,8 +163,8 @@ class Flow:
         if not contains(self.root,row.get('scope','')):
             yield {'status':'boundary','reason':'query_scope_outside_root','endpoint':name,'evidence':row};return
         kind=row['statement']['type'];proof=sequential_proof(row)
-        if direction=='load' and kind=='npiEventControl':
-            # Clock/sensitivity-list references are not register data inputs.
+        if direction=='load' and kind in ('npiEventControl','npiCase','npiCaseItem','npiIf','npiIfElse'):
+            # Clock/sensitivity and selector/enable uses are not data inputs.
             yield {'status':'pruned'};return
         if kind=='npiAssignment' and direction=='driver' and (proof or latch):
             if name not in self.expr.names(row.get('lhs')):raise MappingError('driver_lhs_bit_mismatch')
@@ -169,7 +177,7 @@ class Flow:
                 for expr in row.get('signals',[]):
                     for target in self.expr.names(expr):yield {'next':target,'relation':'inverted' if primitive=='npiNotPrim' else 'direct','evidence':row}
                 return
-        enabled,conditional=self.enabled(row)
+        enabled,conditional=self.enabled(row,sequential_data=direction=='load' and kind=='npiAssignment' and bool(proof))
         if not enabled:yield {'status':'pruned'};return
         lhs,rhs=assignments(row)
         if not rhs:

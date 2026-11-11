@@ -86,6 +86,62 @@ class Expressions:
         try:return truth(self.vector(expr))
         finally:self.resolving_condition=previous
 
+    def case_enabled(self,case):
+        """Tri-state feasibility of the containing item, including first match.
+
+        Unknown runtime selectors are write enables, not unknown data lanes.
+        Still prune items excluded by DFT assumptions or earlier definite matches.
+        Keep literal X/Z distinct here; the data-flow Bit model is two-state.
+        """
+        kind=case.get('case_type');items=case.get('case_items',[])
+        selected=[i for i,item in enumerate(items) if item.get('selected')]
+        if kind not in ('npiCaseExact','npiCaseX','npiCaseZ') or len(selected)!=1:
+            raise MappingError('unavailable_case_branch')
+        operands=[case.get('condition')]+[expr for item in items for expr in item.get('expressions',[])]
+        if any(not expr or expr.get('width',0)<1 for expr in operands):raise MappingError('unknown_case_width')
+        width=max(expr['width'] for expr in operands);signed=all(expr.get('signed',False) for expr in operands)
+        def bits(expr):
+            if expr.get('type') in ('npiExtRef','npiRefObj'):return bits(expr.get('actual') or {})
+            if expr.get('type') in ('npiConstant','npiParameter','npiParameterBit','npiGenVar'):
+                value=expr.get('value','').lower().replace('_','').replace('?','z')
+                text=expr.get('text','').strip().lower()
+                if expr.get('type')=='npiConstant' and text in ("'0","'1","'x","'z"):
+                    return [text[-1]]*width
+                # Verdi 2018 decompiles both '1 and 1'b1 as 'b1 and reports
+                # width=1. Their extension differs in a wider unsigned case.
+                # Do not choose a branch using information the API has lost.
+                if expr.get('type')=='npiConstant' and expr.get('width')==1 and width>1 and not signed and text in ("'b1","'bx","'bz"):
+                    raise MappingError('ambiguous_case_literal_extension')
+                if value and all(c in '01xz' for c in value):
+                    values=list(reversed(value));size=expr.get('width',len(values))
+                    values=(values+[values[-1] if expr.get('signed') else '0']*max(0,size-len(values)))[:size]
+                    return (values+[values[-1] if signed else '0']*max(0,width-len(values)))[:width]
+            try:return [str(bit.value) if bit.value is not None else None for bit in self.vector(expr,width,context_signed=signed)]
+            except MappingError:return [None]*width
+        def matches(left,right):
+            unknown=False
+            for a,b in zip(left,right):
+                wild=('x','z') if kind=='npiCaseX' else ('z',) if kind=='npiCaseZ' else ()
+                if a in wild or b in wild:continue
+                if a is None or b is None:unknown=True
+                elif a!=b:return False
+            return None if unknown else True
+        previous=self.resolving_condition;self.resolving_condition=True
+        try:
+            selector=bits(operands[0]);results=[]
+            for item in items:
+                comparisons=[matches(selector,bits(expr)) for expr in item.get('expressions',[])]
+                results.append(True if True in comparisons else None if None in comparisons else False)
+            index=selected[0]
+            if not items[index].get('expressions'):
+                if True in results:return False
+                return None if None in results else True
+            # A default item never preempts an explicit match, even when it is
+            # textually first. A preceding explicit match does preempt it.
+            if results[index] is False or True in results[:index]:return False
+            return None if results[index] is None or None in results[:index] else True
+        finally:self.resolving_condition=previous
+
     def assumed(self,name):
         # A bare identifier matches that exact leaf name, never a substring.
         base=re.sub(r'\[-?\d+\]$','',name)

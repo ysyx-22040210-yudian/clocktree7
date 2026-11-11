@@ -338,6 +338,7 @@ class ClockDiagram(tk.Frame):
             key=chosen['id']
             x,y,w,h=self.model.positions[key]
             self.scale=min(1.05,max(.7,self.canvas.winfo_width()/1100))
+            if chosen.get('kind')=='wire':self.scale=min(self.scale,max(.02,(self.canvas.winfo_height()-48)/h))
             self.ox=self.canvas.winfo_width()/2-(x+w/2)*self.scale
             self.oy=self.canvas.winfo_height()/2-(y+h/2)*self.scale
             self.select(chosen,target=target);self.notify()
@@ -409,6 +410,8 @@ class ClockDiagram(tk.Frame):
                 for key in members:
                     self.highlights.update(e['id'] for e in self.model.incoming[key] + self.model.outgoing[key])
         self.schedule()
+        if node.get('kind')=='wire' and self.selection_target.get('pin'):
+            node=dict(node,_focus_pin=self.selection_target['pin'])
         self.on_node(node)
 
     def trace(self, direction):
@@ -416,7 +419,16 @@ class ClockDiagram(tk.Frame):
         actual=selected.get('reference_of',self.selected)
         if self.model and actual in self.model.original:
             self._branch_highlight=True
-            if selected.get('reference_of') and selected.get('kind')=='subsystem':
+            if selected.get('kind')=='wire' and (self.selection_target or {}).get('pin'):
+                from .connectivity import focused_pins
+                focused=dict(selected,_focus_pin=self.selection_target['pin'])
+                selections=[self.model.path_edges(actual,d,seed_pins=focused_pins(focused,d)) for d in (('upstream','downstream') if direction=='branch' else (direction,))]
+                if hasattr(self.model,'store'):
+                    from .indexed_view import SQLSelection
+                    self.highlights=SQLSelection(self.model.store,' UNION '.join(s.sql for s in selections))
+                    self.highlights.owners=selections
+                else:self.highlights=set().union(*selections)
+            elif selected.get('reference_of') and selected.get('kind')=='subsystem':
                 self.highlights = self.model.path_edges(actual,'upstream',seed_pins=selected['inputs']) if direction!='downstream' else set()
             elif direction == 'branch':
                 if hasattr(self.model,'branch_edges'):self.highlights=self.model.branch_edges(actual)

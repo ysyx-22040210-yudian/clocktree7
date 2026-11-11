@@ -1,7 +1,7 @@
 """Presentation of the complete graph; aggregation never changes the source graph."""
 from collections import Counter, defaultdict, deque
 from xml.sax.saxutils import escape, quoteattr
-from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg, pin_index
+from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg, pin_index, output_offset
 from .profiles import tree_type
 
 
@@ -87,6 +87,9 @@ class GraphView:
         self.actual_count = len(actual)
         ids = {n['id'] for n in actual}
         edges = [e for e in self.graph['edges'] if e['source'] in ids and e['target'] in ids]
+        if component is not None:
+            edges=[e for e in edges if self.original[e['source']].get('kind')!='wire' or
+                   self.original[e['source']].get('output_components',{}).get(e['source_pin'],self.original[e['source']]['component'])==component]
         if mode == 'instances':
             self.nodes = {n['id']: n for n in actual}
             self.edges = edges
@@ -152,6 +155,10 @@ class GraphView:
         self.nodes, self.edges = subsystem_references(self.nodes,self.edges,
             getattr(self,'subsystem_references',True),component)
         for key,node in list(self.nodes.items()):
+            if node.get('kind')=='wire' and component is not None:
+                from .connectivity import trim_wire
+                self.nodes[key]=trim_wire(node,{p for p,c in node.get('input_components',{}).items() if c==component},
+                                         {p for p,c in node.get('output_components',{}).items() if c==component})
             if node.get('kind')=='subsystem':
                 self.nodes[key]=dict(node,expand_bus=node.get('reference_of',key) in getattr(self,'expanded_buses',set()))
 
@@ -212,7 +219,7 @@ class GraphView:
         tx, ty, tw, th = self.positions[edge['target']]
         source, target = self.nodes[edge['source']], self.nodes[edge['target']]
         index = target['inputs'].index(edge['target_pin']) if edge['target_pin'] in target['inputs'] else 0
-        _, source_output = port_offsets(source, sw, sh)
+        source_output = output_offset(source, sw, sh, edge['source_pin'])
         target_inputs, _ = port_offsets(target, tw, th)
         start = (sx + source_output[0], sy + source_output[1])
         end = (tx + target_inputs[index][0], ty + target_inputs[index][1])
@@ -242,19 +249,8 @@ class GraphView:
 
     def path_edges(self, instance, direction, seed_pins=None):
         """All upstream/downstream selected edges, without duplicating shared nodes."""
-        queue, seen, result = deque([instance]), {instance}, set()
-        adjacency = self.incoming if direction == 'upstream' else self.outgoing
-        endpoint = 'source' if direction == 'upstream' else 'target'
-        while queue:
-            current=queue.popleft()
-            for edge in adjacency[current]:
-                if current==instance and direction=='upstream' and seed_pins is not None and edge['target_pin'] not in seed_pins:continue
-                result.add(edge['id'])
-                other = edge[endpoint]
-                if other not in seen:
-                    seen.add(other)
-                    queue.append(other)
-        return result
+        from .connectivity import walk_edges
+        return {e['id'] for e in walk_edges(self, instance, direction, seed_pins)}
 
     def svg(self):
         """Export the current scope at readable world scale, retaining all projected nodes."""

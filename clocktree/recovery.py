@@ -63,7 +63,7 @@ def engine_signature():
     digest = hashlib.sha256()
     for name in ('npi/extract.tcl', 'npi/target_trace.tcl', 'npi/input_ports.tcl', 'clocktree/config.py', 'clocktree/extract.py',
                  'clocktree/memory.py', 'clocktree/trace_timeout.py', 'clocktree/trace_channel.py', 'clocktree/graph.py', 'clocktree/networks.py', 'clocktree/storage.py', 'clocktree/recovery.py',
-                 'clocktree/worker_launch.py', 'clocktree/runtime.py', 'clocktree/profiles.py', 'clocktree/devices.py', 'clocktree/auxiliary.py'):
+                 'clocktree/worker_launch.py', 'clocktree/runtime.py', 'clocktree/profiles.py', 'clocktree/devices.py', 'clocktree/auxiliary.py', 'clocktree/connectivity.py'):
         digest.update((root / name).read_bytes())
     return digest.hexdigest()
 

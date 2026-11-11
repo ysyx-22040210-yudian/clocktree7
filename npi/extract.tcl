@@ -643,11 +643,14 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
     ct_journal item_begin $register_stage $register_context "bind instance ports"
     dict set ct_instances $path $layer
     set configured_inputs $inputs
-    if {$kind eq "subsystem" && $emit && $language_handle ne ""} {
+    set configured_outputs $output
+    if {$kind in {subsystem wire} && $emit && $language_handle ne ""} {
         set inputs [ct_expand_subsystem $language_handle $inputs]
+        if {$kind eq "wire"} {set output [ct_expand_subsystem $language_handle $output npiOutput]}
     }
-    set pins $inputs
-    if {$output ne ""} {lappend pins $output}
+    set outputs [expr {$kind eq "wire" ? $output : ($output eq "" ? {} : [list $output])}]
+    set pins [concat $inputs $outputs]
+    if {$kind eq "wire"} {dict set ::ct_l_wire_inputs $path $inputs}
     if {$emit} {
         set connection_fields {}
         set connection_pins $pins
@@ -672,17 +675,19 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
             set connection_fields [list port_connections $connections]
         }
         if {[llength $auxiliary]} {lappend connection_fields aux_ports [ct_object {*}$auxiliary]}
+        if {$kind eq "wire"} {lappend connection_fields outputs [ct_strings $outputs] configured_outputs [ct_strings $configured_outputs]}
         ct_emit [ct_object event [ct_js instance] path [ct_js $path] module [ct_js $module] layer $layer \
-            inputs [ct_strings $inputs] configured_inputs [ct_strings $configured_inputs] output [expr {$output eq "" ? "null" : [ct_js $output]}] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
+            inputs [ct_strings $inputs] configured_inputs [ct_strings $configured_inputs] output [expr {$output eq "" || $kind eq "wire" ? "null" : [ct_js $output]}] kind [ct_js $kind] source [ct_js $source] {*}$connection_fields]
         if {$ct_context} {puts $ct_target_stream [list ct_target $path $module $layer $inputs $output $kind $source]}
     }
     if {$::ct_extraction_mode eq "target"} {
-        ct_l_register $path $inputs $output $emit
+        ct_l_register $path $inputs $outputs $emit
+        if {$kind eq "wire"} {ct_l_register_wire $path $outputs}
         ct_journal item_end $register_stage $register_context "language ports indexed"
         return
     }
     foreach pin $pins {
-        set role [expr {$pin eq $output ? "output" : "input"}]
+        set role [expr {$pin in $outputs ? "output" : "input"}]
         set direction [expr {$role eq "output" ? "load" : "driver"}]
         set p ""
         catch {set p [ct_pin $path $pin]}
@@ -710,6 +715,7 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
         dict set ct_pins_to_trace $ct_pin_count [list $p $direction $path $pin]
         incr ct_pin_count
     }
+    if {$kind eq "wire"} {ct_l_register_wire $path $outputs}
     ct_journal item_end $register_stage $register_context "instance ports bound"
 }
 proc ct_restore_targets {} {
@@ -804,10 +810,8 @@ proc ct_main {} {
     source $env(VERDI_HOME)/share/NPI/L1/TCL/npi_L1.tcl
     source [file join [file dirname [info script]] input_ports.tcl]
     if {$ct_extraction_mode eq "full"} {schSetPreference -detailRTL on -detailMux on -recogFSM off -expandGenBlock on}
-    if {$ct_extraction_mode eq "target"} {
-        source [file join [file dirname [info script]] target_trace.tcl]
-        ct_l_init
-    }
+    source [file join [file dirname [info script]] target_trace.tcl]
+    ct_l_init
     puts "CT7_IMPORT_BEGIN"
     flush stdout
     if {[info exists ct_elab] && $ct_elab ne ""} {
@@ -932,7 +936,8 @@ proc ct_main {} {
     if {$ct_completed_modules != $ct_total_modules} {error "Module checkpoint count does not cover all configured rules"}
     ct_journal end modules [ct_object completed_modules $ct_completed_modules instances [dict size $ct_instances]] "all module rules committed"
     unset query_groups ct_rules
-    if {$ct_extraction_mode eq "target"} {npi_release_all_handles; ct_l_cache_open}
+    if {$ct_extraction_mode eq "target"} {npi_release_all_handles}
+    ct_l_cache_open
     ct_save_checkpoint trace $query_count $ct_resume_completed_traces
     set count $ct_resume_completed_traces
     if {$count > $ct_pin_count} {error "Checkpoint trace count exceeds restored ports"}
@@ -956,8 +961,8 @@ proc ct_main {} {
         # The trace-phase entry and every preceding port already committed
         # this prefix. Avoid rewriting the same checkpoint before each port.
         ct_trace_deadline_begin $count $owner $pin $direction
-        if {$ct_extraction_mode eq "target"} {
-            ct_l_walk $owner $pin $count
+        if {$ct_extraction_mode eq "target" || $direction eq "internal"} {
+            if {$direction eq "internal"} {ct_l_walk $owner $pin $count $direction} else {ct_l_walk $owner $pin $count}
         } else {
             ct_walk $p $direction $owner $pin $count
             ct_release $p

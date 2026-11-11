@@ -4,12 +4,12 @@ import hashlib
 import json
 import sys
 from .devices import resolve_kind
-from .profiles import profile, tree_type
+from .profiles import profile, tree_type, output_ports
 from .config import hierarchy_contains
 
 
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression",
-              "trace_timeout", "trace_skipped_timeout"}
+              "trace_timeout", "trace_skipped_timeout", "wire_connection_unresolved", "unselected_wire_input"}
 
 
 def build_graph(events, config, evidence_store=None):
@@ -24,6 +24,9 @@ def build_graph(events, config, evidence_store=None):
     timeout_instances = {}
 
     def consume(trace, result):
+        if trace['direction'] == 'internal':
+            trace.setdefault('internal', []).append(dict(result))
+            return
         if result['status'] == 'sink':
             cell = result.get('cell', '')
             group = trace['sinks'].setdefault(cell, {'status': 'sink_group', 'cell': cell, 'count': 0,
@@ -66,6 +69,22 @@ def build_graph(events, config, evidence_store=None):
     def finish(trace):
         trace_keys.add((trace['instance'], trace['pin'], trace['direction']))
         boundaries.extend(trace['sinks'].values())
+        if trace['direction'] == 'internal':
+            owner, output = trace['instance'], trace['pin']
+            results = trace.get('internal', [])
+            targets = {r.get('pin') for r in results if r['status'] == 'target' and r.get('instance') == owner}
+            good = bool(results) and len(targets) == 1 and all(r['status'] == 'target' and r.get('instance') == owner for r in results)
+            if good and owner in nodes and targets.issubset(nodes[owner]['inputs']) and output in output_ports(nodes[owner]):
+                result = results[0]
+                path = result.get('path', [])
+                if 'path_id' in result:path = evidence_store.trace_path(trace['trace_id'], result['path_id'])
+                nodes[owner].setdefault('internal_connections', []).append({'input':next(iter(targets)), 'output':output,
+                    'status':'verified', 'evidence':path})
+            else:
+                statuses = sorted(set(r['status'] for r in results))
+                status = next((s for s in statuses if s in ('trace_timeout', 'trace_skipped_timeout')), 'wire_connection_unresolved')
+                boundaries.append({'instance':owner,'pin':output,'direction':'internal','status':status,
+                    'message':'穿线内部未证明唯一直接连接：'+', '.join(statuses or ['no_result']), 'candidates':sorted(targets)})
 
     trace_scope = config.get('trace_scope', '').strip().rstrip('./')
     completed = False
@@ -159,7 +178,7 @@ def build_graph(events, config, evidence_store=None):
         edge['layer_delta'] = nodes[edge['target']]['layer'] - nodes[edge['source']]['layer']
     # Raw metadata defines evidence semantics; old saved results remain dual-direction.
     target_mode = metadata.get('extraction_mode') == 'target'
-    if target_mode and any(direction != 'driver' for _, _, direction in trace_keys):
+    if target_mode and any(direction not in ('driver', 'internal') for _, _, direction in trace_keys):
         diagnostics.append({'code': 'trace_protocol', 'message': 'Target mode contains an output load trace'})
     for edge in edges.values():
         required = {'driver'} if target_mode else {'driver', 'load'}
@@ -197,9 +216,12 @@ def build_graph(events, config, evidence_store=None):
     expected_count = 0
     missing = []
     for node in nodes.values():
-        if target_mode and node.get('output') and (node['id'], node['output']) not in output_checks:
-            diagnostics.append({'code': 'pin_validation', 'instance': node['id'], 'pin': node['output'], 'status': 'missing_output_check'})
-        for pin, direction in ([] if target_mode or not node.get('output') else [(node['output'], 'load')]) + [(pin, 'driver') for pin in node['inputs']]:
+        for pin in output_ports(node):
+            if target_mode and (node['id'], pin) not in output_checks:
+                diagnostics.append({'code': 'pin_validation', 'instance': node['id'], 'pin': pin, 'status': 'missing_output_check'})
+        requests = ([] if target_mode else [(p, 'load') for p in output_ports(node)]) + [(pin, 'driver') for pin in node['inputs']]
+        if node.get('kind') == 'wire':requests += [(p, 'internal') for p in output_ports(node)]
+        for pin, direction in requests:
             expected_count += 1
             key = (node['id'], pin, direction)
             if key not in trace_keys:
@@ -210,18 +232,27 @@ def build_graph(events, config, evidence_store=None):
     from .networks import memberships
     components = memberships(nodes, edges.values(), sources.values())
     # Kahn identifies cycles without recursion limits on large SoCs.
-    degree = {node: len(incoming.get(node, ())) for node in nodes}
-    queue = deque(sorted(n for n in nodes if degree[n] == 0))
+    from .connectivity import topology, internal_pairs
+    has_wire=any(n.get('kind')=='wire' for n in nodes.values())
+    if has_wire:
+        channel_out, channel_in = topology(nodes, edges.values())
+        degree = {key:len(value) for key,value in channel_in.items()}
+        del channel_in
+    else:
+        channel_out=outgoing
+        degree={key:len(incoming.get(key,())) for key in nodes}
+    queue = deque(n for n in degree if degree[n] == 0)
     visited = 0
     while queue:
         current = queue.popleft()
         visited += 1
-        for nxt in outgoing.get(current, ()):
+        for nxt in channel_out.get(current, ()):
             degree[nxt] -= 1
             if degree[nxt] == 0:
                 queue.append(nxt)
-    if visited != len(nodes):
-        diagnostics.append({"code": "cycle_or_cycle_downstream", "instances": sorted(n for n in nodes if degree[n])})
+    if visited != len(degree):
+        diagnostics.append({"code": "cycle_or_cycle_downstream", "instances": sorted({key[0] if has_wire else key for key in degree if degree[key]})})
+    del channel_out, degree
     unresolved_count = sum(b['status'] in UNRESOLVED for b in boundaries)
     unresolved_outputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'load'}
     scope_outputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'load'}
@@ -239,7 +270,7 @@ def build_graph(events, config, evidence_store=None):
             node['port_trace_status'] = {pin: timeout_pins.get((node['id'], pin),
                 'completed' if (node['id'], pin, direction) in trace_keys else
                 ('not_requested' if target_mode and direction == 'load' else 'not_traced'))
-                for pin, direction in [(p, 'driver') for p in node['inputs']] + ([(node['output'], 'load')] if node.get('output') else [])}
+                for pin, direction in [(p, 'driver') for p in node['inputs']] + [(p, 'internal' if node.get('kind') == 'wire' else 'load') for p in output_ports(node)]}
         if node.get('kind') == 'subsystem':
             node['terminal'] = not timed_out
             node['terminal_semantics'] = 'subsystem_input'
@@ -254,9 +285,17 @@ def build_graph(events, config, evidence_store=None):
         # An unresolved input elsewhere could be a downstream branch of any
         # apparent terminal. Do not claim proven terminals on an incomplete graph.
         for node in nodes.values():
-            node['terminal'] = (not node.get('trace_timeout')) if node.get('kind') == 'subsystem' else bool(coverage_ok and not outgoing.get(node['id']) and output_checks.get((node['id'], node['output'])) == 'ok')
+            node['terminal'] = (not node.get('trace_timeout')) if node.get('kind') == 'subsystem' else bool(coverage_ok and not outgoing.get(node['id']) and output_ports(node) and all(output_checks.get((node['id'], p)) == 'ok' for p in output_ports(node)))
             node['physical_loads_checked'] = False
             node['terminal_semantics'] = 'subsystem_input' if node.get('kind') == 'subsystem' else 'selected_structure'
+    used_outputs={(e['source'],e['source_pin']) for e in edges.values() if nodes[e['source']].get('kind')=='wire'}
+    for node in nodes.values():
+        if node.get('kind') != 'wire':continue
+        pairs = internal_pairs(node)
+        node['internal_trace_status'] = {p:('verified' if any(b == p for a,b in pairs) else timeout_pins.get((node['id'],p), 'unresolved')) for p in output_ports(node)}
+        node['terminal_inputs'] = sorted({a for a,b in pairs if (node['id'], b) not in used_outputs}) if coverage_ok else []
+        node['terminal'] = bool(node['terminal_inputs'])
+        node['has_unresolved_output'] |= any(v!='verified' for v in node['internal_trace_status'].values())
     topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
     return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,
             "nodes": sorted(nodes.values(), key=lambda n: (n["layer"], n["id"])),

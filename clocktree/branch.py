@@ -79,7 +79,14 @@ def _indexed_branch(model, node, cancel):
             raise ValueError('找不到器件：' + instance)
         for table in ('picked_edges', 'picked_nodes', 'seen', 'front', 'next_front'):
             conn.execute('CREATE TEMP TABLE '+table+'(id TEXT PRIMARY KEY)')
-        for direction in ('upstream', 'downstream'):
+        has_wire=conn.execute("SELECT 1 FROM origin.nodes WHERE kind='wire' LIMIT 1").fetchone()
+        if has_wire:
+            from .connectivity import indexed_paths
+            for direction in ('upstream','downstream'):
+                selection=indexed_paths(model,instance,direction,seed_pins,cancel)
+                conn.executemany('INSERT OR IGNORE INTO picked_edges VALUES(?)', model.store.connection().execute(selection.sql,selection.params))
+                del selection
+        for direction in (() if has_wire else ('upstream', 'downstream')):
             check_cancel(cancel)
             for table in ('seen', 'front', 'next_front'):
                 conn.execute('DELETE FROM '+table)
@@ -116,12 +123,16 @@ def _indexed_branch(model, node, cancel):
         for key, data in conn.execute('SELECT id,data FROM nodes'):
             check_cancel(cancel)
             original = model.graph.present_node(json.loads(data))
-            if original.get('kind') != 'subsystem':
+            if original.get('kind') not in ('subsystem', 'wire'):
                 continue
             pins = {row[0] for row in conn.execute('SELECT target_pin FROM edges WHERE target=?', (key,))}
             if key == instance and seed_pins is not None:
                 pins.update(seed_pins)
-            trimmed = trim_subsystem(original, pins)
+            if original.get('kind')=='wire':
+                from .connectivity import trim_wire
+                outputs={row[0] for row in conn.execute('SELECT source_pin FROM edges WHERE source=?',(key,))}
+                trimmed=trim_wire(original,pins,outputs,key==instance)
+            else:trimmed = trim_subsystem(original, pins)
             conn.execute('UPDATE nodes SET data=?,kind=?,component=? WHERE id=?',
                          (json.dumps(trimmed, ensure_ascii=False), trimmed['kind'], trimmed['component'], key))
             conn.execute('DELETE FROM memberships WHERE instance=?', (key,))
@@ -129,6 +140,8 @@ def _indexed_branch(model, node, cancel):
                              ((key, c) for c in trimmed.get('components', [trimmed['component']])))
         counts = [conn.execute('SELECT COUNT(*) FROM '+table).fetchone()[0] for table in ('nodes', 'edges')]
         header = branch_header(model.graph, instance, seed_pins, *counts)
+        conn.commit()
+        conn.execute('DETACH DATABASE origin')
         store.finish(header)
         graph = store.graph()
         conn.set_progress_handler(None, 0)
@@ -152,30 +165,20 @@ def build_branch(model, node, cancel=None):
     if instance not in model.original:
         raise ValueError('找不到器件：' + instance)
     selected = set()
+    from .connectivity import walk_edges, trim_wire
     for direction in ('upstream', 'downstream'):
-        queue, seen = deque([instance]), {instance}
-        adjacency = model.incoming if direction == 'upstream' else model.outgoing
-        endpoint = 'source' if direction == 'upstream' else 'target'
-        while queue:
-            check_cancel(cancel)
-            current = queue.popleft()
-            for edge in adjacency[current]:
-                check_cancel(cancel)
-                if current == instance and direction == 'upstream' and seed_pins is not None and edge['target_pin'] not in seed_pins:
-                    continue
-                selected.add(edge['id'])
-                if edge[endpoint] not in seen:
-                    seen.add(edge[endpoint]); queue.append(edge[endpoint])
-    ids, pins, edges = {instance}, defaultdict(set), []
+        selected.update(e['id'] for e in walk_edges(model,instance,direction,seed_pins,cancel))
+    ids, pins, outputs, edges = {instance}, defaultdict(set), defaultdict(set), []
     for key in sorted(selected):
         check_cancel(cancel)
         edge = model.original_edges[key]
         edges.append(edge)
         ids.update((edge['source'], edge['target']))
         pins[edge['target']].add(edge['target_pin'])
+        outputs[edge['source']].add(edge['source_pin'])
     if seed_pins is not None:
         pins[instance].update(seed_pins)
-    nodes = [trim_subsystem(model.original[key], pins[key]) for key in sorted(ids)]
+    nodes = [trim_wire(trim_subsystem(model.original[key], pins[key]),pins[key],outputs[key],key==instance) for key in sorted(ids)]
     graph = branch_header(model.graph, instance, seed_pins, len(nodes), len(edges))
     graph.update(nodes=nodes, edges=edges,
                  boundaries=[b for b in model.graph.get('boundaries', []) if b.get('instance') in ids])

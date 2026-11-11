@@ -10,6 +10,8 @@ from .devices import connection_label
 
 
 LABELS={
+    'wire_connection_unresolved':('穿线内部未解析','核对输出是否由已配置输入直接连接；逻辑运算、常量、时序电路不作直连'),
+    'unselected_wire_input':('穿线输入未配置','把实际参与穿线的输入加入器件规则后重新提取'),
     'trace_timeout':('端口超时','检查耗时端口；可调整端口阈值后重跑'),
     'trace_skipped_timeout':('随实例跳过','本例化其他端口超时，当前端口未追踪'),
     'instance_trace_timeout':('实例超时','查看阶段日志中的超时断点'),

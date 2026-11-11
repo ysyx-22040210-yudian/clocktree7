@@ -30,8 +30,8 @@ def events():
 
 def test_reset_defaults_profiles_and_port_schema():
     assert len(empty_config('reset')['layers'])==2
-    assert type_labels(config())==['MUX','RSY_SYNC','子系统 SUBSYSTEM']
-    assert type_labels(empty_config('clock'))==['选择器','门控','OCC','DIV 分频器','子系统 SUBSYSTEM']
+    assert type_labels(config())==['MUX','RSY_SYNC','穿线','子系统 SUBSYSTEM']
+    assert type_labels(empty_config('clock'))==['选择器','门控','OCC','DIV 分频器','穿线','子系统 SUBSYSTEM']
     assert result_filename(config())=='resettree.json'
     validate_config(config())
     validate_config(config('mux',['rst_a','rst_b','rst_c']))

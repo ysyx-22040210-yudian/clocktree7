@@ -31,7 +31,7 @@ class TraceTimeouts:
             for owner, record in data['instances'].items():
                 if (not isinstance(record, dict) or record.get('instance') != owner or
                         type(record.get('trace_id')) is not int or record['trace_id'] < 1 or
-                        record.get('direction') not in ('driver', 'load') or not isinstance(record.get('pin'), str) or
+                        record.get('direction') not in ('driver', 'load', 'internal') or not isinstance(record.get('pin'), str) or
                         not record['pin'] or record.get('limit_seconds') != self.seconds or
                         type(record.get('elapsed_seconds')) not in (int, float) or
                         not math.isfinite(record['elapsed_seconds']) or record['elapsed_seconds'] < self.seconds):
@@ -74,7 +74,7 @@ class TraceTimeouts:
             return None
         if (data.get('state') not in ('active', 'complete') or type(data.get('trace_id')) is not int or
                 data['trace_id'] < 1 or not isinstance(data.get('instance'), str) or not data['instance'] or
-                not isinstance(data.get('pin'), str) or not data['pin'] or data.get('direction') not in ('driver', 'load')):
+                not isinstance(data.get('pin'), str) or not data['pin'] or data.get('direction') not in ('driver', 'load', 'internal')):
             raise ValueError('Invalid worker trace deadline status')
         key = tuple(data[k] for k in ('trace_id', 'instance', 'pin', 'direction'))
         if data['trace_id'] <= self.acknowledged:

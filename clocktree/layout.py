@@ -1,7 +1,7 @@
 """Deterministic branch layout and orthogonal routing; no Tk or EDA imports."""
 from collections import defaultdict, deque
 
-from .devices import node_height, port_offsets, pin_index
+from .devices import node_height, port_offsets, pin_index, output_offset
 
 
 WIDTH, STEP = 382, 466
@@ -69,7 +69,7 @@ def route_edges(nodes, edges, positions, columns):
         sx,sy,sw,sh = positions[edge['source']]
         tx,ty,tw,th = positions[edge['target']]
         src, dst = nodes[edge['source']], nodes[edge['target']]
-        out = port_offsets(src,sw,sh)[1]
+        out = output_offset(src,sw,sh,edge['source_pin'])
         if out is None:
             raise ValueError('An input-only subsystem cannot be an edge source')
         pins, _ = port_offsets(dst,tw,th)
@@ -79,6 +79,13 @@ def route_edges(nodes, edges, positions, columns):
         distance = columns[edge['target']]-columns[edge['source']]
         if distance == 1:
             lane = (start[0]+end[0])/2
+            if src.get('kind')=='wire':
+                # Separate output nets must not share a vertical trunk merely
+                # because their ports belong to the same physical instance.
+                from .profiles import output_ports
+                outputs=output_ports(src)
+                slot=outputs.index(edge['source_pin'])
+                if len(outputs)>1:lane += (slot/(len(outputs)-1)-.5)*min(48,max(0,end[0]-start[0]-24))
             points = [start,end] if start[1]==end[1] else [start,(lane,start[1]),(lane,end[1]),end]
         elif distance == 0:
             points = [start,(start[0]+22,start[1]),(start[0]+22,ty-18),

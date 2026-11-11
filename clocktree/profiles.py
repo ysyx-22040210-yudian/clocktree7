@@ -1,11 +1,11 @@
 """Explicit analysis profiles; clock configurations remain backward compatible."""
 TREE_PROFILES = {
     'clock': {'label': '时钟树', 'signal': '时钟', 'network': '时钟网络',
-              'kinds': ('mux', 'gate', 'occ', 'div', 'subsystem'),
+              'kinds': ('mux', 'gate', 'occ', 'div', 'wire', 'subsystem'),
               'inputs': 'clock_inputs', 'output': 'clock_output',
               'sources': 'clock_sources', 'result': 'clocktree.json'},
     'reset': {'label': '复位树', 'signal': '复位', 'network': '复位网络',
-              'kinds': ('mux', 'rsy_sync', 'subsystem'),
+              'kinds': ('mux', 'rsy_sync', 'wire', 'subsystem'),
               'inputs': 'reset_inputs', 'output': 'reset_output',
               'sources': 'reset_sources', 'result': 'resettree.json'},
 }
@@ -24,7 +24,12 @@ def rule_ports(rule, kind=None):
     # The field names explicitly identify the interface; never guess from a
     # module/instance name. Validated configurations cannot mix these fields.
     info = TREE_PROFILES[kind or ('reset' if 'reset_inputs' in rule else 'clock')]
-    return rule.get(info['inputs'], []), rule.get(info['output'])
+    return rule.get(info['inputs'], []), rule.get(info['output']+'s', []) if rule.get('kind') == 'wire' else rule.get(info['output'])
+
+
+def output_ports(node):
+    """Real result ports. Legacy single-output results remain readable."""
+    return node.get('outputs', []) if node.get('kind') == 'wire' else ([node['output']] if node.get('output') else [])
 
 
 def empty_config(kind='clock'):

@@ -148,11 +148,11 @@ class CanvasScene:
             else:
                 d.port_tooltips.update(draw_device(c,node,x*scale+ox,y*scale+oy,w,h,scale,d.family,selected,tags,d._font_cache))
                 if issue_pin or navigation_pin:
-                    from .devices import port_offsets,pin_index,auxiliary_port_y
+                    from .devices import port_offsets,pin_index,auxiliary_port_y,output_offset
                     pin=issue_pin or navigation_pin
                     marker_color='#ff9b78' if issue_pin else '#78caff'
                     auxiliary_y=auxiliary_port_y(node,h,pin)
-                    offset=port_offsets(node,w,h)[0][pin_index(node,pin)] if pin in node['inputs'] else (port_offsets(node,w,h)[1] if pin==node.get('output') else None)
+                    offset=port_offsets(node,w,h)[0][pin_index(node,pin)] if pin in node['inputs'] else output_offset(node,w,h,pin)
                     if auxiliary_y is not None:
                         c.create_rectangle((x+8)*scale+ox,(y+auxiliary_y-17)*scale+oy,
                                            (x+w-8)*scale+ox,(y+auxiliary_y+17)*scale+oy,

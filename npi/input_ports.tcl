@@ -1,10 +1,10 @@
 # Read language-model formal inputs only. No driver, load or child traversal.
-proc ct_input_ports {inst} {
+proc ct_input_ports {inst {direction npiInput}} {
     set result {}
     set it [npi_iterate -type npiPort -refHandle $inst]
     if {$it eq ""} {return $result}
     while {[set p [npi_scan -iterator $it]] ne ""} {
-        if {[npi_get_str -property npiDirection -object $p] eq "npiInput"} {
+        if {[npi_get_str -property npiDirection -object $p] eq $direction} {
             set low [npi_handle -type npiLowConn -refHandle $p]
             set width [npi_get -property npiSize -object $p]
             set left ""; set right ""
@@ -36,9 +36,9 @@ proc ct_input_ports {inst} {
     }
     return $result
 }
-proc ct_expand_subsystem {hdl requested} {
+proc ct_expand_subsystem {hdl requested {direction npiInput}} {
     set ports [dict create]
-    foreach record [ct_input_ports $hdl] {dict set ports [lindex $record 0] $record}
+    foreach record [ct_input_ports $hdl $direction] {dict set ports [lindex $record 0] $record}
     set result {}
     foreach pin $requested {
         if {![dict exists $ports $pin]} {lappend result $pin; continue}
@@ -57,7 +57,9 @@ proc ct_expand_subsystem {hdl requested} {
             }
         } else {lappend result $pin}
     }
-    return $result
+    set unique {};set seen [dict create]
+    foreach pin $result {if {![dict exists $seen $pin]} {dict set seen $pin 1;lappend unique $pin}}
+    return $unique
 }
 proc ct_discover_inputs {} {
     global ct_rules ct_top ct_trace_scope

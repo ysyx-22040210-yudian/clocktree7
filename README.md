@@ -22,6 +22,7 @@
 - **分支 SV 模板**：起始有/无选择器分别使用用户模板，每个真实末端输入生成一段，全部写到一个 `.sv`。支持 `$var_pllsel`、`$var_div`、`$var_swdone`、按实际连接排序的 `$var_gt0～2`、按关注输入顺序编号的 `$var_pll0～3`、`$var_clkip` 和最初器件所属层复位信号 `$var_rst`；不存在的门控/PLL 槽位补 `1'b1`。每层 RTL 父层路径下可填写复位短名或完整信号路径，配置/历史保留；模板引用但未填写复位时明确提示。多寄存器分支暂时跳过，分页选择候选后重新生成同一文件，不重复追加。两套模板、选择及分支计划自动恢复。[详细用法](docs/GUI_USER_MANUAL.zh-CN.md#sv-templates) · [SV 验收](docs/SV_TEMPLATES_VALIDATION.zh-CN.md) · [复位变量验收](docs/SV_RESET_VALIDATION.zh-CN.md)。
 - **模板代码编辑器**：原生 Tk 深色 SystemVerilog 高亮、行号、12 个变量插入按钮、缩进、撤销/重做和查找。`check_$var_clkip_sva` 自动生成 `check_top_u_clk_sva` 这样的合法名称，单独的 `$var_clkip` 仍保留真实信号路径；支持 `${var_clkip}` 显式边界和未知变量提示。长模板分批着色，无需联网或安装编辑器依赖。[操作与验收](docs/SV_EDITOR_VALIDATION_20261110.zh-CN.md)。
 - SUBSYSTEM 只含输入终点：编辑器中从 elab 读取 input 名称、正则筛选、勾选确认后才能保存；主提取只使用已确认名单。参数化总线按实际范围展开，各输入独立，不合并不同网络。
+- **穿线 WIRE** 支持多个输入、多个输出；从各输出在实例内部反查到已配置输入，按 elab 显示 `输入 → 输出` 的逐位对应关系。支持交叉接线、别名、`buf`、总线重排和一入多出；独立通道不会串网，分支导航、高亮、独立画布和 SV 分支分析沿已证明通道继续。[配置与显示](docs/GUI_USER_MANUAL.zh-CN.md#wire-device) · [穿线器件验收](docs/WIRE_DEVICE_VALIDATION_20261111.zh-CN.md)。
 - 默认分支紧凑布局，支持按层排列。布局/布线使用可取消的后台进程；平移复用图元，缩放合并事件，导航图和高亮状态缓存。
 - 上下游直接跳转与分页选择、导航后退/前进、每设计及分析类型最近 100 条搜索历史、整分支高亮、可读证据摘要和按需原始证据。
 - 完整问题表提供分类、搜索、分页、关联对象、定位和 CSV 导出，区分问题数与涉及实例数。详见 [3.0 操作流程](docs/GUI_USER_MANUAL.zh-CN.md#workbench-v3) 和 [逐项验收报告](docs/WORKBENCH_VALIDATION.zh-CN.md)。

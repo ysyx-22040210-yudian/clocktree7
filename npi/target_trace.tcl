@@ -53,21 +53,26 @@ proc ct_l_free_port {data} {
 proc ct_l_init {} {
     set ::ct_l_outputs [dict create]
     set ::ct_l_output_rules [dict create]
+    set ::ct_l_wire_inputs [dict create]
+    set ::ct_l_internal 0
     set ::ct_l_cache [dict create]
     set ::ct_l_cache_bytes 0
     set ::ct_l_cache_written 0
     set ::ct_l_totals [dict create driver_queries 0 cache_hits 0 output_index_hits 0]
     set ::ct_l_root [expr {$::ct_trace_scope ne "" ? $::ct_trace_scope : $::ct_top}]
 }
-proc ct_l_register {path inputs output emit} {
-    global ct_pins_to_trace ct_pin_count ct_l_outputs ct_l_output_rules
-    set pins $inputs
-    if {$output ne ""} {
-        dict set ct_l_output_rules $path $output
-        lappend pins $output
+proc ct_l_register_wire {path outputs} {
+    foreach pin $outputs {
+        dict set ::ct_pins_to_trace $::ct_pin_count [list "" internal $path $pin]
+        incr ::ct_pin_count
     }
+}
+proc ct_l_register {path inputs outputs emit} {
+    global ct_pins_to_trace ct_pin_count ct_l_outputs ct_l_output_rules
+    set pins [concat $inputs $outputs]
+    if {[llength $outputs]} {dict set ct_l_output_rules $path $outputs}
     foreach pin $pins {
-        set role [expr {$pin eq $output ? "output" : "input"}]
+        set role [expr {$pin in $outputs ? "output" : "input"}]
         set data [ct_l_port $path $pin]
         set status [dict get $data status]
         if {$status eq "ok" && [dict get $data direction] ne [expr {$role eq "output" ? "npiOutput" : "npiInput"}]} {set status error}
@@ -141,7 +146,9 @@ proc ct_l_transparent {h} {
         }
         return 1
     }
-    if {[ct_l_prop $h npiOpType] ni {npiConcatOp npiMultiConcatOp npiBitNegOp}} {return 0}
+    set allowed {npiConcatOp npiMultiConcatOp}
+    if {!$::ct_l_internal} {lappend allowed npiBitNegOp}
+    if {[ct_l_prop $h npiOpType] ni $allowed} {return 0}
     set it [npi_iterate -type npiOperand -refHandle $h]
     if {$it eq ""} {return 0}
     set ok 1
@@ -170,7 +177,7 @@ proc ct_l_note {phase object {api ""} {force 0}} {
     if {!$force && $now-$::ct_l_note_time < 1000} {return}
     set ::ct_l_note_time $now
     dict set ::ct_walk_stats results $::ct_result_count
-    set fields [list trace_id $::ct_trace_id instance [ct_js $::ct_l_owner] pin [ct_js $::ct_l_pin] direction [ct_js driver] \
+    set fields [list trace_id $::ct_trace_id instance [ct_js $::ct_l_owner] pin [ct_js $::ct_l_pin] direction [ct_js [expr {$::ct_l_internal ? "internal" : "driver"}]] \
         phase [ct_js $phase] api [ct_js $api] object [ct_js $object] elapsed_ms [expr {$now-$::ct_walk_started}]]
     dict for {key value} $::ct_walk_stats {lappend fields $key $value}
     set context [ct_object {*}$fields]
@@ -229,6 +236,7 @@ proc ct_l_cache_put {key actions} {
 }
 proc ct_l_expand {h} {
     set key [ct_l_key $h]
+    if {$key ne "" && $::ct_l_internal} {set key [list internal $::ct_l_root $key]}
     if {$key ne "" && [dict exists $::ct_l_cache $key]} {
         dict incr ::ct_l_totals cache_hits
         dict incr ::ct_walk_stats cache_hits
@@ -236,7 +244,7 @@ proc ct_l_expand {h} {
     }
     set name [ct_l_prop $h npiFullName]
     set indexed [dict create]
-    if {$key ne "" && [dict exists $::ct_l_outputs $key]} {
+    if {!$::ct_l_internal && $key ne "" && [dict exists $::ct_l_outputs $key]} {
         foreach entry [dict get $::ct_l_outputs $key] {
             lassign $entry instance pin side
             if {$side ne "high"} {continue}
@@ -265,29 +273,52 @@ proc ct_l_expand {h} {
         if {$type eq "npiPort"} {
             set port_name [ct_l_prop $use npiName]
             set direction [ct_l_prop $use npiDirection]
-            if {$direction eq "npiOutput" && [dict exists $::ct_l_output_rules $owner]} {
+            if {!$::ct_l_internal && $direction eq "npiOutput" && [dict exists $::ct_l_output_rules $owner]} {
                 set actual [npi_handle -type npiHighConn -refHandle $use]
                 if {$actual ne "" && ![ct_l_transparent $actual]} {
                     lappend actions [ct_l_terminal unsupported_expression [list endpoint [ct_js "$owner.$port_name"]] $evidence]; continue
                 }
-                set pin [dict get $::ct_l_output_rules $owner]
-                set target [ct_l_port $owner $pin]
                 set hit 0
-                if {[dict get $target status] eq "ok"} {
-                    foreach signal $signals {
-                        if {[npi_compare_objects -object1 $signal -object2 [dict get $target low]]} {set hit 1}
+                foreach pin [dict get $::ct_l_output_rules $owner] {
+                    set target [ct_l_port $owner $pin]
+                    set pin_hit 0
+                    if {[dict get $target status] eq "ok"} {
+                        foreach signal $signals {
+                            if {[npi_compare_objects -object1 $signal -object2 [dict get $target low]]} {set pin_hit 1}
+                        }
+                    }
+                    ct_l_free_port $target
+                    if {$pin_hit} {
+                        set hit 1
+                        dict incr ::ct_l_totals output_index_hits
+                        dict unset indexed [list $owner $pin]
+                        lappend actions [ct_l_terminal target [list instance [ct_js $owner] pin [ct_js $pin]] $evidence]
                     }
                 }
-                if {$hit} {
-                    dict incr ::ct_l_totals output_index_hits
-                    dict unset indexed [list $owner $pin]
-                    lappend actions [ct_l_terminal target [list instance [ct_js $owner] pin [ct_js $pin]] $evidence]
-                } else {
+                if {!$hit} {
                     lappend actions [ct_l_terminal unselected_port_boundary [list endpoint [ct_js "$owner.$port_name"] pin_direction [ct_js npiNlOutput]] $evidence]
                 }
                 continue
             }
             if {$direction eq "npiInput" && $owner eq $::ct_l_root} {
+                if {$::ct_l_internal} {
+                    set hit 0
+                    foreach pin [dict get $::ct_l_wire_inputs $owner] {
+                        set target [ct_l_port $owner $pin]
+                        if {[dict get $target status] eq "ok"} {
+                            foreach signal [concat [list $src] $signals] {
+                                if {$signal ne "" && [npi_compare_objects -object1 $signal -object2 [dict get $target low]]} {
+                                    set hit 1
+                                    lappend actions [ct_l_terminal target [list instance [ct_js $owner] pin [ct_js $pin]] $evidence]
+                                    break
+                                }
+                            }
+                        }
+                        ct_l_free_port $target
+                    }
+                    if {!$hit} {lappend actions [ct_l_terminal unselected_wire_input [list endpoint [ct_js "$owner.$port_name"]] $evidence]}
+                    continue
+                }
                 set endpoint [ct_l_prop $src npiFullName]
                 if {$endpoint eq ""} {set endpoint "$owner.$port_name"}
                 if {$::ct_trace_scope ne ""} {lappend actions [ct_l_boundary $endpoint $evidence]} else {
@@ -309,7 +340,7 @@ proc ct_l_expand {h} {
         } elseif {$type eq "npiPrimTerm"} {
             set primitive [npi_handle -type npiPrimitive -refHandle $use]
             set prim_type [ct_l_prop $primitive npiPrimType]
-            if {$prim_type ni {npiBufPrim npiNotPrim}} {
+            if {$prim_type ni {npiBufPrim npiNotPrim} || ($::ct_l_internal && $prim_type ne "npiBufPrim")} {
                 lappend actions [ct_l_terminal unknown_cell [list cell [ct_js $prim_type] endpoint [ct_js [ct_l_prop $primitive npiFullName]]] $evidence]; continue
             }
         } else {
@@ -340,18 +371,20 @@ proc ct_l_step {parent evidence} {
     ct_emit [ct_object event [ct_js path_step] trace_id $::ct_trace_id path_id $::ct_l_path_count parent_id $parent evidence $evidence]
     return $::ct_l_path_count
 }
-proc ct_l_walk {owner pin trace_id} {
+proc ct_l_walk {owner pin trace_id {direction driver}} {
+    set ::ct_l_internal [expr {$direction eq "internal"}]
+    set ::ct_l_root [expr {$::ct_l_internal ? $owner : ($::ct_trace_scope ne "" ? $::ct_trace_scope : $::ct_top)}]
     set ::ct_trace_id $trace_id
     set ::ct_l_owner $owner; set ::ct_l_pin $pin
     set ::ct_walk_started [clock milliseconds]; set ::ct_l_note_time 0
     set ::ct_walk_stats [dict create processed 0 discovered 0 pending 0 scanned 0 duplicates 0 results 0 cache_hits 0]
     set ::ct_result_count 0; set ::ct_l_path_count 0
-    ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js driver]]
-    ct_journal item_begin trace [ct_object trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js driver]] "trace target input"
+    ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
+    ct_journal item_begin trace [ct_object trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]] "trace port connectivity"
     ct_l_note bind "$owner.$pin" npiHighConn 1
     set data [ct_l_port $owner $pin]
     set h [dict get $data high]
-    if {$h eq "" || [ct_l_prop $h npiType] eq "npiOperation"} {set h [dict get $data low]}
+    if {$::ct_l_internal || $h eq "" || [ct_l_prop $h npiType] eq "npiOperation"} {set h [dict get $data low]}
     set queue [dict create 0 [list $h 0 "$owner.$pin"]]
     set head 0; set tail 1; set seen [dict create]
     while {$head < $tail} {

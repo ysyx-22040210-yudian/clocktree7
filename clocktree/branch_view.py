@@ -4,7 +4,8 @@ from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 from .branch import BranchJob, close_branch
-from .devices import connection_details, connection_label, kind_label, auxiliary_details
+from .devices import connection_details, connection_label, kind_label, auxiliary_details, wire_details
+from .profiles import output_ports
 from .tkdiagram import ClockDiagram
 
 
@@ -149,7 +150,8 @@ class BranchDialog(tk.Toplevel):
             button.configure(state='normal' if available else 'disabled')
         lines = [actual, '', '{} · L{}'.format(kind_label(node.get('kind'), self.diagram.tree_type), node['layer']),
                  'Module: '+node['module'], '', '输入端口与实际信号', connection_details(node, node['inputs']),
-                 '', '输出端口与实际信号', connection_details(node, [node['output']]) if node.get('output') else '无 · 子系统输入终点']
+                 '', '输出端口与实际信号', connection_details(node, output_ports(node)) if output_ports(node) else '无 · 子系统输入终点']
+        if node.get('kind')=='wire':lines.extend(['','穿线内部连接',wire_details(node)])
         if node.get('reference_of'):
             lines += ['', '器件引用：仅显示此分支相关输入；真实实例不重复计算。']
         if node.get('trace_timeout') or node.get('has_unresolved_output'):

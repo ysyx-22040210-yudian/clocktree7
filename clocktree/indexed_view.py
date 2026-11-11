@@ -1,5 +1,6 @@
 """Bounded, query-on-expansion presentation of a disk indexed complete graph."""
 from collections import Counter
+import json
 from collections.abc import Mapping, Sequence
 import uuid
 
@@ -132,6 +133,20 @@ class IndexedGraphView(GraphView):
             params.append(scope)
         return ' AND '.join(clauses) or '1', tuple(params)
 
+    def component_edge_filter(self,component):
+        if component is None:return '',()
+        conn=self.store.connection()
+        if not conn.execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone():return '',()
+        # Private disk-backed port index, built once per immutable result /
+        # connection. Old result indexes need no destructive schema migration.
+        if not conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='ct7_wire_outputs'").fetchone():
+            conn.execute('CREATE TEMP TABLE ct7_wire_outputs(instance TEXT,pin TEXT,component INTEGER,PRIMARY KEY(instance,pin))')
+            for data, in conn.execute("SELECT data FROM nodes WHERE kind='wire'"):
+                node=json.loads(data)
+                conn.executemany('INSERT INTO ct7_wire_outputs VALUES(?,?,?)',
+                    ((node['id'],pin,node.get('output_components',{}).get(pin,node['component'])) for pin in node.get('outputs',[])))
+        return " AND (s.kind IS NULL OR s.kind!='wire' OR EXISTS (SELECT 1 FROM ct7_wire_outputs wp WHERE wp.instance=e.source AND wp.pin=e.source_pin AND wp.component=?))",(component,)
+
     def project(self, mode='instances', component=None, scope='', depth=5):
         conn = self.store.connection()
         where, params = self.condition(component, scope)
@@ -149,7 +164,8 @@ class IndexedGraphView(GraphView):
             sw, sp = self.condition(component, scope, 's')
             tw, tp = self.condition(component, scope, 't')
             sql = 'SELECT e.data FROM edges e JOIN nodes s ON s.id=e.source JOIN nodes t ON t.id=e.target WHERE ' + sw + ' AND ' + tw
-            self.edges = [self.store.decode(row[0]) for row in conn.execute(sql, sp + tp)]
+            extra,ep=self.component_edge_filter(component)
+            self.edges = [self.store.decode(row[0]) for row in conn.execute(sql+extra, sp + tp + ep)]
         else:
             self.effective_mode = 'hierarchy'
             self._overview(component, scope, max(1, depth))
@@ -219,10 +235,11 @@ class IndexedGraphView(GraphView):
         tw, tp = self.condition(component, scope, 't')
         cs, ct = ('s.component-s.component', 't.component-t.component') if collapse else ('s.component', 't.component')
         fields = cs + ',s.layer,ct7_prefix(s.id,{0}),{1},t.layer,ct7_prefix(t.id,{0}),e.source_pin,e.target_pin'.format(depth, ct)
+        extra,ep=self.component_edge_filter(component)
         sql = ('SELECT ' + fields + ',COUNT(*) FROM edges e JOIN nodes s ON s.id=e.source JOIN nodes t ON t.id=e.target WHERE ' +
-               sw + ' AND ' + tw + ' GROUP BY ' + fields)
+               sw + ' AND ' + tw + extra + ' GROUP BY ' + fields)
         bundles = {}
-        for sc, sl, sn, tc, tl, tn, source_pin, target_pin, count in conn.execute(sql, sp + tp):
+        for sc, sl, sn, tc, tl, tn, source_pin, target_pin, count in conn.execute(sql, sp + tp + ep):
             source, target = groups.get((sc, sl, sn)), groups.get((tc, tl, tn))
             if source is None or target is None:
                 if source is not None or target is not None:
@@ -247,9 +264,10 @@ class IndexedGraphView(GraphView):
             query = 'SELECT e.id AS id FROM edges e JOIN nodes s ON s.id=e.source JOIN nodes t ON t.id=e.target WHERE (' + sm + ') AND (' + tm + ')'
             if pins:
                 query += ' AND ' + ' AND '.join(pins)
+            query += extra
             bundles[key] = dict(id='bundle:{}'.format(len(bundles)), source=source['id'], target=target['id'],
                 source_pin=source_pin, target_pin=target_pin, layer_delta=tl-sl, count=count,
-                members=QuerySequence(self.store, query, smp + tmp + tuple(pp)))
+                members=QuerySequence(self.store, query, smp + tmp + tuple(pp) + ep))
             if len(bundles) > BUNDLE_LIMIT and depth > 1 and not paged:
                 return self._overview(component, scope, depth-1)
         self.nodes, self.edges = nodes, list(bundles.values())
@@ -335,6 +353,9 @@ class IndexedGraphView(GraphView):
         return SQLSelection(self.store,'SELECT id FROM '+name,temporary=name)
 
     def path_edges(self, instance, direction, seed_pins=None):
+        if self.store.connection().execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone():
+            from .connectivity import indexed_paths
+            return indexed_paths(self,instance,direction,seed_pins)
         # BFS frontier, visited vertices and selected edges all live in TEMP
         # SQLite tables (temp_store=FILE). No full-design Python ID sets.
         conn = self.store.connection()

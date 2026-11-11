@@ -69,7 +69,7 @@ def validate_config(config, allow_incomplete=False):
             if not rule.get("module") or not isinstance(rule["module"], str):
                 raise ValueError("Each rule needs a module definition name")
             other = TREE_PROFILES['clock' if mode == 'reset' else 'reset']
-            if other['inputs'] in rule or other['output'] in rule:
+            if other['inputs'] in rule or other['output'] in rule or other['output']+'s' in rule:
                 raise ValueError('Use {} and {} in {} rules'.format(info['inputs'], info['output'], mode))
             inputs, output = rule_ports(rule, mode)
             if not inputs or not isinstance(inputs, list) or not all(isinstance(p, str) and p for p in inputs):
@@ -82,7 +82,14 @@ def validate_config(config, allow_incomplete=False):
                 if (selection.get('module') != rule['module'] or selection.get('hierarchy') != layer['hierarchy'] or
                         selection.get('regex',rule.get('input_regex')) != rule.get('input_regex')):
                     raise ValueError('SUBSYSTEM module / hierarchy / regex changed; reopen its editor and confirm input ports again')
-            if len(set(inputs)) != len(inputs) or (kind != 'subsystem' and
+            if kind == 'wire':
+                if (not isinstance(output, list) or not output or
+                        not all(isinstance(p, str) and p for p in output) or
+                        len(set(output)) != len(output) or set(inputs).intersection(output) or rule.get(info['output'])):
+                    raise ValueError('穿线器件需要不重复的输入和输出列表：' + info['output']+'s')
+            elif info['output']+'s' in rule:
+                raise ValueError('Only wire devices support multiple outputs')
+            if len(set(inputs)) != len(inputs) or (kind not in ('subsystem', 'wire') and
                     (not isinstance(output, str) or not output or output in inputs)):
                 raise ValueError('Provide distinct inputs and one distinct ' + info['output'])
             if (kind is not None or mode == 'reset') and (not isinstance(kind, str) or kind not in info['kinds']):
@@ -135,8 +142,9 @@ def write_tcl_config(config, path, output):
         for rule in layer.get("modules", []):
             pins, output_pin = rule_ports(rule, tree_type(config))
             inputs = "[list " + " ".join(tcl_string(p) for p in pins) + "]"
+            out = ('[list ' + ' '.join(tcl_string(p) for p in output_pin) + ']') if rule.get('kind') == 'wire' else tcl_string(output_pin or '')
             fields = [str(layer["index"]), tcl_string(layer["hierarchy"]),
-                      tcl_string(rule["module"]), inputs, tcl_string(output_pin or ''), tcl_string(rule.get('kind') or '')]
+                      tcl_string(rule["module"]), inputs, out, tcl_string(rule.get('kind') or '')]
             aux = validate_aux_ports(rule, pins, output_pin)
             entries = ['[list {} {} {}]'.format(tcl_string(role), tcl_string(aux[role]), tcl_string('npi' + direction.title()))
                        for role, direction in AUX_ROLES.get(rule.get('kind'), ()) if role in aux]

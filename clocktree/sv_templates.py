@@ -30,7 +30,8 @@ def identity(*parts):return hashlib.sha256(json.dumps(parts,ensure_ascii=False).
 
 
 def architecture_signature(graph):
-    return identity('branch-origin-reset-d-input-v2',graph.get('config'),graph.get('metadata'),graph.get('summary'))
+    wire=any(r.get('kind')=='wire' for layer in graph.get('config',{}).get('layers',[]) for r in layer.get('modules',[]))
+    return identity('branch-origin-reset-wire-channels-v3' if wire else 'branch-origin-reset-d-input-v2',graph.get('config'),graph.get('metadata'),graph.get('summary'))
 
 
 def graph_for_templates(graph,draft):
@@ -78,6 +79,8 @@ def vector_expression(lsb):
 def branch_scope(db,instance,pin=None,table='walk',include_terminal=True):
     """SQLite 3.7 (CentOS 7) has no recursive CTE. Keep the queue on disk."""
     if table not in ('walk','ancestors'):raise ValueError('invalid internal queue')
+    if db.execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone():
+        return wire_branch_scope(db,instance,pin,table,include_terminal)
     db.execute('CREATE TEMP TABLE IF NOT EXISTS '+table+'(seq INTEGER PRIMARY KEY,id TEXT UNIQUE)')
     db.execute('DELETE FROM '+table)
     db.execute('INSERT OR IGNORE INTO '+table+'(id) SELECT source FROM edges WHERE target=?'+(' AND pin=?' if pin is not None else ''),
@@ -87,6 +90,32 @@ def branch_scope(db,instance,pin=None,table='walk',include_terminal=True):
         row=db.execute('SELECT seq,id FROM '+table+' WHERE seq>? ORDER BY seq LIMIT 1',(cursor,)).fetchone()
         if row is None:break
         cursor=row['seq'];db.execute('INSERT OR IGNORE INTO '+table+'(id) SELECT source FROM edges WHERE target=?',(row['id'],))
+    if include_terminal:db.execute('INSERT OR IGNORE INTO '+table+'(id) VALUES(?)',(instance,))
+
+
+def wire_branch_scope(db,instance,pin,table,include_terminal):
+    from functools import lru_cache
+    from .connectivity import allowed_pins
+    db.execute('CREATE TEMP TABLE IF NOT EXISTS '+table+'(seq INTEGER PRIMARY KEY,id TEXT UNIQUE)')
+    db.execute('CREATE TEMP TABLE IF NOT EXISTS '+table+'_inputs(id TEXT,pin TEXT,PRIMARY KEY(id,pin))')
+    db.execute('CREATE TEMP TABLE IF NOT EXISTS '+table+'_queue(seq INTEGER PRIMARY KEY,id TEXT,pin TEXT,UNIQUE(id,pin))')
+    for suffix in ('','_inputs','_queue'):db.execute('DELETE FROM '+table+suffix)
+    @lru_cache(maxsize=2048)
+    def node(key):return json.loads(db.execute('SELECT data FROM nodes WHERE id=?',(key,)).fetchone()[0])
+    def expand(key,pins):
+        if node(key)['kind']=='wire':
+            db.executemany('INSERT OR IGNORE INTO '+table+'_inputs VALUES(?,?)',((key,p) for p in (pins if pins is not None else node(key)['inputs'])))
+        for row in db.execute('SELECT source,source_pin,pin FROM edges WHERE target=?',(key,)):
+            if pins is not None and row['pin'] not in pins:continue
+            db.execute('INSERT OR IGNORE INTO '+table+'_queue(id,pin) VALUES(?,?)',(row['source'],row['source_pin'] if node(row['source'])['kind']=='wire' else ''))
+    expand(instance,{pin} if pin is not None else None)
+    cursor=0
+    while True:
+        row=db.execute('SELECT * FROM '+table+'_queue WHERE seq>? ORDER BY seq LIMIT 1',(cursor,)).fetchone()
+        if row is None:break
+        cursor=row['seq'];key=row['id']
+        db.execute('INSERT OR IGNORE INTO '+table+'(id) VALUES(?)',(key,))
+        expand(key,allowed_pins(node(key),'upstream',row['pin'] or None))
     if include_terminal:db.execute('INSERT OR IGNORE INTO '+table+'(id) VALUES(?)',(instance,))
 
 
@@ -209,7 +238,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
         with closing(database(path)) as db:
             db.executescript('''
              CREATE TABLE nodes(id TEXT PRIMARY KEY,kind TEXT,terminal INTEGER,position INTEGER,data TEXT);
-             CREATE TABLE edges(source TEXT,target TEXT,pin TEXT);
+             CREATE TABLE edges(source TEXT,target TEXT,pin TEXT,source_pin TEXT);
+             CREATE INDEX node_kind ON nodes(kind);
              CREATE INDEX edge_target ON edges(target,pin);
              CREATE INDEX edge_source ON edges(source);
              CREATE TABLE candidates(id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,bits TEXT,capture_expression TEXT);
@@ -222,11 +252,13 @@ def prepare(graph,registers,directory,resolve_connections=True):
             ''')
             outgoing=defaultdict(list);degree={}
             for n in graph['nodes']:
-                small={k:n.get(k) for k in ('id','kind','layer','inputs','port_connections','aux_ports')}
+                small={k:n.get(k) for k in ('id','kind','layer','inputs','port_connections','aux_ports','outputs','internal_connections','terminal_inputs')}
+                if n.get('kind')=='wire':
+                    small['internal_connections']=[{k:c[k] for k in ('input','output','status')} for c in n.get('internal_connections',[])]
                 db.execute('INSERT INTO nodes VALUES(?,?,?,?,?)',(n['id'],n['kind'],int(bool(n.get('terminal'))),0,json.dumps(small)))
                 degree[n['id']]=0
             for edge in graph['edges']:
-                db.execute('INSERT INTO edges VALUES(?,?,?)',(edge['source'],edge['target'],edge['target_pin']))
+                db.execute('INSERT INTO edges VALUES(?,?,?,?)',(edge['source'],edge['target'],edge['target_pin'],edge.get('source_pin','')))
                 outgoing[edge['source']].append(edge['target']);degree[edge['target']]=degree.get(edge['target'],0)+1
             pending=deque(n for n,d in degree.items() if not d)
             position=0
@@ -237,12 +269,14 @@ def prepare(graph,registers,directory,resolve_connections=True):
                     degree[target]-=1
                     if not degree[target]:pending.append(target)
             cyclic={n for n,d in degree.items() if d};del degree,outgoing,pending
+            has_wire=db.execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone() is not None
+            if has_wire:cyclic={key for d in graph.get('diagnostics',[]) if d.get('code')=='cycle_or_cycle_downstream' for key in d.get('instances',[])}
             report('registers','读取逐位寄存器映射',{});add_candidates(db,registers)
             complete=bool(graph.get('summary',{}).get('connectivity_complete'))
             seq=0
             for row in db.execute('SELECT * FROM nodes WHERE terminal=1 ORDER BY id'):
                 node=json.loads(row['data']);inst=node['id']
-                for pin in dict.fromkeys(node.get('inputs') or []):
+                for pin in dict.fromkeys((node.get('terminal_inputs') if node['kind']=='wire' else node.get('inputs')) or []):
                     seq+=1;issues=[];bindings={'var_clkip':connection(node,pin)}
                     clkip=bindings['var_clkip'].get('value','')
                     if not clkip:issues.append('$var_clkip 未解析：'+bindings['var_clkip'].get('error',''))
@@ -251,12 +285,22 @@ def prepare(graph,registers,directory,resolve_connections=True):
                     branch_scope(db,inst,pin)
                     roots=[dict(r) for r in db.execute('''SELECT n.* FROM walk JOIN nodes n ON n.id=walk.id
                         WHERE n.id!=? AND NOT EXISTS(SELECT 1 FROM edges WHERE target=n.id)''',(inst,))]
+                    if has_wire:
+                        roots=[r for r in roots if r['kind']!='wire']
+                        roots.extend(dict(r) for r in db.execute('''SELECT DISTINCT n.* FROM walk_inputs p JOIN nodes n ON n.id=p.id
+                            WHERE NOT EXISTS(SELECT 1 FROM edges e WHERE e.target=p.id AND e.pin=p.pin)'''))
                     if not roots:roots=[dict(row)] if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(inst,pin)).fetchone() else []
                     bindings['var_rst']=branch_reset_binding([json.loads(root['data']) for root in roots],graph['config'])
                     modes={r['kind']=='mux' for r in roots}
                     mode='with_mux' if modes=={True} else 'without_mux' if modes=={False} else 'mixed'
                     devices=defaultdict(list)
                     for device in db.execute('SELECT n.* FROM walk JOIN nodes n ON n.id=walk.id ORDER BY n.position'):devices[device['kind']].append(dict(device))
+                    if has_wire and len(devices['gate'])<=3:
+                        gate_ancestors={}
+                        for gate in devices['gate']:
+                            branch_scope(db,gate['id'],table='ancestors',include_terminal=False)
+                            gate_ancestors[gate['id']]={r[0] for r in db.execute("SELECT n.id FROM ancestors a JOIN nodes n ON n.id=a.id WHERE n.kind='gate'")}
+                        devices['gate'].sort(key=lambda g:len(gate_ancestors[g['id']]))
                     for kind,maximum in [('mux',1),('div',1),('gate',3)]:
                         if len(devices[kind])>maximum:issues.append('分支 {} 数量 {} 超过约定 {}'.format(kind,len(devices[kind]),maximum))
                     for upstream,downstream in zip(devices['gate'],devices['gate'][1:]):
@@ -275,6 +319,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
                         starts=[]
                         for root in roots:
                             start=json.loads(root['data']);start_pins=[pin] if start['id']==inst else start.get('inputs') or []
+                            if start['kind']=='wire':start_pins=[r[0] for r in db.execute('SELECT pin FROM walk_inputs WHERE id=? AND NOT EXISTS(SELECT 1 FROM edges WHERE target=? AND pin=walk_inputs.pin)',(start['id'],start['id']))]
                             starts.extend(connection(start,p) for p in start_pins)
                         unique={r['value'] for r in starts if r.get('value')}
                         bindings['var_pll0']={'value':next(iter(unique))} if len(unique)==1 and all(r.get('value') for r in starts) else {'error':'无选择器分支没有唯一且已解析的起始输入信号'}

@@ -16,7 +16,7 @@ def validate_aux_ports(rule, inputs, output):
         raise ValueError('aux_ports 必须是辅助功能到实际端口名的对象')
     allowed = dict(AUX_ROLES.get(rule.get('kind'), ()))
     result, used = {}, set()
-    primary = {re.sub(r'\[-?\d+\]$', '', pin) for pin in list(inputs) + ([output] if output else [])}
+    primary = {re.sub(r'\[-?\d+\]$', '', pin) for pin in list(inputs) + (output if isinstance(output, list) else [output] if output else [])}
     for role, value in values.items():
         if role not in allowed:
             raise ValueError('{} 器件不支持辅助端口 {}'.format(rule.get('kind'), role))

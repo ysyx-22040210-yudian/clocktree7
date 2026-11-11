@@ -1,11 +1,13 @@
 """Network membership at subsystem input terminals, never through its body."""
 from collections import defaultdict
+from .profiles import output_ports
+from .connectivity import internal_pairs
 
 
 def memberships(nodes, edges, sources):
     parents = {}
     def endpoint(instance, pin=None):
-        return (instance, pin if nodes[instance].get('kind') == 'subsystem' else None)
+        return (instance, pin if nodes[instance].get('kind') in ('subsystem', 'wire') else None)
     def find(key):
         parents.setdefault(key, key)
         root = key
@@ -20,8 +22,9 @@ def memberships(nodes, edges, sources):
         a, b = find(a), find(b)
         if a != b: parents[b] = a
     for key, node in nodes.items():
-        for pin in node['inputs'] if node.get('kind') == 'subsystem' else [None]:
+        for pin in node['inputs'] + output_ports(node) if node.get('kind') in ('subsystem', 'wire') else [None]:
             find(endpoint(key, pin))
+        for a,b in internal_pairs(node):join(endpoint(key,a),endpoint(key,b))
     for edge in edges:
         join(endpoint(edge['source'], edge['source_pin']), endpoint(edge['target'], edge['target_pin']))
     for source in sources:
@@ -34,11 +37,12 @@ def memberships(nodes, edges, sources):
     for index, terminals in enumerate(sorted(groups.values(), key=lambda x:(x[0][0], x[0][1] or ''))):
         members = sorted(set(key for key, pin in terminals))
         components.append({'id': index, 'nodes': members,
-                           'input_terminals': [{'instance': key, 'pin': pin} for key, pin in terminals if pin is not None]})
+                           'input_terminals': [{'instance': key, 'pin': pin} for key, pin in terminals if pin is not None and pin in nodes[key]['inputs']]})
         for key, pin in terminals:
             node = nodes[key]
             node.setdefault('components', []).append(index)
-            if pin is not None: node.setdefault('input_components', {})[pin] = index
+            if pin is not None:
+                node.setdefault('input_components' if pin in node['inputs'] else 'output_components', {})[pin] = index
     for node in nodes.values():
         node['components'] = sorted(set(node['components']))
         node['component'] = node['components'][0]

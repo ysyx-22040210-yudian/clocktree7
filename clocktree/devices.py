@@ -3,7 +3,7 @@ import math
 import re
 import unicodedata
 from xml.sax.saxutils import escape, quoteattr
-from .profiles import profile, rule_ports
+from .profiles import profile, rule_ports, output_ports
 from .auxiliary import aux_entries, aux_height, aux_problem, DIRECTIONS
 
 
@@ -14,6 +14,7 @@ DEVICE_TYPES = {
     'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#bb9bff', 'fill': '#302847'},
     'rsy_sync': {'label': 'RSY_SYNC', 'short': 'RSY_SYNC', 'color': '#f39bbd', 'fill': '#402939'},
     'subsystem': {'label': '子系统 SUBSYSTEM', 'short': 'SUBSYS', 'color': '#80ceea', 'fill': '#193c4d'},
+    'wire': {'label': '穿线', 'short': 'WIRE', 'color': '#f2d788', 'fill': '#363226'},
 }
 TYPE_LABELS = [DEVICE_TYPES[kind]['label'] for kind in profile({})['kinds']]
 LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
@@ -38,7 +39,8 @@ def matching_rule(node, layer, rule):
     inputs, output = rule_ports(rule)
     return (node['layer'] == layer['index'] and node['module'] == rule['module'] and
             scope_match(node['id'] if 'id' in node else node['path'], layer['hierarchy']) and
-            node.get('configured_inputs', node['inputs']) == inputs and (node.get('output') or None) == (output or None))
+            node.get('configured_inputs', node['inputs']) == inputs and
+            (node.get('configured_outputs', output_ports(node)) == output if rule.get('kind') == 'wire' else (node.get('output') or None) == (output or None)))
 
 
 def resolve_kind(node, config):
@@ -79,6 +81,7 @@ def typed_nodes(graph):
 def node_height(node):
     if node.get('aggregate'):
         return 144
+    if node.get('kind') == 'wire':return max(180, 100 + 52 * max(len(node['inputs']), len(output_ports(node))))
     return max(152, 88 + 32 * len(display_inputs(node))) + aux_height(node)
 
 
@@ -102,12 +105,31 @@ def port_offsets(node, width, height):
     """The sole source of pin anchors for symbols and all routed edges."""
     if node.get('aggregate'):
         return [(0, 110)], (width, 110)
+    if node.get('kind') == 'wire':
+        return [(0, 78 + 52*i) for i in range(len(node['inputs']))], output_offset(node, width, height, next(iter(output_ports(node)), None))
     height -= aux_height(node)
     count = len(display_inputs(node))
     middle = (50 + height - 18) / 2
     # Leave room beneath the last signal label for boundary/status markers.
     ys = [middle] if count == 1 else [60 + i * (height - 104) / (count - 1) for i in range(count)]
     return [(0, y) for y in ys], ((width, middle) if node.get('output') else None)
+
+
+def output_offset(node, width, height, pin):
+    if node.get('kind') == 'wire' and not node.get('aggregate'):
+        ports = output_ports(node)
+        return (width, 78 + 52*ports.index(pin)) if pin in ports else None
+    return port_offsets(node, width, height)[1] if node.get('aggregate') or pin == node.get('output') else None
+
+
+def wire_details(node):
+    lines=[]
+    for item in node.get('internal_connections', []):
+        lines.append('{} → {} · elab 已证明直连'.format(item['input'],item['output']))
+    for pin in output_ports(node):
+        if not any(c['output']==pin and c.get('status')=='verified' for c in node.get('internal_connections', [])):
+            lines.append('{} · {}'.format(pin, {'trace_timeout':'内部追踪超时','trace_skipped_timeout':'内部追踪已跳过'}.get(node.get('internal_trace_status',{}).get(pin),'内部对应关系未解析')))
+    return '\n'.join(lines)
 
 
 def _short(text, limit):
@@ -140,7 +162,7 @@ def connection_details(node, pins):
             lines.append('  .{} 的整体连接；关注 {}，未推断逐位映射'.format(connection['formal_port'], pin))
         if connection.get('reason'):
             lines.append('  原因：' + connection['reason'])
-        if node.get('trace_timeout') and pin in node['inputs'] + ([node['output']] if node.get('output') else []):
+        if node.get('trace_timeout') and pin in node['inputs'] + output_ports(node):
             state = node.get('port_trace_status', {}).get(pin, 'not_traced')
             label = {'trace_timeout':'trace 超时；本条未完成证据已撤回',
                      'trace_skipped_timeout':'trace 已跳过（本例化其他端口超时）',
@@ -222,6 +244,32 @@ def symbol_parts(node, width, height, selected=False):
         line([(width-18, output[1]), output], fill='#8eabc8')
         text(22, 110, '输入', size=9)
         text(width-22, 110, '输出', size=9, anchor='e')
+    elif kind == 'wire':
+        text(width-11, 16, '穿线 · L{}'.format(node.get('layer','?')), size=10, fill=color, bold=True, anchor='e')
+        left, right = width*.35, width*.65
+        add('rect', x=left, y=49, w=right-left, h=height-77, radius=6, fill=info['fill'], stroke=color, width=1)
+        palette=['#f2d788','#80ceea','#c4abff','#76d8b3','#f4a5bc']
+        for pin, (px, py) in zip(node['inputs'], inputs):
+            line([(px,py),(left,py)])
+            text(7,py-12,trace_pin_label(node,pin),size=10,max_width=left-12,tooltip=connection_details(node,[pin]))
+            text(7,py+12,connection_label(node,pin),size=10,fill='#9fcfc3',max_width=left-12,tooltip=connection_details(node,[pin]))
+        for pin in output_ports(node):
+            px,py=output_offset(node,width,height,pin)
+            line([(right,py),(px,py)])
+            text(width-7,py-12,trace_pin_label(node,pin),size=10,anchor='e',max_width=width-right-12,tooltip=connection_details(node,[pin]))
+            text(width-7,py+12,connection_label(node,pin),size=10,anchor='e',fill='#9fcfc3',max_width=width-right-12,tooltip=connection_details(node,[pin]))
+            pairs=[p for p in node.get('internal_connections',[]) if p['output']==pin and p.get('status')=='verified']
+            if not pairs:
+                text((left+right)/2,py,'待追踪' if node.get('preview') else '未解析',size=9,fill='#f5a46b',anchor='center',max_width=right-left-8,tooltip=wire_details(node))
+            for pair in pairs:
+                if pair['input'] not in node['inputs']:continue
+                index=node['inputs'].index(pair['input']);iy=inputs[index][1]
+                ink=palette[index%len(palette)]
+                line([(left,iy),(right,py)],fill=ink,stroke_width=1.8)
+                text((left+right)/2,py-15,pair['input']+' → '+pin,size=9,fill=ink,anchor='center',max_width=right-left-6,tooltip=wire_details(node))
+        for pin in output_ports(node)[1:]:
+            px,py=output_offset(node,width,height,pin)
+            add('circle',x=px,y=py,r=3,fill='#14253a',stroke=color,width=1.3)
     elif kind == 'subsystem':
         text(width-11, 16, 'SUBSYS · L{}'.format(node.get('layer', '?')), size=9, fill=color, bold=True, anchor='e')
         add('rect', x=width*.57, y=50, w=width*.38, h=height-70, radius=7,

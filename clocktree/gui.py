@@ -26,9 +26,9 @@ from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule, connection_details
 from .auxiliary import AUX_ROLES, DIRECTIONS, validate_aux_ports
 from .layer_reset import without_resets
-from .devices import auxiliary_details
+from .devices import auxiliary_details, wire_details
 from .viewmodel import GraphView
-from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename
+from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename, output_ports
 from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
 from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
 from .indexed_view import IndexedGraphView
@@ -82,7 +82,7 @@ class RuleDialog(tk.Toplevel):
         self.entries={}
         for key, label, value in [('module','Module 定义名',rule.get('module','')),
                                   (self.input_key,'关注的{}输入口（多个以逗号分隔）'.format(self.info['signal']),', '.join(rule.get(self.input_key,[]))),
-                                  (self.output_key,'唯一关注的{}输出口'.format(self.info['signal']),rule.get(self.output_key,''))]:
+                                  (self.output_key,'关注的{}输出口（穿线可多个，以逗号分隔）'.format(self.info['signal']),', '.join(rule.get(self.output_key+'s',[])) if rule.get('kind')=='wire' else rule.get(self.output_key,''))]:
             ttk.Label(frame, text=label, style='Small.TLabel').pack(anchor='w', pady=(7,4))
             variable = tk.StringVar(value=value)
             entry = ttk.Entry(frame, textvariable=variable, width=46)
@@ -138,6 +138,8 @@ class RuleDialog(tk.Toplevel):
         rule = {'module':self.fields['module'].get().strip(),
                 self.input_key:[x.strip() for x in self.fields[self.input_key].get().replace('，',',').split(',') if x.strip()],
                 self.output_key:self.fields[self.output_key].get().strip(),'kind':kind}
+        if kind=='wire':
+            rule[self.output_key+'s']=[x.strip() for x in rule.pop(self.output_key).replace('，',',').split(',') if x.strip()]
         inputs,output=rule_ports(rule,self.tree_type)
         if kind=='subsystem':
             if self._confirmed != (rule['module'],self.hierarchy,self.input_regex,tuple(inputs)):
@@ -146,9 +148,10 @@ class RuleDialog(tk.Toplevel):
             rule['input_regex']=self.input_regex
             rule['port_selection']={'module':rule['module'],'hierarchy':self.hierarchy,'regex':self.input_regex,'confirmed':True}
         if not rule['module'] or not inputs or (kind!='subsystem' and not output):
-            self.error.set('请填写 module 名、至少一个输入口和唯一输出口。')
+            self.error.set('请填写 module 名、输入口和输出口；穿线可填写多个输出。')
             return
-        if len(set(inputs))!=len(inputs) or output in inputs:
+        outputs=output if kind=='wire' else [output] if output else []
+        if len(set(inputs))!=len(inputs) or len(set(outputs))!=len(outputs) or set(outputs).intersection(inputs):
             self.error.set('输入口不能重复，输入口和输出口不能相同。')
             return
         if kind in ('gate','occ','div','rsy_sync') and len(inputs)!=1:
@@ -193,14 +196,17 @@ class RuleDialog(tk.Toplevel):
         self.entries[self.input_key].configure(state='readonly' if subsystem else 'normal')
         self.entries[self.output_key].configure(state='disabled' if subsystem else 'normal')
         if subsystem:self.type_hint.set('子系统只有输入终点。直接父层：'+(self.hierarchy or '设计顶层'))
-        else:self.type_hint.set('MUX 可多输入；其他器件为一个关注输入和一个关注输出。')
+        elif kind=='wire':self.type_hint.set('穿线支持多个输入和输出。内部逐位对应关系由 elab 证明；未知连接不补画。')
+        else:self.type_hint.set('MUX 可多输入；门控、OCC、DIV、RSY_SYNC 为单输入、单输出。')
         if kind not in self.info['kinds']:
             c.create_text(220,78,text='选择器件类型后预览外观',fill='#8da7ca',font=(self.app.family,11))
             return
         pins=[v.strip() for v in self.fields[self.input_key].get().replace('，',',').split(',') if v.strip()]
         pins=pins or (['输入 1','输入 2'] if kind=='mux' else ['输入'])
         node={'id':'u_instance','module':self.fields['module'].get().strip() or 'module_name',
-              'kind':kind,'inputs':pins,'output':None if subsystem else self.fields[self.output_key].get().strip() or '输出'}
+              'kind':kind,'inputs':pins,'output':None if subsystem else self.fields[self.output_key].get().strip() or '输出','preview':True}
+        if kind=='wire':
+            node.update(output=None,outputs=[p.strip() for p in self.fields[self.output_key].get().replace('，',',').split(',') if p.strip()] or ['输出 1','输出 2'])
         node['aux_ports']={role:self.aux_fields[role].get().strip() for role in roles if self.aux_fields[role].get().strip()}
         h=node_height(node)
         scale=min(1.,142/h)
@@ -959,9 +965,13 @@ class ClockTreeApp(tk.Tk):
             elif kind=='subsystem':
                 c.create_rectangle(x+5,8,x+24,25,fill='#e3f4fa',outline=color)
                 for yy in (12,20):c.create_line(x,yy,x+5,yy,fill=color)
+            elif kind=='wire':
+                c.create_rectangle(x,8,x+24,25,fill='#fff4d7',outline=color)
+                c.create_line(x+3,12,x+21,21,fill='#b59647')
+                c.create_line(x+3,21,x+21,12,fill='#b59647')
             else:
                 c.create_polygon(x+4,8,x+20,8,x+24,12,x+24,21,x+20,25,x+4,25,x,21,x,12,fill='#eee5ff' if kind=='div' else '#fff0d7',outline=color)
-            label={'mux':'MUX' if self._active_tree_type=='reset' else '选择器','gate':'门控'}.get(kind,DEVICE_TYPES[kind]['short'])
+            label={'mux':'MUX' if self._active_tree_type=='reset' else '选择器','gate':'门控','wire':'穿线'}.get(kind,DEVICE_TYPES[kind]['short'])
             c.create_text(x+29,16,text=label,anchor='w',fill='#6680a4',font=(self.family,8))
         c.configure(width=step*len(info['kinds']))
 
@@ -1049,7 +1059,7 @@ class ClockTreeApp(tk.Tk):
         self.rules_tree.configure(height=min(6,max(3,len(rules))))
         for i,rule in enumerate(rules):
             inputs,output=rule_ports(rule,self._active_tree_type)
-            self.rules_tree.insert('', 'end',iid=str(i),text=rule['module'],values=(kind_label(rule.get('kind'),self._active_tree_type),', '.join(inputs),output or '—'))
+            self.rules_tree.insert('', 'end',iid=str(i),text=rule['module'],values=(kind_label(rule.get('kind'),self._active_tree_type),', '.join(inputs),', '.join(output) if isinstance(output,list) else output or '—'))
 
     def add_rule(self,rule=None):
         if rule is not None:
@@ -1220,14 +1230,16 @@ class ClockTreeApp(tk.Tk):
             card=ttk.Frame(row,style='White.TFrame',padding=(0,0,12,0))
             card.grid(row=index//3,column=index%3,sticky='nsew',pady=(0,12))
             ttk.Label(card,text=kind_label(kind,self._active_tree_type),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
-            ttk.Label(card,text='多个独立输入 · 无输出' if kind=='subsystem' else ('多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出'),style='Muted.TLabel').pack(anchor='w',pady=(0,9))
+            ttk.Label(card,text='多输入 · 多输出 · elab 对应关系' if kind=='wire' else '多个独立输入 · 无输出' if kind=='subsystem' else ('多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出'),style='Muted.TLabel').pack(anchor='w',pady=(0,9))
             canvas=tk.Canvas(card,width=270,height=178,bg='#101b2e',highlightthickness=0)
             canvas.pack()
             is_reset=self._active_tree_type=='reset'
             node={'id':'u_'+self._active_tree_type+'_'+kind,'module':self._active_tree_type+'_'+kind,'kind':kind,
                   'inputs':(['rst0_ni','rst1_ni'] if kind=='mux' else ['rst_ni']) if is_reset else (['clk0_i','clk1_i'] if kind=='mux' else ['clk_i']),
                   'output':None if kind=='subsystem' else 'rst_no' if is_reset else 'clk_o'}
-            draw_device(canvas,node,14,14,242,node_height(node),1.,self.family)
+            if kind=='wire':node.update(inputs=['in0','in1'],output=None,outputs=['out0','out1'],preview=True)
+            height=node_height(node);scale=min(1.,150/height)
+            draw_device(canvas,node,14,14,242,height,scale,self.family)
         ttk.Label(frame,text=('RSY_SYNC 仅展示复位输入/输出；图内同步标记不增加外部时钟连线。' if self._active_tree_type=='reset' else '模型展示关注端口；DIV 的 ÷N 为类型标记，未推断实际分频比。'),style='Muted.TLabel').pack(anchor='w',pady=(18,0))
         ttk.Button(frame,text='关闭',command=dialog.destroy).pack(anchor='e',pady=(18,0))
         dialog.update_idletasks()
@@ -1775,9 +1787,10 @@ class ClockTreeApp(tk.Tk):
         else:
             boundaries=self.graph.boundaries_for(node['id']) if isinstance(self.graph,IndexedGraph) else [b for b in self.graph.get('boundaries',[]) if b['instance']==node['id']]
             fields=[('完整实例路径',node['id']),('Module 定义',node['module']),('器件类型',kind_label(node.get('kind'),self._active_tree_type)),('传播层次','L{}'.format(node['layer'])),
-                    ('关注输入','\n'.join(node['inputs'])),('关注输出',node.get('output') or '无 · 子系统输入终点'),
+                    ('关注输入','\n'.join(node['inputs'])),('关注输出','\n'.join(output_ports(node)) or '无 · 子系统输入终点'),
                     ('输入口例化连接',connection_details(node,node['inputs'])),
-                    ('输出口例化连接',connection_details(node,[node['output']]) if node.get('output') else '无输出口'),
+                    ('输出口例化连接',connection_details(node,output_ports(node)) if output_ports(node) else '无输出口'),
+                    *([('穿线内部连接',wire_details(node))] if node.get('kind')=='wire' else []),
                     ('辅助端口例化连接（不参与追踪）',auxiliary_details(node) or '未配置'),
                     ('连接名来源','NPI 例化端口 npiHighConn；表达式由 elab 还原' if 'port_connections' in node else '该历史结果未采集例化连接名；使用新版重新提取后显示'),
                     ('结构状态',' / '.join(x for value,x in [(node.get('trace_timeout'),'实例 trace 超时'),(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
@@ -1794,7 +1807,10 @@ class ClockTreeApp(tk.Tk):
             else:edges=self.diagram.model.incoming[node['id']]+self.diagram.model.outgoing[node['id']]
             members={node['id']}
         for direction,button,endpoint in [('upstream',self.upstream_button,'source'),('downstream',self.downstream_button,'target')]:
-            if node.get('reference_of'):count=1 if direction=='upstream' and node.get('reference_source') else 0
+            if node.get('kind')=='wire' and node.get('_focus_pin'):
+                from .navigation import neighbour_edges
+                count=len({e[endpoint] for e in neighbour_edges(self.diagram.model,node,direction)})
+            elif node.get('reference_of'):count=1 if direction=='upstream' and node.get('reference_source') else 0
             elif node.get('aggregate'):count=0
             elif isinstance(self.graph,IndexedGraph):
                 match='target' if direction=='upstream' else 'source'

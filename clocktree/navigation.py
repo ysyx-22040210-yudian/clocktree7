@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from .devices import connection_label
+from .connectivity import focused_pins
 
 
 def _neighbour_filter(node,direction):
@@ -10,6 +11,9 @@ def _neighbour_filter(node,direction):
     where=endpoint+'=?';params=[instance]
     if node.get('reference_of'):
         where+=' AND source=?';params.append(node.get('reference_source'))
+    pins=focused_pins(node,direction)
+    if pins is not None:
+        where+=' AND '+endpoint+'_pin IN ('+','.join('?' for p in pins)+')';params.extend(sorted(pins))
     return where,params
 
 
@@ -24,6 +28,8 @@ def neighbour_edges(model,node,direction):
     edges=model.incoming[instance] if direction=='upstream' else model.outgoing[instance]
     if node.get('reference_of'):
         edges=[e for e in edges if e['source']==node.get('reference_source') and e['target_pin'] in node['inputs']]
+    pins=focused_pins(node,direction)
+    if pins is not None:edges=[e for e in edges if e[('target_pin' if direction=='upstream' else 'source_pin')] in pins]
     return edges
 
 

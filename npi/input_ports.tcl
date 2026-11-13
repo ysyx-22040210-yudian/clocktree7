@@ -1,4 +1,4 @@
-# Read language-model formal inputs only. No driver, load or child traversal.
+# Read language-model formal ports. No driver, load or child traversal.
 proc ct_input_ports {inst {direction npiInput}} {
     set result {}
     set it [npi_iterate -type npiPort -refHandle $inst]
@@ -63,6 +63,8 @@ proc ct_expand_subsystem {hdl requested {direction npiInput}} {
 }
 proc ct_discover_inputs {} {
     global ct_rules ct_top ct_trace_scope
+    set directions {input}
+    if {[info exists ::env(CT7_PORT_DIRECTIONS)]} {set directions $::env(CT7_PORT_DIRECTIONS)}
     set instances 0
     foreach rule $ct_rules {
         lassign $rule layer scope module inputs output kind
@@ -77,10 +79,13 @@ proc ct_discover_inputs {} {
             incr instances
             set path [npi_get_str -property npiFullName -object $h]
             puts "CT7_INPUT_INSTANCE $path"; flush stdout
-            foreach record [ct_input_ports $h] {
-                lassign $record name width left right
-                ct_emit [ct_object event [ct_js input_port] instance [ct_js $path] module [ct_js $module] \
-                    name [ct_js $name] direction [ct_js input] width $width left [ct_js $left] right [ct_js $right]]
+            foreach direction $directions {
+                set npi_direction [expr {$direction eq "output" ? "npiOutput" : "npiInput"}]
+                foreach record [ct_input_ports $h $npi_direction] {
+                    lassign $record name width left right
+                    ct_emit [ct_object event [ct_js "${direction}_port"] instance [ct_js $path] module [ct_js $module] \
+                        name [ct_js $name] direction [ct_js $direction] width $width left [ct_js $left] right [ct_js $right]]
+                }
             }
             flush $::ct_stream
             npi_release_handle -object $h

@@ -13,6 +13,7 @@ from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph
 from .runtime import tail_text
 from .sv_editor import SVCodeEditor
 from .register_results import latest_register_result,register_result_stamp,result_directory
+from .div_sources import div_source_label
 
 
 class CandidateDialog(tk.Toplevel):
@@ -24,8 +25,8 @@ class CandidateDialog(tk.Toplevel):
         ttk.Button(bar,text='搜索',command=lambda:self.refresh(True)).pack(side='left')
         table_frame=ttk.Frame(self);table_frame.pack(fill='both',expand=True,padx=10)
         table_frame.rowconfigure(0,weight=1);table_frame.columnconfigure(0,weight=1)
-        self.table=ttk.Treeview(table_frame,columns=('instance','pin','expression','capture','certainty'),show='headings')
-        for col,label,width in [('instance','器件实例',190),('pin','实际辅助端口',100),('expression','模板信号 / 精确向量',300),('capture','接收寄存器位（sw_done）',250),('certainty','关系（请核对）',150)]:
+        self.table=ttk.Treeview(table_frame,columns=('instance','pin','expression','capture','certainty','div_source'),show='headings')
+        for col,label,width in [('instance','器件实例',190),('pin','实际辅助端口',100),('expression','模板信号 / 精确向量',300),('capture','接收寄存器位（sw_done）',200),('certainty','关系（请核对）',150),('div_source','DIV 来源',150)]:
             self.table.heading(col,text=label);self.table.column(col,width=width)
         scroll=ttk.Scrollbar(table_frame,command=self.table.yview);scroll.grid(row=0,column=1,sticky='ns')
         horizontal=ttk.Scrollbar(table_frame,orient='horizontal',command=self.table.xview);horizontal.grid(row=1,column=0,sticky='ew')
@@ -41,7 +42,8 @@ class CandidateDialog(tk.Toplevel):
         rows=self.parent.plan.candidates(self.branch,self.var,self.search.get(),self.offset,100);self.items={r['id']:r for r in rows}
         for row in rows:
             label='、'.join(RELATIONS.get(v,'跨多个寄存器' if v=='multiple_registers' else v) for v in row['certainty'].replace(';',',').split(','))
-            self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['expression'],row.get('capture_expression',''),label))
+            sources = ' / '.join(dict.fromkeys(div_source_label(source) for source in row.get('div_sources', [])))
+            self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['expression'],row.get('capture_expression',''),label,sources))
     def page(self,delta):self.offset=max(0,self.offset+delta*100);self.refresh()
     def choose(self):
         selection=self.table.selection()
@@ -159,7 +161,7 @@ class SVDialog(tk.Toplevel):
             try:self.registers.set(path)
             finally:self._setting_registers=False
             self.register_notice.set('已自动选择本设计最新完成的寄存器结果（含待核对项的结果仍可分析）。' if path else
-                                     '未找到本设计已完成的寄存器结果；可开始追踪或手动选择。未配置辅助口的单 L1 / L1 直达分支可留空。')
+                                     '未找到本设计已完成的寄存器结果。模板使用实际控制映射时，请先追踪或选择结果。')
         else:self.register_notice.set('手动选择寄存器结果；勾选“自动选择最新”可恢复自动选择。')
         self.invalidate_register_plan()
     def open_register_trace(self):
@@ -177,7 +179,7 @@ class SVDialog(tk.Toplevel):
         if self.app.busy:self.status.set('请等待主界面当前任务完成，再分析分支。');return
         try:
             self.refresh_registers()
-            if self.registers.get().strip() and not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('寄存器结果目录无效；未配置辅助口的单 L1 / L1 直达分支可留空，实际控制口仍需寄存器映射')
+            if self.registers.get().strip() and not (Path(self.registers.get())/'manifest.json').exists():raise ValueError('寄存器结果目录无效，请选择包含 manifest.json 的任务目录')
             self.remember();self.directory=self.app.runs/'.sv-templates'/uuid.uuid4().hex;self.directory.mkdir(parents=True)
             graph_path=self.directory/'architecture.json';write_source(graph_path,self.graph)
             command=[sys.executable,'-m','clocktree','sv-plan','--graph',str(graph_path),'--registers',self.registers.get(),'--out',str(self.directory)]
@@ -250,8 +252,12 @@ class SVDialog(tk.Toplevel):
         info=result.get('branch') or {}
         if info.get('origins'):
             text+='\n\n分支最初器件：'+'；'.join('{} · L{} · {}'.format(r['instance'],r.get('layer','?'),r['kind']) for r in info['origins'])
-        if info.get('single_l1_device'):
-            text+='\n单个 L1 器件成支：有输出取输出，无输出取当前输入；真实控制映射优先，缺项使用默认值。'
+        if info.get('single_device', info.get('single_l1_device')):
+            text+='\n单器件分支使用末端输出，只有输入时使用当前输入。已配置的控制口使用实际映射。'
+        sources = result['selected'].get('var_div', {}).get('div_sources', [])
+        if sources:
+            text += '\n\nDIV 来源\n' + '\n'.join('{} · {} {}'.format(
+                source['signal'], div_source_label(source), source.get('scope', source.get('hierarchy', ''))) for source in sources)
         if result.get('l1_input'):text+='\n\nL1 直达来源：'+', '.join(result['l1_input']['signals'])+'\n采用无选择器模板；$var_clkip 取末端输出，无输出器件取对应输入。'
         reset=result.get('reset',{})
         if 'var_rst' in result['values']:

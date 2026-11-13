@@ -1,4 +1,4 @@
-"""Independent, cancellable input discovery. Regex is an editor operation only."""
+"""Independent formal-port discovery. Regex runs in the rule editor."""
 import copy
 import json
 import os
@@ -12,18 +12,26 @@ from .environment import resolve_verdi
 from .extract import vendor_work_dir
 
 
+DIRECTION_LABELS = {'input': '输入', 'output': '输出'}
+
+
+def port_names(text):
+    return [part.strip() for part in text.replace('，', ',').split(',') if part.strip()]
+
+
 def filter_ports(rows, expression):
     pattern = re.compile(expression)
     return [row for row in rows if pattern.search(row['name'])]
 
 
-def confirmed_ports(rows, expression, selected):
+def confirmed_ports(rows, expression, selected, direction='input'):
     matches = filter_ports(rows, expression)
+    label = DIRECTION_LABELS[direction]
     if not matches:
-        raise ValueError('正则未匹配任何 input 端口')
-    names = sorted(set(row['name'] for row in matches) & set(selected))
+        raise ValueError('正则未匹配任何{}端口'.format(label))
+    names = sorted({row['name'] for row in matches} & set(selected))
     if not names:
-        raise ValueError('至少勾选一个匹配的 input 端口')
+        raise ValueError('至少勾选一个匹配的{}端口'.format(label))
     return names
 
 
@@ -32,12 +40,16 @@ def discover(request_path, output):
         request = json.load(stream)
     config = resolve_design_paths(copy.deepcopy(request['config']), request_path)
     module, scope = request['module'].strip(), request['hierarchy'].strip()
+    directions = request.get('directions', ['input'])
+    if (not isinstance(directions, list) or not directions or
+            any(not isinstance(direction, str) or direction not in DIRECTION_LABELS for direction in directions)):
+        raise ValueError('端口读取方向只支持 input 和 output')
+    directions = list(dict.fromkeys(directions))
     if not module or not config.get('design', {}).get('top'):
         raise ValueError('请填写 module 和设计顶层')
     if not any(config['design'].get(k) for k in ('elab', 'filelist')):
         raise ValueError('请指定 elab 或 RTL 文件列表')
-    config['layers'] = [{'index': 1, 'hierarchy': scope, 'modules': [
-        {'module': module, 'kind': 'subsystem'}]}]
+    config['layers'] = [{'index': 1, 'hierarchy': scope, 'modules': [{'module': module}]}]
     config['port_trace_timeout_s'] = 0
     output = Path(output).resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -56,7 +68,8 @@ def discover(request_path, output):
                 config['design'][key] = str(alias)
     raw = work/'input-ports.jsonl'
     write_tcl_config(config, work/'rules.tcl', raw)
-    environment = dict(os.environ, VERDI_HOME=home, CT7_CONFIG=str(work/'rules.tcl'))
+    environment = dict(os.environ, VERDI_HOME=home, CT7_CONFIG=str(work/'rules.tcl'),
+                       CT7_PORT_DIRECTIONS=' '.join(directions))
     # Inherit the GUI CLI's process group: cancellation kills both Python and
     # Verdi. No trace calls, no timer, and no source-code regex are involved.
     command = [executable, '-batch', '-nologo', '-play', 'discover_inputs.tcl']
@@ -66,12 +79,13 @@ def discover(request_path, output):
         with raw.open(encoding='utf-8') as stream:
             for line in stream:
                 item = json.loads(line)
-                if item['event'] == 'input_port': rows.append(item)
+                if item['event'] in ('input_port', 'output_port'): rows.append(item)
                 elif item['event'] == 'input_discovery_complete': completed = item
                 elif item['event'] == 'input_discovery_failed': failure = item['reason']
     if code or failure or not completed or not completed['instances']:
-        raise RuntimeError(failure or '输入端口读取未完成，请查看前处理日志')
+        raise RuntimeError(failure or '端口读取未完成，请查看前处理日志')
     result = dict(module=module, hierarchy=scope, instances=completed['instances'], ports=rows,
-                  operation='input-discovery-only', traced_ports=0)
+                  operation='input-discovery-only' if directions == ['input'] else 'port-discovery-only',
+                  directions=directions, traced_ports=0)
     (output/'input-ports.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     return result

@@ -13,7 +13,8 @@ import time
 from contextlib import closing
 
 from .auxiliary import aux_entries
-from .config import resolve_design_paths, validate_config
+from .config import div_source_scopes, resolve_design_paths, validate_config
+from .div_sources import classify_div_source, div_source_label
 from .register_expr import Expressions, MappingError, number, sequential_proof, resize
 from .register_worker import RegisterWorker, WorkerFault, MemoryFault, PortDeadline, QueryError
 from .memory import GIB
@@ -402,7 +403,20 @@ def run(request_path,output,resume=False):
 
 class RegisterIndex:
     columns=('实例','辅助功能','实际端口','端口 bit','寄存器信号 / 接收位 / 边界','端点方向','映射','状态','说明','已确认时序数据输入')
-    def __init__(self,directory):self.directory=Path(directory);self.path=self.directory/'registers.sqlite'
+    def __init__(self, directory, div_scopes=None):
+        self.directory = Path(directory)
+        self.path = self.directory/'registers.sqlite'
+        if div_scopes is None:
+            manifest = self.directory/'manifest.json'
+            config = json.loads(manifest.read_text(encoding='utf-8-sig'))['request'].get('config', {}) if manifest.is_file() else {}
+            div_scopes = div_source_scopes(config)
+        self.div_scopes = div_scopes
+
+    def div_source(self, role, status, side, endpoint):
+        if role == 'div' and status == 'register' and side == 'Q':
+            return classify_div_source(endpoint, self.div_scopes)
+        return {}
+
     def query(self,search='',offset=0,limit=100):
         search=next((key for key,label in LABELS.items() if search==label),search)
         with closing(sqlite3.connect(str(self.path))) as db:
@@ -417,10 +431,12 @@ class RegisterIndex:
         return total,rows
     def detail(self,identifier):
         with closing(sqlite3.connect(str(self.path))) as db:
-            row=db.execute('SELECT r.path,r.detail,j.seed,j.summary FROM results r JOIN jobs j ON j.id=r.job WHERE r.id=?',(identifier,)).fetchone()
+            row=db.execute('SELECT r.path,r.detail,j.seed,j.summary,r.status,r.side,r.endpoint FROM results r JOIN jobs j ON j.id=r.job WHERE r.id=?',(identifier,)).fetchone()
             if not row:return {}
-            path,detail,seed,summary=row;result=json.loads(detail);steps=[]
+            path,detail,seed,summary,status,side,endpoint=row;result=json.loads(detail);steps=[]
             result['port']=json.loads(seed);result['port_summary']=json.loads(summary)
+            source = self.div_source(result['port']['role'], status, side, endpoint)
+            if source:result['div_source'] = source
             while path:
                 entry=db.execute('SELECT parent,signal,evidence FROM paths WHERE id=?',(path,)).fetchone()
                 if not entry:break
@@ -429,11 +445,16 @@ class RegisterIndex:
     def export(self,path):
         total,offset=0,0
         with open(str(path),'w',encoding='utf-8-sig',newline='') as stream:
-            writer=csv.writer(stream);writer.writerow(self.columns)
+            writer=csv.writer(stream)
+            writer.writerow(self.columns + (('DIV 来源', 'DIV 来源 RTL 层次') if self.div_scopes else ()))
             while True:
                 total,rows=self.query(offset=offset,limit=1000)
                 for row in rows:
-                    values=list(row[1:]);values[7]=LABELS.get(values[7],values[7])
+                    values=list(row[1:])
+                    if self.div_scopes:
+                        source = self.div_source(values[1], values[7], values[5], values[4])
+                        values.extend((div_source_label(source), source.get('scope', source.get('hierarchy', ''))))
+                    values[7]=LABELS.get(values[7],values[7])
                     writer.writerow(["'"+str(v) if str(v).startswith(('=','+','-','@')) else v for v in values])
                 offset+=len(rows)
                 if offset>=total:break
@@ -445,12 +466,20 @@ class RegisterIndex:
             manifest=json.loads((self.directory/'manifest.json').read_text(encoding='utf-8'))
             stream.write('{"schema_version":1,"operation":"auxiliary-register-trace","request":')
             json.dump(manifest['request'],stream,ensure_ascii=False)
+            stream.write(',"div_source_scopes":')
+            json.dump(list(self.div_scopes),stream,ensure_ascii=False)
             for table in ('jobs','results','paths'):
                 stream.write(',"'+table+'":[');first=True
-                cursor=db.execute('SELECT * FROM '+table+' ORDER BY id')
+                if table == 'results':
+                    cursor = db.execute('SELECT r.*,j.seed FROM results r JOIN jobs j ON j.id=r.job ORDER BY r.id')
+                else:
+                    cursor = db.execute('SELECT * FROM '+table+' ORDER BY id')
                 columns=[c[0] for c in cursor.description]
                 for values in cursor:
                     row=dict(zip(columns,values))
+                    if table == 'results':
+                        source = self.div_source(json.loads(row.pop('seed'))['role'], row['status'], row['side'], row['endpoint'])
+                        if source:row['div_source'] = source
                     for key in ('seed','summary','detail','evidence'):
                         if key in row:row[key]=json.loads(row[key])
                     if not first:stream.write(',')

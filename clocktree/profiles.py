@@ -1,7 +1,12 @@
 """Explicit analysis profiles; clock configurations remain backward compatible."""
+GATE_KINDS = ('gate', 'sync_gate', 'gate_wrap')
+OCC_KINDS = ('occ', 'occ_root', 'occ_branch')
+SINGLE_INPUT_KINDS = GATE_KINDS + OCC_KINDS + ('div', 'rsy_sync')
+
 TREE_PROFILES = {
     'clock': {'label': '时钟树', 'signal': '时钟', 'network': '时钟网络',
-              'kinds': ('mux', 'gate', 'occ', 'div', 'wire', 'subsystem'),
+              'kinds': ('mux', 'sync_gate', 'gate_wrap', 'occ_root', 'occ_branch',
+                        'div', 'wire', 'subsystem', 'gate', 'occ'),
               'inputs': 'clock_inputs', 'output': 'clock_output',
               'sources': 'clock_sources', 'result': 'clocktree.json'},
     'reset': {'label': '复位树', 'signal': '复位', 'network': '复位网络',
@@ -18,6 +23,11 @@ def tree_type(config):
 
 def profile(config):
     return TREE_PROFILES[tree_type(config)]
+
+
+def selectable_kinds(config, current=None):
+    return tuple(kind for kind in profile(config)['kinds']
+                 if kind not in ('gate', 'occ') or kind == current)
 
 
 def rule_ports(rule, kind=None):

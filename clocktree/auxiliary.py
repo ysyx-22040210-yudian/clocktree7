@@ -1,12 +1,13 @@
 """Optional annotation ports. Never add these ports to connectivity seeds."""
 import re
+from .profiles import GATE_KINDS
 
 
 AUX_ROLES = {
     'mux': (('pll_sel', 'input'),),
     'div': (('div', 'input'), ('sw_done', 'output')),
-    'gate': (('gt', 'input'),),
 }
+AUX_ROLES.update({kind: (('gt', 'input'),) for kind in GATE_KINDS})
 DIRECTIONS = {'input': '输入', 'output': '输出'}
 
 

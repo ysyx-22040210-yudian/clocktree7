@@ -21,8 +21,8 @@ def node(kind,inputs=None):
             'kind':kind,'inputs':inputs or (['a','b'] if kind=='mux' else ['a']),'output':'q'}
 
 
-def test_four_types_and_single_input_contract():
-    for kind in ['gate','occ','div']:
+def test_single_input_contract():
+    for kind in ['gate','sync_gate','gate_wrap','occ','occ_root','occ_branch','div']:
         validate_config(config(kind,['a']))
         with pytest.raises(ValueError,match='exactly one'):validate_config(config(kind,['a','b']))
     validate_config(config('mux',['a','b','c','d']))

@@ -1,4 +1,5 @@
 """Native Tk auxiliary-register trace workbench; original tree is immutable."""
+import copy
 import json
 import os
 from pathlib import Path
@@ -11,9 +12,12 @@ import tkinter as tk
 from tkinter import ttk,filedialog
 
 from .register_trace import RegisterIndex,LABELS,seeds_from_graph
+from .config import div_source_scopes
+from .div_sources import div_source_label
 from .runtime import tail_text
 from .storage import write_graph
 from .register_progress import read_progress
+from .ui_state import design_key
 
 
 RELATIONS={'direct':'精确位映射','inverted':'反相位映射','logic':'组合逻辑依赖','conditional':'条件未固定'}
@@ -22,8 +26,17 @@ SIDES={'Q':'Q · 来源时序输出','D':'D · 目的写入位'}
 
 class RegisterDialog(tk.Toplevel):
     def __init__(self,app):
+        graph = app.graph
+        draft = app.get_config(validate=False)
+        if design_key(draft) == design_key(graph['config']):
+            source_config = draft
+        else:
+            source_config = graph['config']
+        scopes = div_source_scopes(source_config)
         super().__init__(app)
-        self.app=app;self.graph=app.graph;self.process=None;self.stream=None;self.closed=False
+        self.app=app;self.graph=graph;self.process=None;self.stream=None;self.closed=False
+        self.div_scopes = scopes
+        self.result_div_scopes = self.div_scopes
         self.directory=None;self.index=None;self.offset=0;self.total=0
         self.title('辅助端口 → 寄存器信号路径');self.geometry('1360x860');self.minsize(980,650);self.transient(app)
         frame=ttk.Frame(self,padding=16);frame.pack(fill='both',expand=True)
@@ -38,6 +51,10 @@ class RegisterDialog(tk.Toplevel):
                                  ('内存 GiB',self.memory_var,7),('每端口超时秒',self.timeout_var,7)]:
             ttk.Label(settings,text=label).pack(side='left',padx=(0,5));ttk.Entry(settings,textvariable=var,width=width).pack(side='left',padx=(0,12))
         ttk.Label(frame,text='DFT 名称精确匹配：短名称匹配同名信号，完整层次路径限定一个信号；0 超时表示不限时。Q/D 由时序语句证明，reg 声明不足以作为依据。').pack(anchor='w',pady=5)
+        self.div_source_text = tk.StringVar()
+        if graph['config'].get('tree_type', 'clock') == 'clock':
+            ttk.Label(frame, textvariable=self.div_source_text, wraplength=1280).pack(anchor='w', pady=(0, 4))
+        self.show_div_scopes(scopes)
         actions=ttk.Frame(frame);actions.pack(fill='x',pady=6)
         self.start_button=ttk.Button(actions,text='开始新的寄存器追踪',command=self.start);self.start_button.pack(side='left')
         self.resume_button=ttk.Button(actions,text='从已提交端口继续',command=lambda:self.start(True),state='disabled');self.resume_button.pack(side='left',padx=8)
@@ -57,12 +74,12 @@ class RegisterDialog(tk.Toplevel):
         panes=ttk.Panedwindow(frame,orient='vertical');panes.pack(fill='both',expand=True)
         table_pane=ttk.Frame(panes);panes.add(table_pane,weight=3)
         container=ttk.Frame(table_pane);container.pack(fill='both',expand=True)
-        columns=('instance','role','pin','bit','endpoint','side','relation','status','reason','data_input')
+        columns=('instance','role','pin','bit','endpoint','side','relation','status','reason','data_input','div_source')
         self.table=ttk.Treeview(container,columns=columns,
-                              displaycolumns=('instance','role','pin','bit','data_input','endpoint','side','relation','status','reason'),
+                              displaycolumns=('instance','role','pin','bit','div_source','data_input','endpoint','side','relation','status','reason'),
                               show='headings',selectmode='browse',height=9)
-        widths=(245,80,130,130,270,125,110,110,220,270)
-        for col,label,width in zip(columns,RegisterIndex.columns,widths):
+        widths=(205,75,115,115,250,125,110,110,220,230,110)
+        for col,label,width in zip(columns,RegisterIndex.columns+('DIV 来源',),widths):
             self.table.heading(col,text=label);self.table.column(col,width=width,minwidth=60,stretch=False)
         vertical=ttk.Scrollbar(container,orient='vertical',command=self.table.yview);vertical.pack(side='right',fill='y')
         horizontal=ttk.Scrollbar(container,orient='horizontal',command=self.table.xview);horizontal.pack(side='bottom',fill='x')
@@ -88,9 +105,14 @@ class RegisterDialog(tk.Toplevel):
             except (OSError,ValueError,KeyError) as error:self.status.set('历史任务读取失败：'+str(error))
 
     def load_directory(self,path):
-        self.directory=Path(path);self.index=RegisterIndex(path) if (self.directory/'registers.sqlite').exists() else None
+        directory = Path(path)
+        manifest = json.loads((directory/'manifest.json').read_text(encoding='utf-8-sig'))
+        request = manifest['request']
+        self.result_div_scopes = self.div_scopes if design_key(request['config']) == design_key(self.graph['config']) else None
+        self.directory = directory
+        self.index = RegisterIndex(path, self.result_div_scopes) if (directory/'registers.sqlite').exists() else None
+        self.show_div_scopes(self.index.div_scopes if self.index else self.result_div_scopes)
         self.offset=0
-        manifest=json.loads((self.directory/'manifest.json').read_text(encoding='utf-8'));request=manifest['request']
         self.root_var.set(request.get('trace_root',''));self.dft_var.set(', '.join(request.get('dft_zero',[])))
         self.memory_var.set(str(request.get('memory_limit_gib',60)));self.timeout_var.set(str(request.get('port_trace_timeout_s',0)))
         state=read_progress(self.directory)
@@ -102,6 +124,10 @@ class RegisterDialog(tk.Toplevel):
         attention='（含未解析 / 边界 / 未固定条件，请检查状态列）' if state.get('stage')=='finished' and not state.get('context',{}).get('complete') else ''
         self.status.set(('历史任务 · '+state.get('message','断点已保存'))+attention+' · '+str(path))
         self.refresh()
+
+    def show_div_scopes(self, scopes):
+        self.div_source_text.set(' · '.join('DIV 来源层次 {}  {}'.format(i, path) for i, path in enumerate(scopes or (), 1))
+                                 or '可在主界面配置两条 DIV 来源层次。')
 
     def start(self,resume=False):
         if self.process and self.process.poll() is None:return
@@ -116,10 +142,14 @@ class RegisterDialog(tk.Toplevel):
             else:
                 seeds=list(seeds_from_graph(self.graph))
                 if not seeds:raise ValueError('当前结果没有辅助端口，请先编辑器件并重新提取架构')
-                request={'config':self.graph['config'],'seeds':seeds,'trace_root':self.root_var.get().strip(),
+                config = copy.deepcopy(self.graph['config'])
+                config.pop('div_source_scopes', None)
+                if self.div_scopes:config['div_source_scopes'] = list(self.div_scopes)
+                request={'config':config,'seeds':seeds,'trace_root':self.root_var.get().strip(),
                          'dft_zero':[v.strip() for v in self.dft_var.get().split(',') if v.strip()],
                          'memory_limit_gib':float(self.memory_var.get()),'port_trace_timeout_s':float(self.timeout_var.get())}
                 self.directory=self.app.runs/'.register-trace'/uuid.uuid4().hex;self.directory.mkdir(parents=True)
+                self.result_div_scopes = self.div_scopes
                 request_path=self.directory/'request.json';write_graph(request_path,request)
                 self.index=None;self.table.delete(*self.table.get_children());self.offset=0
             self.app.ui_state.update(self.graph['config'],register_trace_directory=str(self.directory))
@@ -139,7 +169,8 @@ class RegisterDialog(tk.Toplevel):
             self.status.set('{} · {} · {} {} {}'.format(data['stage'],data['message'],context.get('instance',''),context.get('bit',context.get('pin','')),context.get('signal','')))
         if self.process.poll() is None:self.after(200,self.poll);return
         self.stream.close();self.stream=None;self.start_button.configure(state='normal')
-        self.index=RegisterIndex(self.directory) if (self.directory/'registers.sqlite').exists() else None
+        self.index=RegisterIndex(self.directory, self.result_div_scopes) if (self.directory/'registers.sqlite').exists() else None
+        self.show_div_scopes(self.index.div_scopes if self.index else self.result_div_scopes)
         result=self.directory/'register-trace.json'
         if self.process.returncode in (0,2) and result.exists():
             summary=json.loads(result.read_text(encoding='utf-8'))['summary']
@@ -157,7 +188,10 @@ class RegisterDialog(tk.Toplevel):
         try:self.total,rows=self.index.query(self.search.get().strip(),self.offset)
         except Exception as error:self.status.set(str(error));return
         for row in rows:
-            identifier,*values=row;values[5]=SIDES.get(values[5],values[5]);values[6]=RELATIONS.get(values[6],values[6]);values[7]=LABELS.get(values[7],values[7])
+            identifier,*values=row
+            source = self.index.div_source(values[1], values[7], values[5], values[4])
+            values.append(div_source_label(source))
+            values[5]=SIDES.get(values[5],values[5]);values[6]=RELATIONS.get(values[6],values[6]);values[7]=LABELS.get(values[7],values[7])
             self.table.insert('','end',iid=str(identifier),values=values)
         self.page_status.set('{}–{} / {} 条位映射与问题'.format(self.offset+1 if rows else 0,self.offset+len(rows),self.total))
 
@@ -170,6 +204,9 @@ class RegisterDialog(tk.Toplevel):
         if not selected or not self.index:return
         data=self.index.detail(int(selected[0]));proof=data.get('proof',{})
         text='状态：{}\n端点：{} {}\n'.format(LABELS.get(data.get('status'),data.get('status','')),data.get('endpoint',''),SIDES.get(data.get('side'),''))
+        if data.get('div_source'):
+            source = data['div_source']
+            text += '{} {}\n'.format(div_source_label(source), source.get('scope', source.get('hierarchy', '')))
         if data.get('data_input'):
             text+='已确认时序数据输入：'+data['data_input']+'\n接收寄存器位：'+data.get('capture_target',data.get('endpoint',''))+'\n'
         if proof:

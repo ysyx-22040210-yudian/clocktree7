@@ -97,6 +97,31 @@ def test_old_unmarked_boundaries_do_not_gain_new_proofs():
     assert not any(n.get('l1_inputs') for n in graph['nodes'])
 
 
+@pytest.mark.parametrize('indexed', [False, True])
+def test_legacy_later_roots_load_without_former_l1_issue(tmp_path, indexed):
+    from clocktree.session import read_graph
+    from clocktree.storage import publish_index, write_graph
+    events, config = fixture()
+    for event in events:
+        for result in event.get('results', []):
+            result.pop('l1_verified', None)
+    graph = build_graph(events, config)
+    assert graph['summary']['topology_valid']
+    assert next(n for n in graph['nodes'] if n['id']=='top.domain.g0')['root']
+    graph['diagnostics'].append({'code': 'root_outside_L1', 'instance': 'top.domain.g0'})
+    graph['summary'].update(topology_valid=False, diagnostics=len(graph['diagnostics']))
+    path = tmp_path/'clocktree.json'
+    write_graph(path, graph)
+    if indexed:
+        store = ResultStore(tmp_path/'result.sqlite',True)
+        publish_index(path,index_graph(graph,store))
+        store.close()
+    loaded = read_graph(path)
+    assert loaded['summary']['topology_valid'] and loaded['summary']['diagnostics'] == 0
+    assert not list(loaded['diagnostics'])
+    assert json.loads(path.read_text(encoding='utf-8'))['diagnostics'][0]['code']=='root_outside_L1'
+
+
 def test_partial_mux_l1_entry_is_reported_as_mixed_instead_of_ignored(tmp_path):
     events,cfg=fixture()
     target=next(e for e in events if e.get('path')=='top.domain.g1')

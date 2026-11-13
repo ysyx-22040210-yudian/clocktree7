@@ -10,6 +10,7 @@ from .config import hierarchy_contains
 
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression",
               "trace_timeout", "trace_skipped_timeout", "wire_connection_unresolved", "unselected_wire_input"}
+TOPOLOGY_ERRORS = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "layer_conflict"}
 
 
 def build_graph(events, config, evidence_store=None):
@@ -33,6 +34,12 @@ def build_graph(events, config, evidence_store=None):
                 trace.setdefault('l1_entries', []).append(result)
             else:
                 trace['non_l1_result'] = True
+            if result['status'] not in ('input_boundary', 'scope_boundary'):
+                trace['non_boundary_driver'] = True
+            elif not result.get('l1_verified') and result.get('endpoint'):
+                endpoints = trace.setdefault('upstream_boundaries', set())
+                if len(endpoints) < 2:
+                    endpoints.add(result['endpoint'])
         if result['status'] == 'sink':
             cell = result.get('cell', '')
             group = trace['sinks'].setdefault(cell, {'status': 'sink_group', 'cell': cell, 'count': 0,
@@ -75,8 +82,11 @@ def build_graph(events, config, evidence_store=None):
     def finish(trace):
         trace_keys.add((trace['instance'], trace['pin'], trace['direction']))
         boundaries.extend(trace['sinks'].values())
-        if trace['direction'] == 'driver' and trace.get('l1_entries') and not trace.get('non_l1_result'):
-            entries = {r['endpoint']: r for r in trace['l1_entries']}
+        entries = trace.get('l1_entries', []) if not trace.get('non_l1_result') else []
+        if not trace.get('non_boundary_driver') and len(trace.get('upstream_boundaries', ())) <= 1:
+            entries = entries + trace.get('passed_l1_entries', [])
+        if trace['direction'] == 'driver' and entries:
+            entries = {r['endpoint']: r for r in entries}
             if len(entries) == 1:
                 entry = next(iter(entries.values()))
                 path = evidence_store.trace_path(trace['trace_id'], entry['path_id']) if 'path_id' in entry else entry.get('path', [])
@@ -141,6 +151,8 @@ def build_graph(events, config, evidence_store=None):
             trace = active[item['trace_id']]
             consume(trace, item['result'])
             trace['count'] += 1
+        elif kind == 'l1_entry':
+            active[item['trace_id']].setdefault('passed_l1_entries', []).append(item['result'])
         elif kind == 'trace_end':
             trace = active.pop(item['trace_id'])
             if not trace['count'] or trace['count'] != item['result_count']:
@@ -205,8 +217,7 @@ def build_graph(events, config, evidence_store=None):
             diagnostics.append({"code": "trace_mismatch", "edge": edge["id"], "observed": sorted(edge["evidence"])})
         if edge["layer_delta"] < 0:
             diagnostics.append({"code": "reverse_layer", "edge": edge["id"]})
-    # A physical external clock can feed many L1 gates; keep its identity and
-    # join those branches in the same network without duplicating RTL instances.
+    # Keep the identity of a source that feeds several selected roots.
     sources = {}
     source_loads = defaultdict(set)
     for boundary in boundaries:
@@ -296,7 +307,7 @@ def build_graph(events, config, evidence_store=None):
         node['scope_input_boundary'] = node['id'] in scope_inputs
         node['scope_output_boundary'] = node['id'] in scope_outputs
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
-        if node["root"] and node["layer"] != 1 and not node['scope_input_boundary'] and not node.get('l1_inputs'):
+        if tree_type(config) == 'reset' and node["root"] and node["layer"] != 1 and not node['scope_input_boundary'] and not node.get('l1_inputs'):
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
     fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint', 'instance_trace_timeout'}
     coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
@@ -315,7 +326,7 @@ def build_graph(events, config, evidence_store=None):
         node['terminal_inputs'] = sorted({a for a,b in pairs if (node['id'], b) not in used_outputs}) if coverage_ok else []
         node['terminal'] = bool(node['terminal_inputs'])
         node['has_unresolved_output'] |= any(v!='verified' for v in node['internal_trace_status'].values())
-    topology_errors = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "root_outside_L1", "layer_conflict"}
+    topology_errors = TOPOLOGY_ERRORS | {'root_outside_L1'} if tree_type(config) == 'reset' else TOPOLOGY_ERRORS
     return {"schema_version": 1, "tool_version": "0.1.0", "tree_type": tree_type(config), "config": config, "metadata": metadata,
             "nodes": sorted(nodes.values(), key=lambda n: (n["layer"], n["id"])),
             "edges": sorted(edges.values(), key=lambda e: e["id"]), "boundaries": boundaries,

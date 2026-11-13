@@ -140,10 +140,36 @@ def test_single_l1_wire_counts_terminal_outputs_and_preserves_channel_input(tmp_
         assert value['values']['var_clkip']=='chip.w_'+row['pin']
 
 
-def test_known_non_l1_frontier_is_not_silently_accepted(tmp_path):
-    plan=prepare(graph([node('bad','occ',3)]),None,tmp_path/'plan',False)
-    value=plan.resolve(plan.branches()[1][0],{'without_mux':'$var_clkip'})
-    assert not value['ready'] and any('L3' in s and 'L1' in s for s in value['issues'])
+@pytest.mark.parametrize('kind', ['occ_root', 'mux', 'gate_wrap'])
+def test_single_later_layer_device_uses_actual_origin_and_output(tmp_path, kind):
+    start = node('start', kind, 3, ('i', 'j') if kind == 'mux' else ('i',))
+    if kind == 'mux':
+        start['l1_inputs'] = {pin: {'signal': 'chip.pad_'+pin, 'status': 'verified'} for pin in start['inputs']}
+    plan = prepare(graph([start]), None, tmp_path/'plan', False)
+    mode = 'with_mux' if kind == 'mux' else 'without_mux'
+    value = plan.resolve(plan.branches()[1][0], {mode: ALL})
+    assert value['ready'], value
+    assert value['branch']['origins'] == [{'instance':'chip.start', 'layer':3, 'kind':kind}]
+    assert value['branch']['single_device'] and value['pin'] == 'o'
+    assert value['values']['var_pll0'] == 'chip.start_i'
+    assert value['values']['var_clkip'] == 'chip.start_o' and value['values']['var_rst'] == 'chip.rst3'
+    assert value['values']['var_div'] == '0'
+
+
+def test_later_layer_chain_orders_both_gate_types_by_connectivity(tmp_path):
+    start = node('s','occ_root',2)
+    first = node('a','sync_gate',3)
+    second = node('b','gate_wrap',3)
+    end = node('t','occ_branch',5)
+    for gate in (first,second):gate['aux_ports'] = {'gt':'en'}
+    g = graph([second,start,end,first],[('s','o','a','i'),('a','o','b','i'),('b','o','t','i')])
+    reg = registers(tmp_path,g,[(first['id'],'gt','en','chip.Q[7]'),(second['id'],'gt','en','chip.Q[5]')])
+    plan = prepare(g,reg,tmp_path/'plan',False)
+    assert plan.branches()[0] == 1
+    result = plan.resolve(plan.branches()[1][0], {'without_mux':'$var_gt0 $var_gt1 $var_gt2 $var_pll0 $var_rst $var_clkip'})
+    assert result['ready'], result
+    assert result['values'] == {'var_gt0':'chip.Q[7]', 'var_gt1':'chip.Q[5]', 'var_gt2':"1'b1",
+                                'var_pll0':'chip.s_i', 'var_clkip':'chip.t_i', 'var_rst':'chip.rst2'}
 
 
 def test_wire_fanout_at_later_terminal_layer_counts_each_proven_output(tmp_path):

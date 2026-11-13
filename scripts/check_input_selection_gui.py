@@ -97,7 +97,7 @@ for mode in ('clock','reset'):
     ports.start();pump(lambda:bool(ports.rows) and str(ports.read_button['state'])=='normal')
     count('reread_restores',2,2)
     ports.confirm();editor.save();pump()
-    assert saved[0][key]==['aux_clk','clk_bus']
+    assert saved[0][key]==['clk_bus','aux_clk']
 
     # Reuse real parameterized discovery metadata, then stress the preview only.
     editor=RuleDialog(app,2,{'module':'wb_sub','kind':'subsystem',key:['clk_bus'],'input_regex':'^clk_'},lambda rule:None)
@@ -121,7 +121,7 @@ for mode in ('clock','reset'):
 
 assert not errors,errors
 report=dict(passed=True,python=sys.version,tk=app.tk.call('info','patchlevel'),cases=records,callback_errors=errors,
-            real_eda_discovery=True,clock_and_reset=True,confirmed_names=['aux_clk','clk_bus'])
+            real_eda_discovery=True,clock_and_reset=True,confirmed_names=['clk_bus','aux_clk'])
 (out/'acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 app.close()
 print(json.dumps(dict(passed=True,cases=len(records),callback_errors=len(errors)),ensure_ascii=False),flush=True)

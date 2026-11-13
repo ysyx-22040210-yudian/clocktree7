@@ -162,7 +162,7 @@ def gui(out,source,phase):
     assert dialog.table.heading('pin','text')=='末端端口'
     row=next(r for r in dialog.rows.values() if r['instance']=='sv_ends.g')
     dialog.table.selection_set(row['id']);dialog.detail();pump(app)
-    assert 'sv_ends.outs[0]' in dialog.preview.get('1.0','end') and '单个 L1 器件成支' in dialog.preview.get('1.0','end')
+    assert 'sv_ends.outs[0]' in dialog.preview.get('1.0','end') and '单器件分支' in dialog.preview.get('1.0','end')
     if phase=='gui-write':
         dialog.export(out/'gui-all.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
         assert json.loads(Path(dialog.export_result['mapping']).read_text())['block_count']==15

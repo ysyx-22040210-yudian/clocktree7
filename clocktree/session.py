@@ -14,7 +14,7 @@ import sqlite3
 from .config import validate_config
 from .profiles import TREE_PROFILES, tree_type
 from .paths import user_state_root, path_key
-from .storage import IndexedGraph, PresentedNodes, open_graph, snapshot_index
+from .storage import IndexedGraph, PresentedNodes, RecordSequence, open_graph, snapshot_index
 
 
 def default_session_dir(runs):
@@ -57,6 +57,19 @@ def read_graph(path, expected=None):
     if mode not in TREE_PROFILES or graph.get('tree_type', mode) != mode or (expected and mode != expected):
         raise ValueError('Result analysis type does not match')
     validate_config(graph['config'])
+    if mode == 'clock' and graph['summary'].get('topology_valid') is False:
+        # Old results can contain a former L1-only topology diagnostic.
+        # Filter the presentation, keeping the saved result and evidence intact.
+        original = graph.get('diagnostics', [])
+        if isinstance(graph, IndexedGraph):
+            diagnostics = RecordSequence(graph.store, 'diagnostics', 'ct7_diagnostic_code(data) != ?', ('root_outside_L1',))
+        else:
+            diagnostics = [record for record in original if record.get('code') != 'root_outside_L1']
+        if len(diagnostics) != len(original):
+            from .graph import TOPOLOGY_ERRORS
+            graph['diagnostics'] = diagnostics
+            graph['summary'] = dict(graph['summary'], diagnostics=len(diagnostics),
+                                    topology_valid=not any(row.get('code') in TOPOLOGY_ERRORS for row in diagnostics))
     return graph
 
 

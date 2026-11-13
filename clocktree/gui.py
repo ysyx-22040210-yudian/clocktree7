@@ -18,17 +18,18 @@ from itertools import islice
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
-from .config import load_config, validate_config, EXTRACTION_MODES
+from .config import div_source_scopes, extraction_settings, load_config, validate_config, EXTRACTION_MODES
 from .paths import default_runs_dir
 from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule, connection_details
 from .auxiliary import AUX_ROLES, DIRECTIONS, validate_aux_ports
-from .layer_reset import without_resets
+from .input_ports import port_names
 from .devices import auxiliary_details, wire_details
 from .viewmodel import GraphView
-from .profiles import TREE_PROFILES, LABEL_TO_TREE, tree_type, profile, rule_ports, empty_config, result_filename, output_ports
+from .profiles import (GATE_KINDS, SINGLE_INPUT_KINDS, TREE_PROFILES, LABEL_TO_TREE,
+                       tree_type, profile, rule_ports, empty_config, result_filename, output_ports, selectable_kinds)
 from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
 from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
 from .indexed_view import IndexedGraphView
@@ -57,9 +58,10 @@ class RuleDialog(tk.Toplevel):
         self.app, self.callback = app, callback
         self.layer_index=layer
         self.hierarchy=app.get_config(validate=False)['layers'][layer-1]['hierarchy']
-        self.input_regex=rule.get('input_regex','.*')
-        self._confirmed=None
-        self._old_selection=copy.deepcopy(rule.get('port_selection',{}))
+        self.port_regex = {direction: rule.get(direction+'_regex', '.*') for direction in ('input', 'output')}
+        self.aux_regex = {}
+        self.discovered_module = None
+        self.discovered_rows = None
         self.tree_type = app._active_tree_type
         self.info = TREE_PROFILES[self.tree_type]
         self.input_key, self.output_key = self.info['inputs'], self.info['output']
@@ -73,38 +75,45 @@ class RuleDialog(tk.Toplevel):
         ttk.Label(frame, text='选择器件类型，填写 module 和关注端口。连接由 elab 确定。', style='Muted.TLabel').pack(anchor='w', pady=(6,14))
         ttk.Label(frame,text='器件类型',style='Small.TLabel').pack(anchor='w',pady=(0,4))
         self.kind_var=tk.StringVar(value=kind_label(rule.get('kind'),self.tree_type) if rule.get('kind') in self.info['kinds'] else '请选择器件类型')
-        self.kind_combo=ttk.Combobox(frame,textvariable=self.kind_var,values=type_labels({'tree_type':self.tree_type}),state='readonly')
+        self.kind_combo=ttk.Combobox(frame,textvariable=self.kind_var,
+                                    values=type_labels({'tree_type':self.tree_type}, rule.get('kind')),state='readonly')
         self.kind_combo.pack(fill='x')
-        self.type_hint=tk.StringVar(value=('MUX 可多路复位输入；RSY_SYNC 为一个复位输入和一个复位输出。同步时钟口不参与复位连线。'
-                                         if self.tree_type=='reset' else '选择器可多输入；门控、OCC、DIV 均为单输入，四类都只有一个关注输出。'))
+        self.type_hint=tk.StringVar()
         ttk.Label(frame,textvariable=self.type_hint,style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=(6,5))
         self.fields = {}
         self.entries={}
+        self.port_buttons = {}
         for key, label, value in [('module','Module 定义名',rule.get('module','')),
                                   (self.input_key,'关注的{}输入口（多个以逗号分隔）'.format(self.info['signal']),', '.join(rule.get(self.input_key,[]))),
                                   (self.output_key,'关注的{}输出口（穿线可多个，以逗号分隔）'.format(self.info['signal']),', '.join(rule.get(self.output_key+'s',[])) if rule.get('kind')=='wire' else rule.get(self.output_key,''))]:
             ttk.Label(frame, text=label, style='Small.TLabel').pack(anchor='w', pady=(7,4))
             variable = tk.StringVar(value=value)
-            entry = ttk.Entry(frame, textvariable=variable, width=46)
-            entry.pack(fill='x', ipady=3)
+            row = ttk.Frame(frame, style='White.TFrame')
+            row.pack(fill='x')
+            entry = ttk.Entry(row, textvariable=variable, width=40)
+            entry.pack(side='left', fill='x', expand=True, ipady=3)
             self.fields[key] = variable
             self.entries[key]=entry
             if key=='module':
                 self.first = entry
+            else:
+                direction = 'input' if key == self.input_key else 'output'
+                button = ttk.Button(row, text='正则添加', command=lambda d=direction:self.edit_ports(d))
+                button.pack(side='right', padx=(8, 0))
+                self.port_buttons[direction] = button
         self.aux_frame=ttk.Frame(frame,style='White.TFrame')
         self.aux_frame.pack(fill='x',pady=(6,0))
-        self.aux_hint=ttk.Label(self.aux_frame,text='辅助端口（选填）：只显示例化连接信号，不参与追踪。',style='Muted.TLabel')
+        self.aux_hint=ttk.Label(self.aux_frame,text='辅助端口（选填），用于显示绑定与追踪寄存器。',style='Muted.TLabel')
         self.aux_fields={};self.aux_rows={}
         for role,direction in (('pll_sel','input'),('div','input'),('sw_done','output'),('gt','input')):
             row=ttk.Frame(self.aux_frame,style='White.TFrame')
             ttk.Label(row,text='{} {}端口名'.format(role,DIRECTIONS[direction]),style='Small.TLabel',width=22).pack(side='left')
             variable=tk.StringVar(value=rule.get('aux_ports',{}).get(role,''))
-            ttk.Entry(row,textvariable=variable,width=25).pack(side='left',fill='x',expand=True,ipady=2)
+            ttk.Entry(row,textvariable=variable,width=21).pack(side='left',fill='x',expand=True,ipady=2)
+            ttk.Button(row, text='正则添加', command=lambda d=direction,r=role:self.edit_ports(d,r)).pack(side='right',padx=(8,0))
             self.aux_rows[role]=row;self.aux_fields[role]=variable
-        self.preprocess_button=ttk.Button(frame,text='读取 elab 输入端口 → 正则筛选 → 勾选确认',command=self.edit_inputs)
-        self.preprocess_button.pack(fill='x',pady=8)
-        self.selection_status=tk.StringVar(value='子系统需在编辑期间确认 input 名单；主提取不会运行正则。')
-        ttk.Label(frame,textvariable=self.selection_status,style='Muted.TLabel',wraplength=430).pack(anchor='w')
+        self.selection_status=tk.StringVar(value='直接编辑端口名，或从 elab 正则筛选后加入。')
+        ttk.Label(frame,textvariable=self.selection_status,style='Muted.TLabel',wraplength=440).pack(anchor='w',pady=(8,0))
         ttk.Label(frame,text='器件外观预览',style='Small.TLabel').pack(anchor='w',pady=(12,6))
         self.preview=tk.Canvas(frame,width=440,height=158,bg='#101b2e',highlightthickness=0)
         self.preview.pack(fill='x')
@@ -119,8 +128,6 @@ class RuleDialog(tk.Toplevel):
         for variable in self.fields.values():variable.trace('w',self.update_preview)
         for variable in self.aux_fields.values():variable.trace('w',self.update_preview)
         self.fields['module'].trace('w',self.invalidate_ports)
-        if rule.get('kind')=='subsystem' and self._old_selection.get('module')==rule.get('module') and self._old_selection.get('hierarchy')==self.hierarchy:
-            self._confirmed=(rule['module'],self.hierarchy,self.input_regex,tuple(rule.get(self.input_key,[])))
         self.update_preview()
         self.bind('<Return>', lambda e:self.save())
         self.bind('<Escape>', lambda e:self.destroy())
@@ -135,28 +142,26 @@ class RuleDialog(tk.Toplevel):
         if kind not in self.info['kinds']:
             self.error.set('请选择“{}”中的一种器件类型。'.format(' / '.join(type_labels({'tree_type':self.tree_type}))))
             return
-        rule = {'module':self.fields['module'].get().strip(),
-                self.input_key:[x.strip() for x in self.fields[self.input_key].get().replace('，',',').split(',') if x.strip()],
-                self.output_key:self.fields[self.output_key].get().strip(),'kind':kind}
-        if kind=='wire':
-            rule[self.output_key+'s']=[x.strip() for x in rule.pop(self.output_key).replace('，',',').split(',') if x.strip()]
-        inputs,output=rule_ports(rule,self.tree_type)
-        if kind=='subsystem':
-            if self._confirmed != (rule['module'],self.hierarchy,self.input_regex,tuple(inputs)):
-                self.error.set('请先读取 elab 输入端口，正则筛选并勾选确认后再保存。');return
-            rule.pop(self.output_key,None)
-            rule['input_regex']=self.input_regex
-            rule['port_selection']={'module':rule['module'],'hierarchy':self.hierarchy,'regex':self.input_regex,'confirmed':True}
-        if not rule['module'] or not inputs or (kind!='subsystem' and not output):
+        inputs = port_names(self.fields[self.input_key].get())
+        outputs = [] if kind == 'subsystem' else port_names(self.fields[self.output_key].get())
+        rule = {'module':self.fields['module'].get().strip(), self.input_key:inputs, 'kind':kind}
+        if not rule['module'] or not inputs or (kind != 'subsystem' and not outputs):
             self.error.set('请填写 module 名、输入口和输出口；穿线可填写多个输出。')
             return
-        outputs=output if kind=='wire' else [output] if output else []
+        if kind not in ('subsystem', 'wire') and len(outputs) != 1:
+            self.error.set('此器件需要一个关注输出口。');return
         if len(set(inputs))!=len(inputs) or len(set(outputs))!=len(outputs) or set(outputs).intersection(inputs):
-            self.error.set('输入口不能重复，输入口和输出口不能相同。')
+            self.error.set('端口名不能重复，输入和输出不能同名。')
             return
-        if kind in ('gate','occ','div','rsy_sync') and len(inputs)!=1:
-            self.error.set('{}只允许一个关注输入口；多个{}输入请选择 MUX。'.format(kind_label(kind,self.tree_type),self.info['signal']))
+        if kind in SINGLE_INPUT_KINDS and len(inputs) != 1:
+            self.error.set('{} 需要一个关注输入口。'.format(kind_label(kind,self.tree_type)))
             return
+        if kind == 'wire':rule[self.output_key+'s'] = outputs
+        elif outputs:rule[self.output_key] = outputs[0]
+        for direction, expression in self.port_regex.items():
+            if expression != '.*' and (direction == 'input' or outputs):
+                rule[direction+'_regex'] = expression
+        _, output = rule_ports(rule, self.tree_type)
         aux={role:self.aux_fields[role].get().strip() for role,_ in AUX_ROLES.get(kind,()) if self.aux_fields[role].get().strip()}
         if aux:rule['aux_ports']=aux
         try:validate_aux_ports(rule,inputs,output)
@@ -165,21 +170,47 @@ class RuleDialog(tk.Toplevel):
         self.destroy()
 
     def edit_inputs(self):
+        return self.edit_ports('input')
+
+    def edit_ports(self, direction, role=None):
         from .input_view import InputPortDialog
         module=self.fields['module'].get().strip()
         if not module:self.error.set('请先填写 module 名。');return
-        def confirmed(names,expression,rows):
-            self.input_regex=expression
-            self.fields[self.input_key].set(', '.join(names))
-            self._confirmed=(module,self.hierarchy,expression,tuple(names))
-            self.selection_status.set('已确认 {} 个 input 端口；正则：{}'.format(len(names),expression))
+        kind = LABEL_TO_KIND.get(self.kind_var.get())
+        if kind not in self.info['kinds'] or (direction == 'output' and kind == 'subsystem'):
+            return
+        if role:
+            if (role, direction) not in AUX_ROLES.get(kind, ()):
+                return
+            single = True
+            field, expressions, regex_key = self.aux_fields[role], self.aux_regex, role
+        else:
+            single = kind in SINGLE_INPUT_KINDS if direction == 'input' else kind != 'wire'
+            field = self.fields[self.input_key if direction == 'input' else self.output_key]
+            expressions, regex_key = self.port_regex, direction
+        previous = port_names(field.get())
+
+        def confirmed(names, expression, rows):
+            expressions[regex_key] = expression
+            merged = names if single else list(dict.fromkeys(previous + names))
+            field.set(', '.join(merged))
+            self.selection_status.set('已写入{}端口名，可在文本框继续编辑。'.format(DIRECTIONS[direction]))
             self.error.set('')
-        InputPortDialog(self,self.app.get_config(validate=False),module,self.hierarchy,self.input_regex,
-                        [p.strip() for p in self.fields[self.input_key].get().split(',') if p.strip()],confirmed)
+
+        def cache(rows):
+            self.discovered_module = (module, self.hierarchy, directions)
+            self.discovered_rows = rows
+
+        directions = ['input'] if kind == 'subsystem' else ['input', 'output']
+        cached = self.discovered_rows if self.discovered_module == (module, self.hierarchy, directions) else None
+        return InputPortDialog(self, self.app.get_config(validate=False), module, self.hierarchy,
+                               expressions.get(regex_key, '.*'), previous, confirmed, direction=direction,
+                               read_directions=directions, cached_rows=cached, cache_callback=cache, single=single)
 
     def invalidate_ports(self,*args):
-        self._confirmed=None
-        if LABEL_TO_KIND.get(self.kind_var.get())=='subsystem':self.selection_status.set('Module 已修改，请重新读取、筛选并确认输入口。')
+        self.discovered_module = None
+        self.discovered_rows = None
+        self.selection_status.set('请核对文本框中的端口名与当前 module。')
 
     def update_preview(self,*args):
         c=self.preview
@@ -192,21 +223,22 @@ class RuleDialog(tk.Toplevel):
             self.aux_hint.pack(anchor='w',pady=(2,4))
             for role,_ in AUX_ROLES[kind]:self.aux_rows[role].pack(fill='x',pady=3)
         subsystem=kind=='subsystem'
-        self.preprocess_button.configure(state='normal' if subsystem else 'disabled')
-        self.entries[self.input_key].configure(state='readonly' if subsystem else 'normal')
+        self.port_buttons['input'].configure(state='normal' if kind in self.info['kinds'] else 'disabled')
+        self.port_buttons['output'].configure(state='normal' if kind in self.info['kinds'] and not subsystem else 'disabled')
         self.entries[self.output_key].configure(state='disabled' if subsystem else 'normal')
         if subsystem:self.type_hint.set('子系统只有输入终点。直接父层：'+(self.hierarchy or '设计顶层'))
         elif kind=='wire':self.type_hint.set('穿线支持多个输入和输出。内部逐位对应关系由 elab 证明；未知连接不补画。')
-        else:self.type_hint.set('MUX 可多输入；门控、OCC、DIV、RSY_SYNC 为单输入、单输出。')
+        elif kind=='mux':self.type_hint.set('选择器可填写多个输入和一个输出。输入顺序用于 SV 模板。')
+        else:self.type_hint.set('填写一个关注输入和一个关注输出。')
         if kind not in self.info['kinds']:
             c.create_text(220,78,text='选择器件类型后预览外观',fill='#8da7ca',font=(self.app.family,11))
             return
-        pins=[v.strip() for v in self.fields[self.input_key].get().replace('，',',').split(',') if v.strip()]
+        pins=port_names(self.fields[self.input_key].get())
         pins=pins or (['输入 1','输入 2'] if kind=='mux' else ['输入'])
         node={'id':'u_instance','module':self.fields['module'].get().strip() or 'module_name',
               'kind':kind,'inputs':pins,'output':None if subsystem else self.fields[self.output_key].get().strip() or '输出','preview':True}
         if kind=='wire':
-            node.update(output=None,outputs=[p.strip() for p in self.fields[self.output_key].get().replace('，',',').split(',') if p.strip()] or ['输出 1','输出 2'])
+            node.update(output=None,outputs=port_names(self.fields[self.output_key].get()) or ['输出 1','输出 2'])
         node['aux_ports']={role:self.aux_fields[role].get().strip() for role in roles if self.aux_fields[role].get().strip()}
         h=node_height(node)
         scale=min(1.,142/h)
@@ -432,6 +464,7 @@ class ClockTreeApp(tk.Tk):
         self.extraction_mode_var=tk.StringVar(value=EXTRACTION_MODES['target'])
         self.memory_limit_var=tk.StringVar(value='60')
         self.port_timeout_var=tk.StringVar(value='0')
+        self.div_source_vars = [tk.StringVar(), tk.StringVar()]
         self.memory_status=tk.StringVar(value='等待提取 · RSS 监测在 Linux 上启用')
         self.hierarchy_var=tk.StringVar()
         self.layer_reset_var=tk.StringVar()
@@ -468,7 +501,16 @@ class ClockTreeApp(tk.Tk):
         self.port_timeout_entry=ttk.Entry(timeout_row,textvariable=self.port_timeout_var,width=7)
         self.port_timeout_entry.pack(side='right')
         ttk.Label(settings,text='默认0：不限时。超时后重启并跳过当前\n例化的剩余端口，同名其他例化继续',style='Muted.TLabel').pack(anchor='w')
-        ttk.Separator(settings).pack(fill='x',pady=15)
+        self.div_sources_frame = ttk.Frame(settings, style='White.TFrame')
+        self.div_sources_frame.pack(fill='x', pady=(12, 0))
+        ttk.Label(self.div_sources_frame, text='DIV 寄存器来源', style='Small.TLabel').pack(anchor='w')
+        for index, variable in enumerate(self.div_source_vars, 1):
+            ttk.Label(self.div_sources_frame, text='来源层次 {} · RTL 路径'.format(index), style='Muted.TLabel').pack(anchor='w', pady=(5, 0))
+            ttk.Entry(self.div_sources_frame, textvariable=variable).pack(fill='x', pady=(3, 0))
+        ttk.Label(self.div_sources_frame, text='两条路径成对填写，用于归类 div 端口的源寄存器。',
+                  style='Muted.TLabel', wraplength=260).pack(anchor='w', pady=(5, 0))
+        self.rules_separator = ttk.Separator(settings)
+        self.rules_separator.pack(fill='x',pady=15)
         rule_heading=ttk.Frame(settings,style='White.TFrame')
         rule_heading.pack(fill='x')
         self.layer_count_var=tk.StringVar(value='传播规则 · 2 级')
@@ -506,7 +548,8 @@ class ClockTreeApp(tk.Tk):
         actions.pack(fill='x',pady=(7,9))
         for text,command in [('+ 添加',self.add_rule),('编辑',self.edit_rule),('删除',self.remove_rule)]:
             ttk.Button(actions,text=text,command=command,width=6).pack(side='left',padx=(0,4))
-        ttk.Label(settings,text='多输入 MUX · 同层串接 · 跨层跳接\n分支允许在任意层结束',style='Muted.TLabel',justify='left').pack(anchor='w',pady=(3,4))
+        self.layer_hint = ttk.Label(settings, style='Muted.TLabel', justify='left')
+        self.layer_hint.pack(anchor='w',pady=(3,4))
         self.run_button=ttk.Button(footer,text='开始提取全部时钟树',style='Accent.TButton',command=self.start_extraction)
         self.run_button.pack(fill='x',pady=(10,5))
         self.cancel_button=ttk.Button(footer,text='取消当前提取',command=self.cancel_job,state='disabled')
@@ -521,6 +564,8 @@ class ClockTreeApp(tk.Tk):
             variable.trace('w',self.mark_dirty)
         self.memory_limit_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
         self.layer_reset_var.trace('w',self.mark_reset_dirty)
+        for variable in self.div_source_vars:
+            variable.trace('w', self.mark_div_sources_dirty)
         self.port_timeout_var.trace('w',lambda *args:self._schedule_session_save() if not self._filling else None)
         self.runs_tree=ttk.Treeview(history,columns=('count','state'),show='tree headings',selectmode='browse')
         self.runs_tree.heading('#0',text='运行记录')
@@ -773,10 +818,17 @@ class ClockTreeApp(tk.Tk):
     def mark_reset_dirty(self,*args):
         if self._filling:return
         if self.graph and not self.busy:
-            self._config_dirty=not same_config(without_resets(self.get_config(validate=False)),without_resets(self.graph['config']))
+            self._config_dirty=not same_config(extraction_settings(self.get_config(validate=False)),extraction_settings(self.graph['config']))
             if not self._config_dirty:self._badge('复位配置已更新','idle')
         self._schedule_session_save()
         if self.graph and not self.busy:self.set_status('复位配置已修改；重新分析 SV 分支后生效。仅修改复位无需重提取时钟树或寄存器。')
+
+    def mark_div_sources_dirty(self, *args):
+        if self._filling:
+            return
+        self._schedule_session_save()
+        if self.graph and not self.busy:
+            self.set_status('DIV 来源路径已更新。打开寄存器窗口或重新分析 SV 分支即可应用。')
 
     def _badge(self,text,kind='idle'):
         colors={'pass':('#e2f4ec','#217d5b'),'warn':('#fff0da','#a36a17'),'busy':('#e6efff','#2868df'),'idle':('#edf2fa','#70819a')}
@@ -790,7 +842,7 @@ class ClockTreeApp(tk.Tk):
         deferred=self._workspaces.get(self._active_tree_type,{}).get('deferred_result') if self.graph is None else None
         self._workspaces[self._active_tree_type]={
             'config':config,'graph':self.graph,'path':self.graph_file,
-            'dirty':self._config_dirty or bool(self.graph and not same_config(without_resets(config),without_resets(self.graph['config']))),
+            'dirty':self._config_dirty or bool(self.graph and not same_config(extraction_settings(config),extraction_settings(self.graph['config']))),
             'active_layer':self.active_layer,'graph_token':self._graph_token,'deferred_result':deferred}
 
     def _load_previous_session(self,config_path=None,result_path=None):
@@ -937,6 +989,13 @@ class ClockTreeApp(tk.Tk):
         self.analysis_var.set(info['label'])
         self.diagram_name.set(info['label']+'架构图')
         self.run_button.configure(text='开始提取全部'+info['label'])
+        clock_mode = self._active_tree_type == 'clock'
+        self.layer_hint.configure(text='多输入 MUX · 同层串接 · 跨层跳接\n分支可在任意层开始或结束' if clock_mode
+                                  else '多输入 MUX · 同层串接 · 跨层跳接\n分支允许在任意层结束')
+        if clock_mode:
+            self.div_sources_frame.pack(fill='x', pady=(12, 0), before=self.rules_separator)
+        else:
+            self.div_sources_frame.pack_forget()
         self.rules_tree.heading('inputs',text='输入')
         self.rules_tree.heading('output',text='输出')
         self.rules_tree.column('kind',width=82 if self._active_tree_type=='reset' else 54)
@@ -950,15 +1009,21 @@ class ClockTreeApp(tk.Tk):
         self.diagram.schedule()
         c=self.devices_legend
         c.delete('all')
-        step=130 if self._active_tree_type=='reset' else 78
-        for i,kind in enumerate(info['kinds']):
-            x=i*step+4
+        x = 4
+        legend_font = tkfont.Font(root=self, font=(self.family, 8))
+        kinds = list(selectable_kinds(self._base_config))
+        if clock_mode:
+            configured = {rule.get('kind') for layer in self.layers for rule in layer.get('modules', [])}
+            for legacy, replacement in [('gate', 'sync_gate'), ('occ', 'occ_root')]:
+                if legacy in configured and replacement not in configured:
+                    kinds[kinds.index(replacement)] = legacy
+        for kind in kinds:
             color=DEVICE_TYPES[kind]['color']
             if kind=='mux':
                 c.create_polygon(x,7,x+18,11,x+18,21,x,25,fill='#e0efff',outline=color)
-            elif kind=='gate':
-                c.create_arc(x,8,x+22,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline='#2eac8d')
-                c.create_rectangle(x,8,x+11,24,fill='#d7f3ea',outline='#2eac8d')
+            elif kind in GATE_KINDS:
+                c.create_arc(x,8,x+22,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline=color)
+                c.create_rectangle(x,8,x+11,24,fill='#d7f3ea',outline=color)
             elif kind=='rsy_sync':
                 c.create_rectangle(x,8,x+24,25,fill='#ffe6ef',outline='#c86c93')
                 c.create_line(x+7,12,x+7,21,x+17,21,x+17,12,fill='#c86c93')
@@ -973,7 +1038,8 @@ class ClockTreeApp(tk.Tk):
                 c.create_polygon(x+4,8,x+20,8,x+24,12,x+24,21,x+20,25,x+4,25,x,21,x,12,fill='#eee5ff' if kind=='div' else '#fff0d7',outline=color)
             label={'mux':'MUX' if self._active_tree_type=='reset' else '选择器','gate':'门控','wire':'穿线'}.get(kind,DEVICE_TYPES[kind]['short'])
             c.create_text(x+29,16,text=label,anchor='w',fill='#6680a4',font=(self.family,8))
-        c.configure(width=step*len(info['kinds']))
+            x += 42 + legend_font.measure(label)
+        c.configure(width=x)
 
     def switch_tree_type(self,event=None):
         target=event if isinstance(event,str) and event in TREE_PROFILES else LABEL_TO_TREE[self.analysis_var.get()]
@@ -1085,7 +1151,8 @@ class ClockTreeApp(tk.Tk):
 
     def _apply_kind_change(self,old,new):
         # Appearance-only changes can reuse already-proven elab connectivity.
-        if not self.graph or {k:v for k,v in old.items() if k!='kind'}!={k:v for k,v in new.items() if k!='kind'}:
+        metadata_fields = ('kind', 'input_regex', 'output_regex', 'port_selection')
+        if not self.graph or {k:v for k,v in old.items() if k not in metadata_fields}!={k:v for k,v in new.items() if k not in metadata_fields}:
             return False
         if old.get('kind')==new.get('kind'):return True
         if self.active_layer>len(self.graph.get('config',{}).get('layers',[])):return False
@@ -1105,6 +1172,7 @@ class ClockTreeApp(tk.Tk):
             'changed_at':datetime.datetime.now().isoformat(),'source':'user_type_selection'})
         self._graph_token=uuid.uuid4().hex
         selected=self.diagram.selected
+        self._apply_profile()
         self.diagram.model=IndexedGraphView(self.graph) if isinstance(self.graph,IndexedGraph) else GraphView(self.graph)
         self.diagram.rebuild()
         if selected in self.diagram.model.nodes:self.diagram.select(self.diagram.model.nodes[selected])
@@ -1134,6 +1202,8 @@ class ClockTreeApp(tk.Tk):
         self.mode_var.set('已有 elab / KDB' if use_elab else 'RTL 文件列表')
         self.path_var.set(design.get('elab',design.get('filelist','')))
         self.trace_scope_var.set(config.get('trace_scope',''))
+        for variable, scope in zip(self.div_source_vars, list(div_source_scopes(config, allow_incomplete=True)) or ['', '']):
+            variable.set(scope)
         self.extraction_mode_var.set(EXTRACTION_MODES[config.get('extraction_mode','target')])
         self.memory_limit_var.set(str(config.get('memory_limit_gib',60)))
         self.port_timeout_var.set(str(config.get('port_trace_timeout_s',0)))
@@ -1161,6 +1231,11 @@ class ClockTreeApp(tk.Tk):
         scope=self.trace_scope_var.get().strip().rstrip('./')
         if scope:data['trace_scope']=scope
         else:data.pop('trace_scope',None)
+        div_paths = [variable.get().strip().rstrip('./') for variable in self.div_source_vars]
+        if self._active_tree_type == 'clock' and any(div_paths):
+            data['div_source_scopes'] = div_paths
+        else:
+            data.pop('div_source_scopes', None)
         extraction_mode=next(k for k,v in EXTRACTION_MODES.items() if v==self.extraction_mode_var.get())
         if extraction_mode=='target' and 'extraction_mode' not in self._base_config:data.pop('extraction_mode',None)
         else:data['extraction_mode']=extraction_mode
@@ -1226,7 +1301,7 @@ class ClockTreeApp(tk.Tk):
         ttk.Label(frame,text='类型由用户选择；架构图与 SVG 使用相同模型和端口位置。',style='Muted.TLabel').pack(anchor='w',pady=(6,20))
         row=ttk.Frame(frame,style='White.TFrame')
         row.pack(fill='x')
-        for index,kind in enumerate(info['kinds']):
+        for index,kind in enumerate(selectable_kinds(self._base_config)):
             card=ttk.Frame(row,style='White.TFrame',padding=(0,0,12,0))
             card.grid(row=index//3,column=index%3,sticky='nsew',pady=(0,12))
             ttk.Label(card,text=kind_label(kind,self._active_tree_type),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
@@ -2072,7 +2147,8 @@ class ClockTreeApp(tk.Tk):
             self.status.set('请先打开或提取架构结果，再追踪其中的辅助端口。')
             return
         from .register_view import RegisterDialog
-        RegisterDialog(self)
+        try:RegisterDialog(self)
+        except ValueError as error:self.set_status(str(error))
 
     def open_sv_templates(self):
         if not self.graph:

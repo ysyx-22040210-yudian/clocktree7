@@ -20,9 +20,11 @@ from .register_expr import Expressions,MappingError
 from .register_worker import RegisterWorker
 from .storage import write_graph,IndexedGraph,ResultStore,ARRAY_KEYS
 from .ui_state import design_key
-from .layer_reset import branch_reset_binding,without_resets
+from .config import div_source_scopes, extraction_settings
+from .div_sources import classify_div_source
+from .layer_reset import branch_reset_binding
 from .sv_template_text import ROLES,CLOCK_VARS,variables,render,template_tokens
-from .profiles import output_ports
+from .profiles import GATE_KINDS, output_ports
 from .register_results import register_result_stamp
 
 SIGNAL=re.compile(r'[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*(?:\.[A-Za-z_$][A-Za-z0-9_$]*(?:\[-?\d+(?::-?\d+)?\])*)*\Z')
@@ -40,16 +42,19 @@ def sv_output_path(path):
 
 
 def architecture_signature(graph):
-    return identity('branch-endpoint-single-l1-v4',graph.get('config'),graph.get('metadata'),graph.get('summary'))
+    return identity('branch-endpoint-any-layer-v5',graph.get('config'),graph.get('metadata'),graph.get('summary'))
 
 
 def graph_for_templates(graph,draft):
-    """Use edited reset metadata without mutating or copying proven graph arrays."""
+    """Use current branch annotations with the already proven connections."""
     from .session import same_config
-    if not same_config(without_resets(graph['config']),without_resets(draft)):
-        raise ValueError('当前设计或层次/module 规则与结果不一致，请先重新提取；仅修改复位信号可直接重新分析 SV 分支')
+    if not same_config(extraction_settings(graph['config']), extraction_settings(draft)):
+        raise ValueError('当前设计或层次/module 规则与结果不一致，请先重新提取架构')
     result=IndexedGraph(graph.store,graph) if isinstance(graph,IndexedGraph) else dict(graph)
     result['config']=copy.deepcopy(graph['config'])
+    scopes = div_source_scopes(draft)
+    result['config'].pop('div_source_scopes', None)
+    if scopes:result['config']['div_source_scopes'] = list(scopes)
     for old,new in zip(result['config'].get('layers',[]),draft.get('layers',[])):
         old.pop('reset_signal',None)
         if new.get('reset_signal'):old['reset_signal']=new['reset_signal']
@@ -133,30 +138,44 @@ def database(path):
     conn.execute('PRAGMA cache_size=-4096');conn.execute('PRAGMA temp_store=FILE');return conn
 
 
-def l1_control_bindings(db,has_wire,bindings,issues):
-    """Defaults cover absent control ports, never failed/ambiguous real jobs."""
-    devices=defaultdict(list)
+def bind_controls(db, has_wire, bindings, issues, default_origin=None):
+    devices = {'mux': [], 'div': [], 'gate': []}
     for row in db.execute('SELECT n.* FROM walk CROSS JOIN nodes n ON n.id=walk.id ORDER BY n.position'):
-        devices[row['kind']].append(dict(row))
+        kind = 'gate' if row['kind'] in GATE_KINDS else row['kind']
+        if kind in devices:
+            devices[kind].append(dict(row))
     for kind,maximum in [('mux',1),('div',1),('gate',3)]:
         if len(devices[kind])>maximum:issues.append('分支 {} 数量 {} 超过约定 {}'.format(kind,len(devices[kind]),maximum))
     if has_wire and len(devices['gate'])<=3:
         ancestors={}
         for gate in devices['gate']:
             branch_scope(db,gate['id'],table='ancestors',include_terminal=False)
-            ancestors[gate['id']]={r[0] for r in db.execute("SELECT n.id FROM ancestors a CROSS JOIN nodes n ON n.id=a.id WHERE n.kind='gate'")}
+            ancestors[gate['id']] = {r[0] for r in db.execute(
+                'SELECT n.id FROM ancestors a CROSS JOIN nodes n ON n.id=a.id WHERE n.kind IN (?,?,?)', GATE_KINDS)}
         devices['gate'].sort(key=lambda g:len(ancestors[g['id']]))
     for upstream,downstream in zip(devices['gate'],devices['gate'][1:]):
         branch_scope(db,downstream['id'],table='ancestors',include_terminal=False)
         if not db.execute('SELECT 1 FROM ancestors WHERE id=?',(upstream['id'],)).fetchone():
             issues.append('门控存在并行关系，不能确定唯一从前到后顺序')
-    for i,gate in enumerate(devices['gate'][:3]):
-        if (json.loads(gate['data']).get('aux_ports') or {}).get('gt'):
-            bindings['var_gt'+str(i)]={'instance':gate['id']}
+    if default_origin:
+        default_control_bindings(bindings, default_origin)
+    for i in range(3):
+        var = 'var_gt'+str(i)
+        if i >= len(devices['gate']):
+            bindings.setdefault(var, {'value': "1'b1"})
+            continue
+        gate = devices['gate'][i]
+        if not default_origin or (json.loads(gate['data']).get('aux_ports') or {}).get('gt'):
+            bindings[var] = {'instance':gate['id']}
     bindings['var_gt']=bindings['var_gt0']
     for variable,kind,role in [('var_pllsel','mux','pll_sel'),('var_div','div','div'),('var_swdone','div','sw_done')]:
-        if len(devices[kind])==1 and (json.loads(devices[kind][0]['data']).get('aux_ports') or {}).get(role):
-            bindings[variable]={'instance':devices[kind][0]['id']}
+        if len(devices[kind]) == 1:
+            device = devices[kind][0]
+            if not default_origin or (json.loads(device['data']).get('aux_ports') or {}).get(role):
+                bindings[variable] = {'instance': device['id']}
+        else:
+            bindings.setdefault(variable, {'error':'分支没有唯一的 '+kind+' 器件'})
+    return devices
 
 
 def default_control_bindings(bindings,origin):
@@ -181,7 +200,7 @@ def connection(path,existing=None):
         with closing(database(path)) as db:yield db
 
 
-def add_candidates(db,registers):
+def add_candidates(db,registers,div_scopes=()):
     """Bit order comes from the completed formal-port job, never string sort."""
     with closing(database(Path(registers)/'registers.sqlite')) as source:
         for job in source.execute('SELECT * FROM jobs ORDER BY id'):
@@ -191,6 +210,9 @@ def add_candidates(db,registers):
             choices=defaultdict(set);relations=set();bad=[];data_inputs=defaultdict(set)
             for row in source.execute('SELECT * FROM results WHERE job=?',(job['id'],)):
                 if row['status']!='register':bad.append(row['status']+': '+row['reason']);continue
+                if role == 'div' and row['side'] != 'Q':
+                    bad.append('DIV 来源必须是已证明的时序输出 Q')
+                    continue
                 choices[row['bit']].add(row['endpoint']);relations.add(row['relation'])
                 if role=='sw_done' and row['side']=='D':
                     data_inputs[(row['bit'],row['endpoint'])].add(json.loads(row['detail']).get('data_input') or row['endpoint'])
@@ -231,8 +253,10 @@ def add_candidates(db,registers):
                 if len({re.sub(r'\[-?\d+\]$','',v) for v in vector})>1:
                     certainty+=';multiple_registers'
                 key=identity(instance,role,pin,vector,mapped,certainty)
-                db.execute('INSERT OR IGNORE INTO candidates VALUES(?,?,?,?,?,?,?,?)',
-                           (key,instance,role,pin,expression,certainty,json.dumps(mapped),capture))
+                sources = [dict(signal=endpoint, **classify_div_source(endpoint, div_scopes))
+                           for endpoint in vector] if role == 'div' else []
+                db.execute('INSERT OR IGNORE INTO candidates VALUES(?,?,?,?,?,?,?,?,?)',
+                           (key,instance,role,pin,expression,certainty,json.dumps(mapped),capture,json.dumps(sources)))
 
 
 def prepare(graph,registers,directory,resolve_connections=True):
@@ -240,6 +264,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
     path=directory/'plan.sqlite'
     if path.exists():raise ValueError('SV 分支目录已存在，请使用新目录')
     if graph.get('tree_type',graph['config'].get('tree_type','clock'))!='clock':raise ValueError('SV 分支模板当前用于时钟树')
+    div_scopes = div_source_scopes(graph['config'])
     manifest=json.loads((Path(registers)/'manifest.json').read_text(encoding='utf-8')) if registers else {'request':{'config':graph['config']}}
     if design_key(manifest['request']['config'])!=design_key(graph['config']):raise ValueError('寄存器结果与当前架构的设计入口不一致')
     worker=None
@@ -293,7 +318,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
              CREATE INDEX node_kind ON nodes(kind);
              CREATE INDEX edge_target ON edges(target,pin);
              CREATE INDEX edge_source ON edges(source);
-             CREATE TABLE candidates(id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,bits TEXT,capture_expression TEXT);
+             CREATE TABLE candidates(id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,bits TEXT,capture_expression TEXT,div_sources TEXT);
              CREATE INDEX candidate_instance ON candidates(instance,role);
              CREATE TABLE problems(instance TEXT,role TEXT,pin TEXT,reason TEXT);
              CREATE INDEX problem_instance ON problems(instance,role);
@@ -324,7 +349,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
             has_wire=db.execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone() is not None
             if has_wire:cyclic={key for d in graph.get('diagnostics',[]) if d.get('code')=='cycle_or_cycle_downstream' for key in d.get('instances',[])}
             report('registers','读取逐位寄存器映射',{})
-            if registers:add_candidates(db,registers)
+            if registers:add_candidates(db,registers,div_scopes)
             complete=bool(graph.get('summary',{}).get('connectivity_complete'))
             seq=0
             for row in db.execute('SELECT * FROM nodes WHERE terminal=1 ORDER BY id'):
@@ -341,7 +366,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
                     if inst in cyclic:issues.append('上游包含组合环路')
                     scope_pin=pin if node['kind'] in ('subsystem','wire') else None
                     branch_scope(db,inst,scope_pin)
-                    single_l1=node.get('layer')==1 and db.execute('SELECT count(*) FROM walk').fetchone()[0]==1
+                    single_device = db.execute('SELECT count(*) FROM walk').fetchone()[0] == 1
+                    single_l1 = single_device and node.get('layer') == 1
                     # CROSS JOIN pins the small current-branch queue as the
                     # outer loop on SQLite 3.7 as well as current SQLite.
                     roots=[dict(r) for r in db.execute('''SELECT n.* FROM walk CROSS JOIN nodes n ON n.id=walk.id
@@ -353,10 +379,10 @@ def prepare(graph,registers,directory,resolve_connections=True):
                     if not roots:roots=[dict(row)] if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(inst,pin)).fetchone() else []
                     bindings['var_rst']=branch_reset_binding([json.loads(root['data']) for root in roots],graph['config'])
                     bindings['_branch']={'origins':[{'instance':r['id'],'layer':json.loads(r['data']).get('layer'),'kind':r['kind']} for r in roots],
-                                         'single_l1_device':single_l1,'scope_pin':scope_pin}
+                                         'single_device':single_device,'single_l1_device':single_l1,'scope_pin':scope_pin}
                     # A proven L1 hierarchy input can also enter a later rule
                     # layer directly, without a configured upstream device.
-                    direct=[];root_pins=[]
+                    direct=[];direct_owners=set();root_pins=[]
                     for source_row in db.execute('SELECT n.data FROM walk w CROSS JOIN nodes n ON n.id=w.id'):
                         start=json.loads(source_row['data'])
                         pins=[scope_pin] if start['id']==inst and scope_pin is not None else start.get('inputs') or []
@@ -364,16 +390,22 @@ def prepare(graph,registers,directory,resolve_connections=True):
                             pins=[r[0] for r in db.execute('SELECT pin FROM walk_inputs WHERE id=?',(start['id'],))]
                         pins=[p for p in pins if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(start['id'],p)).fetchone()]
                         root_pins.extend((start,p) for p in pins)
-                        direct.extend(start.get('l1_inputs',{}).get(p) for p in pins if (start.get('layer') or 1)>1 and start.get('l1_inputs',{}).get(p))
-                    if direct:
+                        for root_pin in pins:
+                            entry = start.get('l1_inputs', {}).get(root_pin)
+                            if (start.get('layer') or 1) > 1 and entry and entry.get('status') == 'verified':
+                                direct.append(entry)
+                                direct_owners.add(start['id'])
+                    # A real starting MUX already defines the selectable inputs.
+                    # Preserve the L1-only fallback for direct, non-MUX origins.
+                    mux_entry = len(roots) == 1 and roots[0]['kind'] == 'mux' and direct_owners == {roots[0]['id']}
+                    if direct and not mux_entry:
                         signals={value['signal'] for value in direct}
                         bindings['_l1']={'signals':sorted(signals),'status':'verified_boundary','terminal_rule':'output_if_present_else_input'}
                         if len(signals)!=1 or len(direct)!=len(root_pins):
                             issues.append('L1 直达来源不唯一或与普通器件起点混合：'+', '.join(sorted(signals)))
-                        default_control_bindings(bindings,'l1_input_default')
                         for var in ('var_pll1','var_pll2','var_pll3'):
                             bindings[var]={'value':"1'b1",'origin':'l1_input_default'}
-                        l1_control_bindings(db,has_wire,bindings,issues)
+                        bind_controls(db, has_wire, bindings, issues, 'l1_input_default')
                         bindings['var_pll0']={'value':next(iter(signals)),'origin':'l1_input'} if len(signals)==1 else {'error':'L1 输入来源不唯一'}
                         terminals=terminal_outputs(db,node,pin)
                         terminals=terminals or [pin]
@@ -394,35 +426,10 @@ def prepare(graph,registers,directory,resolve_connections=True):
                             if end_pin!=terminals[-1]:seq+=1
                         report('branches','分析 L1 直达末端',{'branch':seq,'instance':inst,'pin':pin})
                         continue
-                    # New results carry rule layers. Do not turn a truncated
-                    # L2+ frontier into an invented L1 origin. Old unlayered
-                    # result files remain readable.
-                    for root in roots:
-                        start=json.loads(root['data'])
-                        if isinstance(start.get('layer'),int) and start['layer']>1:
-                            issues.append('分支起点 {} 位于 L{}，未找到 L1 器件或已证明的 L1 输入口，请补充起点规则或连线'.format(start['id'],start['layer']))
                     modes={r['kind']=='mux' for r in roots}
                     mode='with_mux' if modes=={True} else 'without_mux' if modes=={False} else 'mixed'
-                    devices=defaultdict(list)
-                    for device in db.execute('SELECT n.* FROM walk CROSS JOIN nodes n ON n.id=walk.id ORDER BY n.position'):devices[device['kind']].append(dict(device))
-                    if has_wire and len(devices['gate'])<=3:
-                        gate_ancestors={}
-                        for gate in devices['gate']:
-                            branch_scope(db,gate['id'],table='ancestors',include_terminal=False)
-                            gate_ancestors[gate['id']]={r[0] for r in db.execute("SELECT n.id FROM ancestors a CROSS JOIN nodes n ON n.id=a.id WHERE n.kind='gate'")}
-                        devices['gate'].sort(key=lambda g:len(gate_ancestors[g['id']]))
-                    for kind,maximum in [('mux',1),('div',1),('gate',3)]:
-                        if len(devices[kind])>maximum:issues.append('分支 {} 数量 {} 超过约定 {}'.format(kind,len(devices[kind]),maximum))
-                    for upstream,downstream in zip(devices['gate'],devices['gate'][1:]):
-                        branch_scope(db,downstream['id'],table='ancestors',include_terminal=False)
-                        if not db.execute('SELECT 1 FROM ancestors WHERE id=?',(upstream['id'],)).fetchone():issues.append('门控存在并行关系，不能确定唯一从前到后顺序')
-                    for i in range(3):bindings['var_gt'+str(i)]={'instance':devices['gate'][i]['id']} if i<len(devices['gate']) else {'value':"1'b1"}
-                    bindings['var_gt']=bindings['var_gt0']
-                    for var,kind in [('var_pllsel','mux'),('var_div','div'),('var_swdone','div')]:
-                        bindings[var]={'instance':devices[kind][0]['id']} if len(devices[kind])==1 else {'error':'分支没有唯一的 '+kind+' 器件'}
-                    if single_l1:
-                        default_control_bindings(bindings,'single_l1_default')
-                        l1_control_bindings(db,has_wire,bindings,issues)
+                    default_origin = ('single_l1_default' if single_l1 else 'single_device_default') if single_device else None
+                    devices = bind_controls(db, has_wire, bindings, issues, default_origin)
                     for i in range(4):bindings['var_pll'+str(i)]={'value':"1'b1"}
                     if len(devices['mux'])==1 and mode!='without_mux':
                         mux=json.loads(devices['mux'][0]['data']);inputs=mux.get('inputs') or []
@@ -436,11 +443,11 @@ def prepare(graph,registers,directory,resolve_connections=True):
                             starts.extend(connection(start,p) for p in start_pins)
                         unique={r['value'] for r in starts if r.get('value')}
                         bindings['var_pll0']={'value':next(iter(unique))} if len(unique)==1 and all(r.get('value') for r in starts) else {'error':'无选择器分支没有唯一且已解析的起始输入信号'}
-                    # A single L1 device is already a complete branch. A
+                    # A single device is already a complete branch. A
                     # multi-input terminal MUX similarly has one output, not
                     # one branch for each alternate input path.
-                    ends=(terminal_outputs(db,node,pin) if single_l1 or node['kind']=='wire' or node['kind']!='subsystem' and len(node.get('inputs') or [])>1 else []) or [pin]
-                    bindings['_branch']['terminal_rule']='output_if_present_else_input' if single_l1 else 'wire_channel_output' if node['kind']=='wire' else 'converged_output' if ends!=[pin] else 'terminal_input'
+                    ends=(terminal_outputs(db,node,pin) if single_device or node['kind']=='wire' or node['kind']!='subsystem' and len(node.get('inputs') or [])>1 else []) or [pin]
+                    bindings['_branch']['terminal_rule']='output_if_present_else_input' if single_device else 'wire_channel_output' if node['kind']=='wire' else 'converged_output' if ends!=[pin] else 'terminal_input'
                     for end_pin in ends:
                         final=dict(bindings,var_clkip=connection(node,end_pin))
                         final_issues=[value for value in issues if not value.startswith('$var_clkip 未解析')]
@@ -463,6 +470,13 @@ def prepare(graph,registers,directory,resolve_connections=True):
     finally:
         if worker:worker.close()
         signal.signal(signal.SIGTERM,previous)
+
+
+def candidate_record(row):
+    record = dict(row)
+    if 'div_sources' in record:
+        record['div_sources'] = json.loads(record['div_sources'])
+    return record
 
 
 class SVPlan:
@@ -488,7 +502,7 @@ class SVPlan:
                 self._candidate_search='c.instance||c.expression'+("||coalesce(c.capture_expression,'')" if 'capture_expression' in columns else '')
             sql=('SELECT c.* FROM candidates c' if instance else 'SELECT c.* FROM walk CROSS JOIN candidates c ON c.instance=walk.id')+' WHERE c.role=? AND instr(lower('+self._candidate_search+'),lower(?))>0'
             if instance:sql+=' AND c.instance=?'
-            return [dict(r) for r in db.execute(sql+' ORDER BY c.instance,c.pin,c.expression LIMIT ? OFFSET ?',(role,search)+((instance,) if instance else ())+(limit,offset))]
+            return [candidate_record(r) for r in db.execute(sql+' ORDER BY c.instance,c.pin,c.expression LIMIT ? OFFSET ?',(role,search)+((instance,) if instance else ())+(limit,offset))]
     def resolve(self,branch,templates,selection=None,_db=None):
         selection=selection or {};issues=json.loads(branch['issues']);mode=selection.get('mode',branch['mode'])
         template=templates.get(mode,'')
@@ -519,7 +533,7 @@ class SVPlan:
                 node=db.execute('SELECT data FROM nodes WHERE id=?',(row['instance'],)).fetchone()
                 actual=json.loads(node['data']).get('aux_ports') or {}
                 if actual.get(role)!=row['pin']:issues.append('$'+var+' 与当前器件辅助配置不一致');continue
-                values[var]=row['expression'];chosen[var]=dict(row)
+                values[var]=row['expression'];chosen[var]=candidate_record(row)
         result={'id':branch['id'],'instance':branch['instance'],'pin':branch['pin'],'clkip':branch['clkip'],
                 'mode':mode,'values':values,'selected':chosen,'issues':issues,'ready':not issues,'reset':bindings.get('var_rst',{}),
                 'l1_input':bindings.get('_l1'),'branch':bindings.get('_branch')}

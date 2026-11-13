@@ -1,5 +1,4 @@
 """User-supplied per-layer reset metadata from each branch's first device."""
-import copy
 import re
 
 
@@ -10,12 +9,6 @@ def validate_reset_signal(value,allow_incomplete=False):
     if not isinstance(value,str):raise ValueError('层次复位信号 reset_signal 必须是字符串')
     if value.strip() and not allow_incomplete and not RESET_PATH.fullmatch(value.strip()):
         raise ValueError('层次复位信号请填写信号名或完整 RTL 路径，可含静态 bit；逻辑运算请写在 SV 模板中')
-
-
-def without_resets(config):
-    result=copy.deepcopy(config)
-    for layer in result.get('layers',[]):layer.pop('reset_signal',None)
-    return result
 
 
 def reset_binding(node,config):

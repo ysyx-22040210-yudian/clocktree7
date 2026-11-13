@@ -9,7 +9,7 @@ from .memory import MemoryResumeError
 def main():
     parser = argparse.ArgumentParser(description="ClockTree7 full RTL clock/reset network extraction")
     commands = parser.add_subparsers(dest="command")
-    inputs = commands.add_parser('discover-inputs', help='Read subsystem formal input ports without tracing')
+    inputs = commands.add_parser('discover-inputs', help='Read formal input/output ports without tracing; input only by default')
     inputs.add_argument('--request', required=True)
     inputs.add_argument('--out', required=True)
     registers = commands.add_parser('trace-registers', help='Trace auxiliary control/status bits to proven sequential endpoints')
@@ -73,7 +73,7 @@ def main():
     if args.command == 'discover-inputs':
         from .input_ports import discover
         try: result = discover(args.request, args.out)
-        except Exception as error: parser.exit(1, 'ClockTree7 input discovery: ' + str(error) + '\n')
+        except Exception as error: parser.exit(1, 'ClockTree7 port discovery: ' + str(error) + '\n')
         print('CT7_INPUT_READY instances={} ports={}'.format(result['instances'], len(result['ports'])))
         return 0
     if args.command == 'resume':

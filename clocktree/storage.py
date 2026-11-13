@@ -140,6 +140,7 @@ class ResultStore:
             conn.create_function('ct7_prefix', 2, lambda path, depth: '.'.join(path.split('.')[:depth]))
             conn.create_function('ct7_scope', 2, lambda path, scope: int(not scope or path == scope or
                                  path.startswith(scope + '.') or path.startswith(scope + '[')))
+            conn.create_function('ct7_diagnostic_code', 1, lambda data: json.loads(data).get('code', ''))
             self.local.conn = conn
         return conn
 

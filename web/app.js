@@ -7,7 +7,7 @@ let savedDesign = {};
 let activeTree = 'clock';
 const workspaces = new Map();
 const profiles = {
-  clock:{label:'时钟树',network:'时钟网络',inputs:'clock_inputs',output:'clock_output',types:{mux:'选择器',gate:'门控',occ:'OCC',div:'DIV 分频器'}},
+  clock:{label:'时钟树',network:'时钟网络',inputs:'clock_inputs',output:'clock_output',types:{mux:'选择器',sync_gate:'SYNC_GATE',gate_wrap:'GATE_WRAP',occ_root:'OCC_ROOT',occ_branch:'OCC_BRANCH',div:'DIV 分频器',gate:'门控',occ:'OCC'}},
   reset:{label:'复位树',network:'复位网络',inputs:'reset_inputs',output:'reset_output',types:{mux:'MUX',rsy_sync:'RSY_SYNC'}}
 };
 const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

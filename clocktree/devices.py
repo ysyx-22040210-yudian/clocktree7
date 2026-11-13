@@ -3,20 +3,23 @@ import math
 import re
 import unicodedata
 from xml.sax.saxutils import escape, quoteattr
-from .profiles import profile, rule_ports, output_ports
+from .profiles import GATE_KINDS, profile, rule_ports, output_ports, selectable_kinds
 from .auxiliary import aux_entries, aux_height, aux_problem, DIRECTIONS
 
 
 DEVICE_TYPES = {
     'mux': {'label': '选择器', 'short': 'MUX', 'color': '#66b7ff', 'fill': '#193954'},
     'gate': {'label': '门控', 'short': 'GATE', 'color': '#42d1b2', 'fill': '#163b38'},
+    'sync_gate': {'label': 'SYNC_GATE', 'short': 'SYNC_GATE', 'color': '#42d1b2', 'fill': '#163b38'},
+    'gate_wrap': {'label': 'GATE_WRAP', 'short': 'GATE_WRAP', 'color': '#a2d67f', 'fill': '#2b412a'},
     'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
+    'occ_root': {'label': 'OCC_ROOT', 'short': 'OCC_ROOT', 'color': '#f1ba64', 'fill': '#3c3125'},
+    'occ_branch': {'label': 'OCC_BRANCH', 'short': 'OCC_BRANCH', 'color': '#ff9f84', 'fill': '#472e2c'},
     'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#bb9bff', 'fill': '#302847'},
     'rsy_sync': {'label': 'RSY_SYNC', 'short': 'RSY_SYNC', 'color': '#f39bbd', 'fill': '#402939'},
     'subsystem': {'label': '子系统 SUBSYSTEM', 'short': 'SUBSYS', 'color': '#80ceea', 'fill': '#193c4d'},
     'wire': {'label': '穿线', 'short': 'WIRE', 'color': '#f2d788', 'fill': '#363226'},
 }
-TYPE_LABELS = [DEVICE_TYPES[kind]['label'] for kind in profile({})['kinds']]
 LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
 LABEL_TO_KIND['MUX'] = 'mux'
 
@@ -28,8 +31,11 @@ def kind_label(kind, tree='clock'):
     return DEVICE_TYPES[kind]['label'] if kind in DEVICE_TYPES else '未分类'
 
 
-def type_labels(config):
-    return [kind_label(kind, config.get('tree_type', 'clock')) for kind in profile(config)['kinds']]
+def type_labels(config, current=None):
+    return [kind_label(kind, config.get('tree_type', 'clock')) for kind in selectable_kinds(config, current)]
+
+
+TYPE_LABELS = type_labels({})
 
 
 def scope_match(path, scope):
@@ -81,7 +87,8 @@ def typed_nodes(graph):
 
 def node_height(node):
     if node.get('aggregate'):
-        return 144
+        rows = (sum(bool(count) for count in node.get('kind_counts', {}).values()) + 1) // 2
+        return max(144, 82 + 20 * rows)
     if node.get('kind') == 'wire':return max(180, 100 + 52 * max(len(node['inputs']), len(output_ports(node))))
     return max(152, 88 + 32 * len(display_inputs(node))) + aux_height(node)
 
@@ -105,7 +112,7 @@ def pin_index(node,pin):
 def port_offsets(node, width, height):
     """The sole source of pin anchors for symbols and all routed edges."""
     if node.get('aggregate'):
-        return [(0, 110)], (width, 110)
+        return [(0, height - 34)], (width, height - 34)
     if node.get('kind') == 'wire':
         return [(0, 78 + 52*i) for i in range(len(node['inputs']))], output_offset(node, width, height, next(iter(output_ports(node)), None))
     height -= aux_height(node)
@@ -223,7 +230,8 @@ def symbol_parts(node, width, height, selected=False):
         width=2 if selected else 1, dash=aggregate)
     path = node.get('path', node['id'])
     title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
-    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-(145 if kind=='rsy_sync' else 112))
+    title_reserve = 150 if len(info['short']) >= 8 else 112
+    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-title_reserve)
     text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-(115 if node.get('trace_timeout') else 20))
     if node.get('trace_timeout'):
         text(width-11, 34, 'trace 超时', size=10, fill='#ffb27b', bold=True, anchor='e')
@@ -231,20 +239,18 @@ def symbol_parts(node, width, height, selected=False):
         text(width-11, 16, 'RTL', size=9, fill='#9eb5d4', anchor='e')
         counts = node.get('kind_counts', {})
         slot = 0
-        for device in DEVICE_TYPES:
+        for device in list(DEVICE_TYPES) + ['unclassified']:
             n = counts.get(device, 0)
             if n:
+                model = DEVICE_TYPES.get(device, {'short': '未分类', 'color': '#7e95b3'})
                 text(12 + (slot % 2) * 114, 56 + (slot // 2) * 20,
-                     '{} ×{}'.format(DEVICE_TYPES[device]['short'], n), size=9,
-                     fill=DEVICE_TYPES[device]['color'], max_width=105)
+                     '{} ×{}'.format(model['short'], n), size=9, fill=model['color'], max_width=105)
                 slot += 1
-        if counts.get('unclassified'):
-            text(12, 130, '未分类 ×{}'.format(counts['unclassified']), size=9, fill='#7e95b3')
         for (px, py) in inputs:
             line([(px, py), (18, py)], fill='#8eabc8')
         line([(width-18, output[1]), output], fill='#8eabc8')
-        text(22, 110, '输入', size=9)
-        text(width-22, 110, '输出', size=9, anchor='e')
+        text(22, output[1], '输入', size=9)
+        text(width-22, output[1], '输出', size=9, anchor='e')
     elif kind == 'l1_input':
         color='#80ceea'
         text(width-11,16,'L1 · INPUT',size=10,fill=color,bold=True,anchor='e')
@@ -305,13 +311,18 @@ def symbol_parts(node, width, height, selected=False):
             text(120, cy-6, 'MUX', size=15, fill=color, bold=True, anchor='center')
             text(120, cy+13, '{}:1'.format(len(inputs)), size=10, fill='#a4c9e8', anchor='center')
             input_end, output_start = 78, 166
-        elif kind == 'gate':
+        elif kind in GATE_KINDS:
             points = [(78, cy-29), (114, cy-29)]
             points += [(114+29*math.cos(a), cy+29*math.sin(a))
                        for a in [-math.pi/2+i*math.pi/24 for i in range(25)]]
             points += [(78, cy+29)]
             add('polygon', points=points, fill=info['fill'], stroke=color, width=1.8)
-            text(108, cy-6, 'GATE', size=12, fill=color, bold=True, anchor='center')
+            if kind == 'gate':
+                text(108, cy-6, 'GATE', size=12, fill=color, bold=True, anchor='center')
+            else:
+                first, second = info['short'].split('_')
+                text(108, cy-13, first, size=9, fill=color, bold=True, anchor='center')
+                text(108, cy-3, second, size=9, fill=color, bold=True, anchor='center')
             line([(92,cy+13),(98,cy+13),(98,cy+5),(105,cy+5),(105,cy+13),(117,cy+13)], stroke_width=1.2)
             input_end, output_start = 78, 143
         elif kind == 'div':
@@ -338,7 +349,8 @@ def symbol_parts(node, width, height, selected=False):
             add('polygon', points=[(left+cut,top),(right-cut,top),(right,top+cut),(right,bottom-cut),
                                    (right-cut,bottom),(left+cut,bottom),(left,bottom-cut),(left,top+cut)],
                 fill=info['fill'], stroke=color, width=1.8)
-            text(122, cy-8, 'OCC', size=16, fill=color, bold=True, anchor='center')
+            text(122, cy-8, info['short'], size=16 if kind == 'occ' else 11,
+                 fill=color, bold=True, anchor='center')
             pulse = [(84,cy+16)]
             for x in (91,112,133):
                 pulse += [(x,cy+16),(x,cy+6),(x+9,cy+6),(x+9,cy+16)]

@@ -16,12 +16,13 @@
 - 默认 L1、L2，支持添加层级、删除当前层并自动重新编号；兼容原有七级配置。
 - 独立的 **时钟树 / 复位树** 分析模式，切换时保留各自配置草稿与结果，历史记录按模式显示。
 - 启动自动恢复上次模式、配置、选中层级和结果图；支持未导出草稿和本地结果快照，关闭时完成最后一次保存。
-- 时钟器件：**选择器 / 门控 / OCC / DIV / SUBSYSTEM**；复位器件：**MUX / RSY_SYNC / SUBSYSTEM**，均有专用模型。
+- 时钟器件包括 **MUX、SYNC_GATE、GATE_WRAP、OCC_ROOT、OCC_BRANCH、DIV、穿线、SUBSYSTEM**。复位器件包括 **MUX、RSY_SYNC、穿线、SUBSYSTEM**。已有 `gate`、`occ` 规则继续可读。
 - 可选辅助端口：MUX 的 `pll_sel` 输入、DIV 的 `div` 输入及 `sw_done` 输出、门控的 `gt` 输入，均由用户填写实际接口名。逐实例读取 elab 连接并显示在器件下方，不参加时钟树连线追踪；缺失、方向不符及未连接进入问题表，JSON/SVG/历史恢复保留。[填写与查看](docs/GUI_USER_MANUAL.zh-CN.md#auxiliary-ports) · [Verdi 2018 验收](docs/AUXILIARY_PORTS_VALIDATION.zh-CN.md)。
 - **辅助口 → 寄存器** 独立任务：`pll_sel/div/gt` 逐 bit driver 到实际时序输出，`sw_done` 沿 load 确认时序数据输入，同时保存接收寄存器位。例如时序赋值 `A <= {B,C,D}` 中可证明的 `B` 作为输入信号供 SV 使用，`A` 的对应 bit 保留为证据。按 elab 表达式应用 `dft_mode=0`，保留完整路径、位序、条件与时序证据；不会把普通 `reg` 声明当作寄存器。提供原生 Tk 结果表、分页搜索、CSV/JSON、端口断点、内存轮换及可选超时。[操作手册](docs/GUI_USER_MANUAL.zh-CN.md#register-trace) · [寄存器追踪验收](docs/REGISTER_TRACE_VALIDATION.zh-CN.md) · [拼接输入修复验收](docs/SWDONE_CONCAT_FIX_20261110.zh-CN.md)。
 - **分支 SV 模板**：起始有/无选择器分别使用用户模板，每个真实末端输入生成一段，全部写到一个 `.sv`。支持 `$var_pllsel`、`$var_div`、`$var_swdone`、按实际连接排序的 `$var_gt0～2`、按关注输入顺序编号的 `$var_pll0～3`、`$var_clkip` 和最初器件所属层复位信号 `$var_rst`；不存在的门控/PLL 槽位补 `1'b1`。每层 RTL 父层路径下可填写复位短名或完整信号路径，配置/历史保留；模板引用但未填写复位时明确提示。多寄存器分支暂时跳过，分页选择候选后重新生成同一文件，不重复追加。两套模板、选择及分支计划自动恢复。[详细用法](docs/GUI_USER_MANUAL.zh-CN.md#sv-templates) · [SV 验收](docs/SV_TEMPLATES_VALIDATION.zh-CN.md) · [复位变量验收](docs/SV_RESET_VALIDATION.zh-CN.md)。
 - **模板代码编辑器**：原生 Tk 深色 SystemVerilog 高亮、行号、12 个变量插入按钮、缩进、撤销/重做和查找。`check_$var_clkip_sva` 自动生成 `check_top_u_clk_sva` 这样的合法名称，单独的 `$var_clkip` 仍保留真实信号路径；支持 `${var_clkip}` 显式边界和未知变量提示。长模板分批着色，无需联网或安装编辑器依赖。[操作与验收](docs/SV_EDITOR_VALIDATION_20261110.zh-CN.md)。
-- SUBSYSTEM 只含输入终点：编辑器中从 elab 读取 input 名称、正则筛选、勾选确认后才能保存；主提取只使用已确认名单。参数化总线按实际范围展开，各输入独立，不合并不同网络。
+- 在器件编辑窗口可按输入或输出方向从 elab 正则筛选，并在文本框直接增删改关注端口和辅助口。SUBSYSTEM 支持编辑多个输入，参数化总线按实际范围展开，各输入独立。
+- 时钟分支可从任意规则层开始。DIV 可配置两条 RTL 来源路径，按 `div` 追到的实际 Q 寄存器逐位标记归属。操作见 [端口编辑与 DIV 来源](docs/GUI_USER_MANUAL.zh-CN.md#device-ports-and-div-sources)。
 - **穿线 WIRE** 支持多个输入、多个输出；从各输出在实例内部反查到已配置输入，按 elab 显示 `输入 → 输出` 的逐位对应关系。支持交叉接线、别名、`buf`、总线重排和一入多出；独立通道不会串网，分支导航、高亮、独立画布和 SV 分支分析沿已证明通道继续。[配置与显示](docs/GUI_USER_MANUAL.zh-CN.md#wire-device) · [穿线器件验收](docs/WIRE_DEVICE_VALIDATION_20261111.zh-CN.md)。
 - 默认分支紧凑布局，支持按层排列。布局/布线使用可取消的后台进程；平移复用图元，缩放合并事件，导航图和高亮状态缓存。
 - 上下游直接跳转与分页选择、导航后退/前进、每设计及分析类型最近 100 条搜索历史、整分支高亮、可读证据摘要和按需原始证据。

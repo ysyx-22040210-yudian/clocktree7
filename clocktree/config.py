@@ -1,8 +1,9 @@
+import copy
 import json
 import os
 import math
 from pathlib import Path
-from .profiles import TREE_PROFILES, tree_type, profile, rule_ports
+from .profiles import TREE_PROFILES, SINGLE_INPUT_KINDS, tree_type, profile, rule_ports
 from .auxiliary import AUX_ROLES, validate_aux_ports
 from .layer_reset import validate_reset_signal
 
@@ -46,6 +47,36 @@ def hierarchy_contains(path, root):
     return not root or path == root or path.startswith(root + '.') or path.startswith(root + '[')
 
 
+def div_source_scopes(config, allow_incomplete=False):
+    """Two user-configured RTL scopes, in the order shown in the editor."""
+    values = config.get('div_source_scopes', [])
+    if not isinstance(values, list) or len(values) not in (0, 2) or any(not isinstance(v, str) for v in values):
+        raise ValueError('DIV 来源需填写两条 RTL 层次路径')
+    scopes = tuple(v.strip().rstrip('./') for v in values)
+    if not any(scopes):
+        return ()
+    if allow_incomplete:
+        return scopes
+    if not all(scopes) or scopes[0] == scopes[1]:
+        raise ValueError('DIV 来源层次 1 和 2 需同时填写，且路径必须不同')
+    top = config.get('design', {}).get('top', '')
+    if any(not top or not hierarchy_contains(v, top) or any(c in v for c in '*?') for v in scopes):
+        raise ValueError('DIV 来源请填写设计顶层内的实际 RTL 层次路径')
+    return scopes
+
+
+def extraction_settings(config):
+    """Settings that determine the graph, excluding branch annotations."""
+    result = copy.deepcopy(config)
+    result.pop('div_source_scopes', None)
+    for layer in result.get('layers', []):
+        layer.pop('reset_signal', None)
+        for rule in layer.get('modules', []):
+            for field in ('input_regex', 'output_regex', 'port_selection'):
+                rule.pop(field, None)
+    return result
+
+
 def validate_config(config, allow_incomplete=False):
     if not isinstance(config, dict):
         raise ValueError("Configuration must be an object")
@@ -77,11 +108,6 @@ def validate_config(config, allow_incomplete=False):
             kind = rule.get('kind')
             if kind == 'subsystem' and output not in (None, ''):
                 raise ValueError('SUBSYSTEM has input terminals only; omit its output')
-            selection = rule.get('port_selection')
-            if kind == 'subsystem' and selection and not allow_incomplete:
-                if (selection.get('module') != rule['module'] or selection.get('hierarchy') != layer['hierarchy'] or
-                        selection.get('regex',rule.get('input_regex')) != rule.get('input_regex')):
-                    raise ValueError('SUBSYSTEM module / hierarchy / regex changed; reopen its editor and confirm input ports again')
             if kind == 'wire':
                 if (not isinstance(output, list) or not output or
                         not all(isinstance(p, str) and p for p in output) or
@@ -94,8 +120,8 @@ def validate_config(config, allow_incomplete=False):
                 raise ValueError('Provide distinct inputs and one distinct ' + info['output'])
             if (kind is not None or mode == 'reset') and (not isinstance(kind, str) or kind not in info['kinds']):
                 raise ValueError('kind must be ' + ', '.join(info['kinds']) + ' for ' + mode + ' analysis')
-            if kind in ('gate', 'occ', 'div', 'rsy_sync') and len(inputs) != 1:
-                raise ValueError('Gate, OCC, DIV and RSY_SYNC rules require exactly one input')
+            if kind in SINGLE_INPUT_KINDS and len(inputs) != 1:
+                raise ValueError('{} rules require exactly one input'.format(kind.upper()))
             validate_aux_ports(rule, inputs, output)
     if not allow_incomplete and not any(layer.get("modules") for layer in layers):
         raise ValueError("Provide at least one module rule")
@@ -106,6 +132,7 @@ def validate_config(config, allow_incomplete=False):
         raise ValueError("design.elab or design.filelist is required")
     if not allow_incomplete and not design.get("top"):
         raise ValueError("design.top is required")
+    div_source_scopes(config, allow_incomplete)
     trace_scope = config.get('trace_scope', '')
     if not isinstance(trace_scope, str):
         raise ValueError('trace_scope must be an exact RTL hierarchy string')

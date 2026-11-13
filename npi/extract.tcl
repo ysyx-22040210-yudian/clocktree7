@@ -370,6 +370,7 @@ proc ct_walk {seed direction owner pin trace_id} {
     set ct_walk_noted_net 0
     ct_journal item_begin trace $trace_context "port trace begin"
     set ct_result_count 0
+    set l1_entries [dict create]; set traversal_complete 1
     ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
     # Dictionary FIFO: remove each entry as soon as it is processed. Entries
     # carry only a parent path ID; branch prefixes are written exactly once.
@@ -389,6 +390,7 @@ proc ct_walk {seed direction owner pin trace_id} {
         dict incr ct_walk_stats processed
         dict incr ct_walk_stats pending -1
         if {$ct_max_steps > 0 && $cursor > $ct_max_steps} {
+            set traversal_complete 0
             ct_terminal [ct_result trace_limit $path]
             break
         }
@@ -406,13 +408,20 @@ proc ct_walk {seed direction owner pin trace_id} {
                 [ct_inst_prop $hdl npiNlFullName] eq $::ct_l1_scope && [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
             set formal [ct_prop $hdl npiNlName]
             if {[regexp {^(.*)\[-?[0-9]+:-?[0-9]+\]#\[(-?[0-9]+)\]$} $formal -> base bit]} {set formal "$base\[$bit\]"}
+            set trace_root [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]
+            set stop_at_l1 [expr {$trace_root eq $::ct_l1_scope || $::ct_tree_type eq "reset"}]
             if {![dict exists $::ct_l_l1_inputs "$::ct_l1_scope.$formal"]} {
-                ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $current_name] message [ct_js "L1 formal bit could not be confirmed"]]
-                continue
+                if {$stop_at_l1} {
+                    ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $current_name] message [ct_js "L1 formal bit could not be confirmed"]]
+                    continue
+                }
+            } else {
+                set endpoint "$::ct_l1_scope.$formal"
+                set entry [ct_result [ct_l1_status] $path endpoint [ct_js $endpoint] scope [ct_js $::ct_l1_scope] \
+                    boundary_role [ct_js input] l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js $formal] l1_verified true]
+                if {$stop_at_l1} {ct_terminal $entry; continue}
+                dict set l1_entries $endpoint $entry
             }
-            ct_terminal [ct_result [ct_l1_status] $path endpoint [ct_js "$::ct_l1_scope.$formal"] scope [ct_js $::ct_l1_scope] boundary_role [ct_js input] \
-                l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js $formal] l1_verified true]
-            continue
         }
         # Root interface ports are the strict boundary, including selected
         # roots. Never cross into the parent and then re-enter elsewhere.
@@ -497,6 +506,9 @@ proc ct_walk {seed direction owner pin trace_id} {
         } else {
             ct_terminal [ct_result error 0 message [ct_js "No terminal or target found; possible connectivity cycle"]]
         }
+    }
+    if {$traversal_complete} {
+        dict for {endpoint entry} $l1_entries {ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result $entry]}
     }
     ct_emit [ct_object event [ct_js trace_end] trace_id $trace_id result_count $ct_result_count path_steps $path_count]
     flush $ct_stream

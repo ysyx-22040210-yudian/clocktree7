@@ -42,7 +42,7 @@ def sv_output_path(path):
 
 
 def architecture_signature(graph):
-    return identity('branch-endpoint-any-layer-v5',graph.get('config'),graph.get('metadata'),graph.get('summary'))
+    return identity('branch-endpoint-any-layer-v7',graph.get('config'),graph.get('metadata'),graph.get('summary'))
 
 
 def graph_for_templates(graph,draft):
@@ -184,11 +184,12 @@ def default_control_bindings(bindings,origin):
     bindings['var_div']={'value':'0','origin':origin}
 
 
-def terminal_outputs(db,node,pin):
+def terminal_outputs(db,node,pin,scope_exits=()):
     """Only the wire channel belonging to this input may supply its endpoints."""
     if node['kind']=='wire':
+        allowed = set(node.get('terminal_outputs', output_ports(node))).difference(scope_exits)
         return list(dict.fromkeys(c['output'] for c in node.get('internal_connections',[])
-            if c['input']==pin and c['status']=='verified' and
+            if c['input']==pin and c['status']=='verified' and c['output'] in allowed and
             not db.execute('SELECT 1 FROM edges WHERE source=? AND source_pin=?',(node['id'],c['output'])).fetchone()))
     return output_ports(node)
 
@@ -329,6 +330,8 @@ def prepare(graph,registers,directory,resolve_connections=True):
             outgoing=defaultdict(list);degree={}
             for n in graph['nodes']:
                 small={k:n.get(k) for k in ('id','kind','layer','inputs','output','port_connections','aux_ports','outputs','internal_connections','terminal_inputs')}
+                if 'terminal_outputs' in n:
+                    small['terminal_outputs'] = n['terminal_outputs']
                 small['l1_inputs']={p:{k:v for k,v in value.items() if k!='evidence'} for p,value in n.get('l1_inputs',{}).items()}
                 if n.get('kind')=='wire':
                     small['internal_connections']=[{k:c[k] for k in ('input','output','status')} for c in n.get('internal_connections',[])]
@@ -348,6 +351,18 @@ def prepare(graph,registers,directory,resolve_connections=True):
             cyclic={n for n,d in degree.items() if d};del degree,outgoing,pending
             has_wire=db.execute("SELECT 1 FROM nodes WHERE kind='wire' LIMIT 1").fetchone() is not None
             if has_wire:cyclic={key for d in graph.get('diagnostics',[]) if d.get('code')=='cycle_or_cycle_downstream' for key in d.get('instances',[])}
+            ambiguous_drivers = defaultdict(set)
+            for diagnostic in graph.get('diagnostics', []):
+                if diagnostic.get('code') in ('multiple_drivers', 'multiple_l1_inputs') and diagnostic.get('instance'):
+                    ambiguous_drivers[diagnostic['instance']].add(diagnostic.get('pin'))
+            undriven_inputs = defaultdict(set)
+            scope_exits = defaultdict(set)
+            for boundary in graph.get('boundaries', []):
+                status, direction = boundary.get('status'), boundary.get('direction')
+                if status == 'undriven' and direction == 'driver' and boundary.get('instance') and boundary.get('pin'):
+                    undriven_inputs[boundary['instance']].add(boundary['pin'])
+                if status == 'scope_boundary' and direction == 'load' and boundary.get('instance') and boundary.get('pin'):
+                    scope_exits[boundary['instance']].add(boundary['pin'])
             report('registers','读取逐位寄存器映射',{})
             if registers:add_candidates(db,registers,div_scopes)
             complete=bool(graph.get('summary',{}).get('connectivity_complete'))
@@ -355,6 +370,11 @@ def prepare(graph,registers,directory,resolve_connections=True):
             for row in db.execute('SELECT * FROM nodes WHERE terminal=1 ORDER BY id'):
                 node=json.loads(row['data']);inst=node['id']
                 pins=list(dict.fromkeys((node.get('terminal_inputs') if node['kind']=='wire' else node.get('inputs')) or []))
+                exits = scope_exits.get(inst, ())
+                if node['kind'] == 'wire':
+                    # Older saved graphs can mark a scoped wire output as a terminal.
+                    wire_ends = {pin: terminal_outputs(db, node, pin, exits) for pin in pins}
+                    pins = [pin for pin in pins if wire_ends[pin]]
                 # MUX inputs converge onto one real endpoint. Subsystem inputs
                 # and verified wire channels remain independent endpoints.
                 if node['kind'] not in ('subsystem','wire'):pins=pins[:1]
@@ -388,6 +408,12 @@ def prepare(graph,registers,directory,resolve_connections=True):
                         pins=[scope_pin] if start['id']==inst and scope_pin is not None else start.get('inputs') or []
                         if has_wire and start['kind']=='wire':
                             pins=[r[0] for r in db.execute('SELECT pin FROM walk_inputs WHERE id=?',(start['id'],))]
+                        ambiguous = ambiguous_drivers.get(start['id'], ())
+                        if None in ambiguous or any(candidate in ambiguous for candidate in pins):
+                            issues.append('关注输入存在多驱动或多个 L1 来源：'+start['id'])
+                        undriven = undriven_inputs.get(start['id'], ())
+                        if any(candidate in undriven for candidate in pins):
+                            issues.append('关注输入无驱动：'+start['id'])
                         pins=[p for p in pins if not db.execute('SELECT 1 FROM edges WHERE target=? AND pin=?',(start['id'],p)).fetchone()]
                         root_pins.extend((start,p) for p in pins)
                         for root_pin in pins:
@@ -407,8 +433,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
                             bindings[var]={'value':"1'b1",'origin':'l1_input_default'}
                         bind_controls(db, has_wire, bindings, issues, 'l1_input_default')
                         bindings['var_pll0']={'value':next(iter(signals)),'origin':'l1_input'} if len(signals)==1 else {'error':'L1 输入来源不唯一'}
-                        terminals=terminal_outputs(db,node,pin)
-                        terminals=terminals or [pin]
+                        terminals = (wire_ends[pin] if node['kind'] == 'wire' else terminal_outputs(db,node,pin)) or [pin]
                         for end_pin in terminals:
                             final=dict(bindings,var_clkip=connection(node,end_pin))
                             final_issues=[value for value in issues if not value.startswith('$var_clkip 未解析')]
@@ -440,13 +465,24 @@ def prepare(graph,registers,directory,resolve_connections=True):
                         for root in roots:
                             start=json.loads(root['data']);start_pins=[pin] if start['id']==inst else start.get('inputs') or []
                             if start['kind']=='wire':start_pins=[r[0] for r in db.execute('SELECT pin FROM walk_inputs WHERE id=? AND NOT EXISTS(SELECT 1 FROM edges WHERE target=? AND pin=walk_inputs.pin)',(start['id'],start['id']))]
-                            starts.extend(connection(start,p) for p in start_pins)
+                            for start_pin in start_pins:
+                                entry = start.get('l1_inputs', {}).get(start_pin, {})
+                                source_signal = entry.get('signal', '')
+                                if entry.get('status') == 'verified' and SIGNAL.fullmatch(source_signal):
+                                    starts.append({'value':source_signal})
+                                else:
+                                    starts.append(connection(start,start_pin))
                         unique={r['value'] for r in starts if r.get('value')}
                         bindings['var_pll0']={'value':next(iter(unique))} if len(unique)==1 and all(r.get('value') for r in starts) else {'error':'无选择器分支没有唯一且已解析的起始输入信号'}
                     # A single device is already a complete branch. A
                     # multi-input terminal MUX similarly has one output, not
                     # one branch for each alternate input path.
-                    ends=(terminal_outputs(db,node,pin) if single_device or node['kind']=='wire' or node['kind']!='subsystem' and len(node.get('inputs') or [])>1 else []) or [pin]
+                    if node['kind'] == 'wire':
+                        ends = wire_ends[pin]
+                    elif single_device or node['kind'] != 'subsystem' and len(node.get('inputs') or []) > 1:
+                        ends = terminal_outputs(db,node,pin) or [pin]
+                    else:
+                        ends = [pin]
                     bindings['_branch']['terminal_rule']='output_if_present_else_input' if single_device else 'wire_channel_output' if node['kind']=='wire' else 'converged_output' if ends!=[pin] else 'terminal_input'
                     for end_pin in ends:
                         final=dict(bindings,var_clkip=connection(node,end_pin))

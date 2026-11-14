@@ -84,6 +84,18 @@ class EvidencePath(Sequence):
     def __getitem__(self, key):
         return list(self)[key]
 
+    def starts_with(self, prefix):
+        """Test a shared evidence prefix without materializing either path."""
+        if prefix.store is not self.store or not prefix.key:
+            return False
+        key, depth = self.key, len(self)
+        prefix_depth = len(prefix)
+        conn = self.store.connection()
+        while depth > prefix_depth:
+            key = conn.execute('SELECT parent FROM path_nodes WHERE id=?', (key,)).fetchone()[0]
+            depth -= 1
+        return key == prefix.key
+
     def tail(self, limit=8):
         """Read a bounded preview without expanding the complete parent chain."""
         chain,key=[],self.key

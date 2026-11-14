@@ -1410,7 +1410,10 @@ class ClockTreeApp(tk.Tk):
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
         summary=graph['summary']
-        if summary['connectivity_complete'] and summary.get('topology_valid',True):
+        undriven=summary.get('undriven_inputs',0)
+        if summary['connectivity_complete'] and undriven:
+            self._badge('追踪完成 · {:,} 个输入无驱动'.format(undriven),'warn')
+        elif summary['connectivity_complete'] and summary.get('topology_valid',True):
             self._badge('目标结构连接已解析 · 未核验普通负载' if summary.get('extraction_mode')=='target' else ('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析'),'pass')
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
         else:self._badge('{} 个例化 trace 超时 · 连接不完整'.format(summary['trace_timeout_instances']) if summary.get('trace_timeout_instances') else '存在未解析断点 / 诊断','warn')
@@ -1444,7 +1447,7 @@ class ClockTreeApp(tk.Tk):
             ('提取方式',EXTRACTION_MODES[summary.get('extraction_mode','full')]),
             ('完整性','全部关注输入反查驱动；末端表示没有已配置的下游器件。普通负载未核验。' if summary.get('extraction_mode')=='target' else '全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
-        self._replace_text(self.diag_text,'{} 个诊断 · {} 个未解析端点\n\n打开完整问题表，可筛选、搜索、分页、定位和导出全部记录。\n正常范围边界不作为未解析错误。'.format(len(graph.get('diagnostics',[])),summary.get('unresolved',0)))
+        self._replace_text(self.diag_text,'{} 个诊断 · {} 个未解析端点 · {} 个输入无驱动\n\n打开完整问题表，可筛选、搜索、分页、定位和导出全部记录。\n正常范围边界不作为未解析错误。'.format(len(graph.get('diagnostics',[])),summary.get('unresolved',0),undriven))
         self.refresh_nodes()
         self.refresh_runs()
         self.set_status('架构图就绪 · {:,} 实例 / {:,} 连接 · 滚轮缩放，拖动画布平移'.format(summary['instances'],summary['edges']))
@@ -1687,7 +1690,7 @@ class ClockTreeApp(tk.Tk):
                 if tree_type(run_config)!=self._active_tree_type:continue
                 if (directory/'summary.json').is_file():
                     s=read_json(directory/'summary.json')
-                    status='完整' if s['connectivity_complete'] and s.get('topology_valid',True) else '诊断'
+                    status='完整' if s['connectivity_complete'] and s.get('topology_valid',True) and not s.get('undriven_inputs') else '诊断'
                     count=s['instances']
                 elif (directory/'gui-job.json').is_file():
                     job=read_json(directory/'gui-job.json')

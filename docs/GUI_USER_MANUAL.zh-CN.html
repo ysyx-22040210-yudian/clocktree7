@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.12 · 更新日期：2026-11-13 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.12 · 更新日期：2026-11-15 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 可切换时钟树与复位树。时钟树有 MUX、SYNC_GATE、GATE_WRAP、OCC_ROOT、OCC_BRANCH、DIV、穿线和 SUBSYSTEM。复位树有 MUX、RSY_SYNC、穿线和 SUBSYSTEM。关注端口及辅助端口都可从 elab 正则筛选后写入文本框，也可直接编辑。两种分析均默认两级，可自定义层数并分别保存配置草稿、结果和搜索历史。端口操作见 <a href="#device-ports-and-div-sources">第 36 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -1308,6 +1308,7 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 </tbody>
 </table>
 <p>同一节点可以既有范围内下游，也有范围出口。边界表示明确的分析范围，不是连通错误；绿色状态仅表示<strong>配置范围内</strong>的连接与结构检查通过，不表示范围外网络已经验证。未知逻辑、缺失端口、缺失反向证据等仍会报诊断，不能用范围边界掩盖。</p>
+<p>全负载核验已确认某个穿线输出是范围出口时，该输出不参与 SV 末端计数。同一输入转接到其他范围内输出时，按各输出实际负载独立判断末端。</p>
 <p>如果两个内部节点只能经过根外的缓冲/连线才能相连，严格模式不会把它们画成直接相连；应扩大追踪根层次以包含那条完整路径。</p>
 <h3 id="233">23.3 时钟、复位与历史配置</h3>
 <p>时钟树与复位树分别保存追踪根层次。切换、保存配置、导出结果和关闭重开均保留各自的字段；结果节点的范围入口/出口标记也随 JSON 和 SVG 保留。</p>
@@ -2250,6 +2251,7 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <li>多 bit、多目的无法形成完整寄存器向量时，不做笛卡尔组合。回到寄存器结果核对逐 bit 证据及配置。</li>
 <li>非直接映射（反相、组合依赖或未固定条件）需人工核对并明确选择。选择表示用户接受该端点供模板使用，工具不会自动把反相或逻辑运算加到寄存器路径上。</li>
 <li>模板只对实际引用的变量要求映射；未引用的可选辅助变量不会因缺位单独阻止生成。未知 <code>$var_xxx</code>、空模板、缺失映射、旧端口规则不一致等在分支预览中给出原因。</li>
+<li>工作区状态和问题表显示关注输入的无驱动情况，包括实例留空、上游层次端口留空和无驱动网络。配置中填入不存在的端口仍会提示「缺失端口」。SV 预览会标出经过无驱动、多驱动或多个 L1 来源输入的分支并跳过，其他已核对的分支仍可生成。穿线按实际通道判断，问题只影响使用相关输入的分支。</li>
 <li>如果当前架构提取的连接完整性为假，则保守阻止生成，以免把截断路径误判为完整末端。先解决原树的超时、未解析等问题再分析。</li>
 </ul>
 <p>DFT 假设来自<strong>寄存器任务的实际设置</strong>，不是导出阶段再次猜测；文件头及映射 JSON 一并记录。当前 SV 路径支持普通层次标识符、静态 bit/range 和已证明的拼接；无法安全表示的转义标识符或动态表达式会报告原因。</p>
@@ -2465,10 +2467,10 @@ end
 <p>无需另配入口器件或手工配线。核对 L1 层次后重新提取即可；L1 层次留空时与原查找规则一致，使用端口追踪根层次，未填追踪根时使用设计顶层。</p>
 <p>画布用 <strong>L1 · INPUT</strong> 箭头模型显示端口名、完整 L1 信号路径及到目标输入的连线。它是已存在的 RTL 接口，不计入器件实例总数。点击入口或连线可查看属性及原始 driver 证据；沿上下游跳转、独立分支画布、上游/整分支高亮、SVG 和重开后的结果恢复均保留入口。层次概览中多个入口可合并显示为 <code>输入端口 ×N</code>；展开目标范围后显示各个真实端口及 bit。</p>
 <p><a class="figure" href="images/l1-input-workbench.png" target="_blank"><img alt="L1 层次输入及实际连线" src="images/l1-input-workbench.png" /></a></p>
-<p>L1 总线即使在更外层被重新拼接，也记录 L1 内的真实 formal bit。例如 <code>.raw({pads[4],pads[6],pads[5],pads[7]})</code> 中 <code>raw[3]</code> 的来源可能是 <code>pads[5]</code>，本功能保存的是 <code>chip.u_crg.raw[3]</code>。旧结果中没有 L1 接口确认记录时不会凭名字补造连线，需重新提取。</p>
+<p>L1 总线即使在更外层被重新拼接，也记录 L1 内的真实 formal bit。例如 <code>.raw({pads[4],pads[6],pads[5],pads[7]})</code> 中 <code>raw[3]</code> 的来源可能是 <code>pads[5]</code>，本功能保存的是 <code>chip.u_crg.raw[3]</code>。单 bit 向量如 <code>input [5:5] clk_in</code> 显示 <code>clk_in[5]</code>。更新后使用相同配置重新提取，旧结果按原有证据显示。</p>
 <h3 id="352-sv">35.2 SV 生成规则</h3>
-<p>L1 RTL 输入接口可以出现在某条连接的中途。时钟追踪在配置范围内继续向上游查找。找到关注器件输出时，图上连接该实际器件。确认接口为直接来源时，显示 L1 入口。</p>
-<p>L1 接口直接进入后续层的非 MUX 起始器件时，使用“起始无选择器”模板和下表默认值。实际最初器件是 MUX 时，使用带选择器模板和该 MUX 的关注输入。两种情况都沿真实连接找到末端。</p>
+<p>L1 RTL 输入接口可以出现在某条连接的中途。时钟和复位追踪在配置范围内继续向上游查找。找到关注器件输出时，图上连接该实际器件。若输入追踪已经唯一确认到达 L1 端口，且后续未解析的证据都位于该接口外侧，画布仍显示 L1 到器件的连线，问题表保留接口外的诊断。追踪根设为 L1 时，停在真实接口边界。接口到 L1 本层器件与跨级进入后续器件均适用。</p>
+<p>L1 接口直接进入后续层的非 MUX 起始器件时，使用“起始无选择器”模板和下表默认值。对直接例化在 L1 的非 MUX 起始器件，<code>$var_pll0</code> 也优先采用已确认的接口路径。首个真实器件是 MUX 时，按顺序采用该选择器的关注输入。末端和分支数量依实际器件连接确定。</p>
 <p><strong>已有实际控制映射时优先保留真实值。</strong> 分支中配置了 <code>pll_sel/div/sw_done/gt</code> 的器件继续绑定该端口的寄存器追踪结果；表中控制默认值只用于未配置对应辅助端口的项。已配置却缺少结果、超时或追到多个寄存器时，模板若引用该项仍会提示并跳过/等待选择，不会静默改成常量。</p>
 <table>
 <thead>
@@ -2515,7 +2517,7 @@ end
 <p>例如 <code>L1.raw_clk[3] → L3.g0 → L4.g1 → L5.subsys.clk</code>，只为末端 <code>subsys.clk</code> 生成该分支代码；若链路结束于 <code>g1</code>，则取 <code>g1</code> 输出。穿线末端按已证明的内部通道逐输出生成；同一子系统的不同输入仍分别处理，不相互连通。</p>
 <p>在“分支 SV 模板”窗口点击“分析全部分支”，预览会显示 <strong>L1 直达来源</strong>。没有配置辅助控制端口的直达分支可将寄存器结果目录留空。有实际控制口或混有普通分支时，仍须满足模板所引用变量的寄存器证据要求；缺少证据的分支明确跳过，其余继续写入同一个 SV 文件。<code>.mapping.json</code> 的 <code>l1_input</code> 字段记录来源和末端规则。</p>
 <h3 id="353">35.3 不确定连接的处理</h3>
-<p>端口超时、未知逻辑、动态选择、未连接，以及混有未证明结果的追踪，不会被当作已确认的 L1 直达关系。一个输出汇合多个不同 L1 来源，或混合 L1 直达与普通器件起点时，SV 分析会列出来源并跳过该输出，避免任意选择 <code>$var_pll0</code>。输入名相似、层级前缀相同均不足以证明连接。</p>
+<p>到达 L1 之前遇到未知逻辑、动态选择、未连接、超时或竞争路径时，保留相应状态。一个输出汇合多个不同 L1 来源，或混合 L1 直达与普通器件起点时，SV 分析会列出来源并跳过该输出。L1 接口外的未解析逻辑仍可能影响本次结果的完整性和 SV 导出。若验证范围仅限 L1 内部，可在配置允许时把「端口追踪根层次」设为 L1 路径，以该接口为追踪边界。</p>
 <p>本功能适用于时钟/复位画布；SV 模板仍用于时钟树。真实 VM、逐位及规模验收见 <a href="L1_INPUT_VALIDATION_20261111.zh-CN.md">L1 输入验收报告</a>。</p>
 <p><a id="device-ports-and-div-sources"></a></p>
 <h2 id="36-div">36. 正则添加端口、器件细分和 DIV 寄存器来源</h2>

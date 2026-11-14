@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+import subprocess
 import sys
 import time
 import traceback
@@ -10,6 +11,99 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from check_target_mode import run
 from clocktree.storage import write_graph
+
+
+def gate_entries(out):
+    """An L1 gate can reach a proven input before finding external logic."""
+    out.mkdir(parents=True, exist_ok=True)
+    rtl = out/'rtl.sv'
+    rtl.write_text('''
+module l1_gate(input i,en,output o); assign o=i&en; endmodule
+module l1_source(input i,output o); assign o=~i; endmodule
+module l1_osc(input refclk,output reg o);
+ always @(posedge refclk) o <= ~o;
+endmodule
+module region(input raw, external_clk, tracked, open_clk,
+              input [0:3] clocks, input [5:5] single_bit,
+              input en, output [7:0] q);
+ wire raw_alias;
+ assign raw_alias=raw;
+ l1_gate g_raw(.i(raw_alias),.en(en),.o(q[0]));
+ l1_gate g_external(.i(external_clk),.en(en),.o(q[1]));
+ l1_gate g_external2(.i(external_clk),.en(en),.o(q[2]));
+ l1_gate g_tracked(.i(tracked),.en(en),.o(q[3]));
+ l1_gate g_open(.i(open_clk),.en(en),.o(q[4]));
+ l1_gate g_bit(.i(clocks[2]),.en(en),.o(q[5]));
+ l1_gate g_one(.i(single_bit),.en(en),.o(q[6]));
+ l1_gate g_internal(.i(en ? raw : clocks[2]),.en(en),.o(q[7]));
+endmodule
+module l1_gate_top(input [3:0] clk,input en,rst_n,output [7:0] q);
+ wire generated_clk, tracked_clk;
+ l1_osc outside_model(.refclk(clk[0]),.o(generated_clk));
+ l1_source source(.i(clk[1]),.o(tracked_clk));
+ region crg(.raw(clk[0]),.external_clk(generated_clk),.tracked(tracked_clk),
+            .open_clk(),.clocks({clk[3],clk[0],clk[2],clk[1]}),.single_bit(clk[3]),.en(en),.q(q));
+endmodule
+''')
+    kdb = out/'compile'
+    kdb.mkdir()
+    with (kdb/'vcs.log').open('w') as log:
+        subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all',
+            '-top','l1_gate_top',str(rtl)], cwd=str(kdb), stdout=log, stderr=subprocess.STDOUT)
+    scope = 'l1_gate_top.crg'
+    config = {'design': {'top':'l1_gate_top','elab':str(kdb/'simv.daidir/kdb.elab++')},
+              'layers':[{'index':1,'hierarchy':scope,'reset_signal':'l1_gate_top.rst_n','modules':[
+                  {'module':'l1_gate','kind':'sync_gate','clock_inputs':['i'],'clock_output':'o'}]},
+                  {'index':2,'hierarchy':'l1_gate_top','modules':[
+                  {'module':'l1_source','kind':'occ_root','clock_inputs':['i'],'clock_output':'o'}]}]}
+    reports = []
+    for mode in ('target', 'full'):
+        graph, report = run(dict(config, extraction_mode=mode), out/mode)
+        expected = {'g_raw':'raw','g_external':'external_clk','g_external2':'external_clk',
+                    'g_bit':'clocks[2]','g_one':'single_bit[5]'}
+        entries = {n['id'].rsplit('.',1)[-1]: n['l1_inputs']['i']['port'] for n in graph['nodes'] if n.get('l1_inputs')}
+        assert entries == expected, (mode, entries, list(graph['boundaries']))
+        assert {(e['source'],e['target']) for e in graph['edges']} == {('l1_gate_top.source',scope+'.g_tracked')}
+        assert any(b['instance']==scope+'.g_external' and b['status']=='unknown_cell' for b in graph['boundaries'])
+        assert not graph['summary']['connectivity_complete']
+        nodes = {n['id']:n for n in graph['nodes']}
+        assert nodes[scope+'.g_external']['component'] == nodes[scope+'.g_external2']['component']
+        from clocktree.indexed_view import IndexedGraphView
+        view = IndexedGraphView(graph)
+        view.project('instances')
+        assert len(view.l1_nodes) == 4 and len(view.l1_edges) == 5
+        assert scope+'.external_clk' in view.svg()
+        reports.append(dict(mode=mode, entries=entries, **report))
+
+    # Also verify complete branches and SV binding with L1 as the trace root.
+    from clocktree.sv_templates import prepare
+    bounded = copy.deepcopy(config)
+    bounded['trace_scope'] = scope
+    bounded['layers'][1].update(hierarchy=scope, modules=[])
+    clean_rtl = out/'bounded.sv'
+    clean_rtl.write_text(rtl.read_text().replace('en ? raw : clocks[2]', 'raw')
+                         .replace('.open_clk()', '.open_clk(clk[2])'))
+    filelist = out/'bounded.f'
+    filelist.write_text(str(clean_rtl)+'\n')
+    bounded['design'] = {'top':'l1_gate_top','filelist':str(filelist)}
+    clean, report = run(bounded, out/'bounded')
+    assert clean['summary']['connectivity_complete'], list(clean['boundaries'])
+    plan = prepare(clean, None, out/'sv', False)
+    templates = {'without_mux':'wire check_$var_clkip = $var_pll0;\n'}
+    for key, port in [('g_raw','raw'),('g_external','external_clk'),('g_one','single_bit[5]')]:
+        row = next(row for row in plan.branches()[1] if row['instance']==scope+'.'+key)
+        result = plan.resolve(row, templates)
+        assert result['ready'] and result['values']['var_pll0']==scope+'.'+port, result
+    generated = plan.export(templates, out/'sv'/'branches.sv')
+    assert generated['blocks'] == 8 and generated['skipped'] == 0, generated
+    checks = out/'sv'/'checks.sv'
+    checks.write_text('module l1_gate_checks;\n' + (out/'sv'/'branches.sv').read_text() + '\nendmodule\n')
+    with (out/'sv'/'vcs.log').open('w') as log:
+        subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all',
+            '-top','l1_gate_top','-top','l1_gate_checks',str(clean_rtl),str(checks)],
+            cwd=str(out/'sv'), stdout=log, stderr=subprocess.STDOUT)
+    write_graph(out/'acceptance.json', {'passed':True,'cases':reports,'bounded':report,'sv':generated,
+                                       'vcs_sv_elaborated':True})
 
 
 def fixture(out, mode='target'):
@@ -173,4 +267,5 @@ if __name__=='__main__':
     args=parser.parse_args()
     if args.phase.startswith('gui-'):gui(Path(args.out).resolve(),args.phase,args.result)
     elif args.phase=='stress':stress(Path(args.out).resolve(),args.count)
+    elif args.phase=='l1-gates':gate_entries(Path(args.out).resolve())
     else:matrix(Path(args.out).resolve())

@@ -127,6 +127,27 @@ def test_single_l1_real_controls_override_defaults_and_unfinished_never_becomes_
     assert ambiguous.branches()[0]==1
 
 
+@pytest.mark.parametrize('problem', ['undriven', 'multiple_drivers', 'multiple_l1_inputs'])
+def test_invalid_wire_input_skips_only_reachable_endpoints(tmp_path, problem):
+    wire = node('w', 'wire', inputs=('a','b'), outputs=('x','y'))
+    wire['terminal_inputs'] = ['a','b']
+    wire['terminal_outputs'] = ['x','y']
+    wire['internal_connections'] = [dict(input=a,output=b,status='verified') for a,b in [('a','y'),('b','x')]]
+    right = node('right', layer=2)
+    g = graph([wire,right], [('w','y','right','i')])
+    if problem == 'undriven':
+        g['boundaries'] = [dict(status=problem,instance=wire['id'],pin='a',direction='driver')]
+    else:
+        g['diagnostics'] = [dict(code=problem,instance=wire['id'],pin='a')]
+    plan = prepare(g,None,tmp_path/'plan',False)
+    templates = {'without_mux':'// $var_clkip'}
+    resolved = {r['instance']:plan.resolve(r,templates) for r in plan.branches()[1]}
+    assert not resolved[right['id']]['ready'], resolved
+    assert resolved[wire['id']]['pin']=='x' and resolved[wire['id']]['ready'], resolved
+    report = plan.export(templates,tmp_path/'out.sv')
+    assert report['blocks']==1 and report['skipped']==1
+
+
 def test_single_l1_wire_counts_terminal_outputs_and_preserves_channel_input(tmp_path):
     n=node('w','wire',inputs=('a','b'),outputs=('x','y','z'))
     n['terminal_inputs']=['a','b']

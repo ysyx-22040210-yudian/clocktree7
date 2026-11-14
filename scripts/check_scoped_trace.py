@@ -89,7 +89,8 @@ def config(scope, filelist, mode, strict=True):
 def run(cfg, directory):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / 'input.json'
-    path.write_text(json.dumps(cfg, indent=2), encoding='utf-8')
+    # This matrix verifies scope exits and the two trace directions.
+    path.write_text(json.dumps(dict(cfg, extraction_mode='full'), indent=2), encoding='utf-8')
     return extract(path, directory)
 
 
@@ -125,7 +126,10 @@ def main():
             legacy = run(config(scope, filelist, mode, strict=False), out / suffix / (mode + '-legacy'))
             assert legacy['summary']['connectivity_complete'] and legacy['summary']['topology_valid'], legacy['diagnostics']
             assert {n['id'] for n in legacy['nodes']} == {n['id'] for n in bounded['nodes']}
-            assert len(legacy['edges']) == len(expected) + 1
+            observed = sorted((e['source'].split('.')[-1], e['source_pin'], e['target'].split('.')[-1], e['target_pin']) for e in legacy['edges'])
+            detour = ('u_mux', 'y', 'u_detour', 'i') if mode == 'clock' else ('u_rmux', 'y', 'u_rdetour', 'rst_ni')
+            assert observed == sorted(expected + [detour]), observed
+            assert all(set(edge['evidence']) == {'driver', 'load'} for edge in legacy['edges'])
             # Blank instance scopes use the independently specified trace root.
             blank = copy.deepcopy(cfg)
             for layer in blank['layers']:layer['hierarchy'] = ''

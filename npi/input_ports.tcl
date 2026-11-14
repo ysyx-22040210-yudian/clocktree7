@@ -1,5 +1,5 @@
 # Read language-model formal ports. No driver, load or child traversal.
-proc ct_input_ports {inst {direction npiInput}} {
+proc ct_input_ports {inst {direction npiInput} {read_binding 0}} {
     set result {}
     set it [npi_iterate -type npiPort -refHandle $inst]
     if {$it eq ""} {return $result}
@@ -30,7 +30,13 @@ proc ct_input_ports {inst {direction npiInput}} {
                 if {$typespec ne ""} {npi_release_handle -object $typespec}
                 npi_release_handle -object $low
             }
-            lappend result [list [npi_get_str -property npiName -object $p] $width $left $right]
+            set record [list [npi_get_str -property npiName -object $p] $width $left $right]
+            if {$read_binding} {
+                set high [npi_handle -type npiHighConn -refHandle $p]
+                lappend record [expr {$high ne ""}]
+                if {$high ne ""} {npi_release_handle -object $high}
+            }
+            lappend result $record
         }
         npi_release_handle -object $p
     }

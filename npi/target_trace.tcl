@@ -31,6 +31,7 @@ proc ct_l_port {path pin} {
         if {[ct_l_prop $p npiName] ne $base} {npi_release_handle -object $p; continue}
         set low [npi_handle -type npiLowConn -refHandle $p]
         set high [npi_handle -type npiHighConn -refHandle $p]
+        set connected [expr {$high ne ""}]
         if {$low ne "" && $bit ne ""} {
             set low [npi_handle_by_index -object $low -index $bit]
             # A whole actual bus is not the selected formal bit. Start from
@@ -39,7 +40,7 @@ proc ct_l_port {path pin} {
         }
         set status ok
         if {$low eq ""} {set status missing_pin} elseif {[ct_l_size $low] != 1} {set status width_requires_bit}
-        set result [dict create status $status low $low high $high port $p direction [ct_l_prop $p npiDirection]]
+        set result [dict create status $status low $low high $high port $p connected $connected direction [ct_l_prop $p npiDirection]]
     }
     npi_release_handle -object $inst
     return $result
@@ -56,6 +57,7 @@ proc ct_l_init {} {
     set ::ct_l_wire_inputs [dict create]
     set ::ct_l_internal 0
     set ::ct_l_l1_inputs [dict create]
+    set ::ct_l1_open_inputs [dict create]
     set ::ct_l_cache [dict create]
     set ::ct_l_cache_bytes 0
     set ::ct_l_cache_written 0
@@ -67,23 +69,34 @@ proc ct_l_index_l1 {} {
     set root [npi_handle_by_name -name $::ct_l1_scope -scope ""]
     if {$root eq ""} {return}
     # Index only this interface's formal inputs. No hierarchy/load traversal.
-    foreach record [ct_input_ports $root] {
-        lassign $record pin width left right
+    set read_binding [expr {$::ct_extraction_mode eq "full" && $::ct_l1_scope ne $::ct_l_root}]
+    foreach record [ct_input_ports $root npiInput $read_binding] {
+        lassign $record pin width left right connected
+        set open [expr {$read_binding && !$connected}]
         if {$width == 1 && $left eq ""} {
             dict set ::ct_l_l1_inputs "$::ct_l1_scope.$pin" $pin
+            if {$open} {dict set ::ct_l1_open_inputs $pin 1}
         } elseif {[string is integer -strict $left] && [string is integer -strict $right] && abs($left-$right)+1 == $width} {
             set step [expr {$left <= $right ? 1 : -1}]
             for {set i $left} {1} {incr i $step} {
-                dict set ::ct_l_l1_inputs "$::ct_l1_scope.$pin\[$i\]" "$pin\[$i\]"
+                set bit "$pin\[$i\]"
+                dict set ::ct_l_l1_inputs "$::ct_l1_scope.$bit" $bit
+                if {$open} {dict set ::ct_l1_open_inputs $bit 1}
                 if {$i == $right} {break}
             }
+            if {$width == 1} {dict set ::ct_l_l1_inputs "$::ct_l1_scope.$pin" $bit}
         }
     }
     npi_release_handle -object $root
 }
+proc ct_l1_fields {formal} {
+    set endpoint "$::ct_l1_scope.$formal"
+    return [list endpoint [ct_js $endpoint] scope [ct_js $::ct_l1_scope] boundary_role [ct_js input] \
+        l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js $formal] l1_verified true]
+}
 proc ct_l_l1_fields {h} {
     set name [ct_l_prop $h npiFullName]
-    if {![dict exists $::ct_l_l1_inputs $name] || [ct_l_size $h] != 1} {return {}}
+    if {![dict exists $::ct_l_l1_inputs $name] || [ct_l_size $h] != 1 || ![ct_l_transparent $h]} {return {}}
     set output_key [ct_l_key $h]
     if {$output_key ne "" && [dict exists $::ct_l_outputs $output_key]} {return {}}
     set formal [npi_handle_by_name -name $name -scope ""]
@@ -91,7 +104,7 @@ proc ct_l_l1_fields {h} {
     set match [npi_compare_objects -object1 $h -object2 $formal]
     npi_release_handle -object $formal
     if {!$match} {return {}}
-    return [list endpoint [ct_js $name] scope [ct_js $::ct_l1_scope] boundary_role [ct_js input] l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js [dict get $::ct_l_l1_inputs $name]] l1_verified true]
+    return [ct_l1_fields [dict get $::ct_l_l1_inputs $name]]
 }
 proc ct_l1_status {} {return [expr {$::ct_trace_scope ne "" && $::ct_trace_scope eq $::ct_l1_scope ? "scope_boundary" : "input_boundary"}]}
 proc ct_l_register_wire {path outputs} {
@@ -227,7 +240,7 @@ proc ct_l_cache_open {} {
         while {[gets $stream line] >= 0} {
             append record $line \n
             if {![info complete $record]} {continue}
-            if {![catch {llength $record} length] && $length == 3 && [lindex $record 0] eq "ct_language_step_v1"} {
+            if {![catch {llength $record} length] && $length == 3 && [lindex $record 0] eq "ct_language_step_v3"} {
                 lassign $record version key actions
                 dict set ::ct_l_cache $key $actions
                 incr ::ct_l_cache_bytes [string bytelength $record]
@@ -241,7 +254,7 @@ proc ct_l_cache_open {} {
     set ::ct_l_cache_stream [open $path w]
     fconfigure $::ct_l_cache_stream -encoding utf-8 -translation lf
     dict for {key actions} $::ct_l_cache {
-        set record [list ct_language_step_v1 $key $actions]
+        set record [list ct_language_step_v3 $key $actions]
         puts $::ct_l_cache_stream $record
         incr ::ct_l_cache_written [string bytelength $record]
     }
@@ -250,7 +263,7 @@ proc ct_l_cache_open {} {
 proc ct_l_cache_put {key actions} {
     if {$key eq ""} {return}
     foreach action $actions {if {[lindex $action 0] eq "handle"} {return}}
-    set record [list ct_language_step_v1 $key $actions]
+    set record [list ct_language_step_v3 $key $actions]
     set bytes [string bytelength $record]
     if {$bytes > 262144} {return}
     if {[dict size $::ct_l_cache] >= 2048 || $::ct_l_cache_bytes+$bytes > 4194304} {
@@ -303,26 +316,24 @@ proc ct_l_expand {h} {
         if {$owner ne "" && ![ct_scope_match $owner $::ct_l_root]} {
             lappend actions [ct_l_boundary $name]; continue
         }
+        set l1_entry {}
         if {$type eq "npiPort"} {
             set port_name [ct_l_prop $use npiName]
             set direction [ct_l_prop $use npiDirection]
             if {!$::ct_l_internal && [info exists ::ct_l1_scope] && $owner eq $::ct_l1_scope && $direction eq "npiInput"} {
                 # The language driver supplies the exact formal bit in src.
                 # An L1 interface inside the trace root can have an upstream device.
-                set stop_at_l1 [expr {$owner eq $::ct_l_root || $::ct_tree_type eq "reset"}]
+                set stop_at_l1 [expr {$owner eq $::ct_l_root}]
                 set endpoint [ct_l_prop $src npiFullName]
                 if {$endpoint eq ""} {set endpoint "$owner.$port_name"}
-                if {[ct_l_size $src] != 1 || ![ct_scope_match $endpoint $owner]} {
+                if {[ct_l_size $src] != 1 || ![dict exists $::ct_l_l1_inputs $endpoint]} {
                     if {$stop_at_l1} {
                         lappend actions [ct_l_terminal unsupported_expression [list endpoint [ct_js $endpoint]] $evidence]
                     }
                 } else {
-                    set formal [string range $endpoint [expr {[string length $owner]+1}] end]
-                    set entry [list endpoint [ct_js $endpoint] scope [ct_js $owner] boundary_role [ct_js input] l1_scope [ct_js $owner] l1_port [ct_js $formal] l1_verified true]
+                    set l1_entry [ct_l1_fields [dict get $::ct_l_l1_inputs $endpoint]]
                     if {$stop_at_l1} {
-                        lappend actions [ct_l_terminal [ct_l1_status] $entry $evidence]
-                    } else {
-                        lappend actions [list l1_entry [ct_l1_status] $entry $evidence]
+                        lappend actions [ct_l_terminal [ct_l1_status] $l1_entry $evidence]
                     }
                 }
                 if {$stop_at_l1} {continue}
@@ -385,6 +396,7 @@ proc ct_l_expand {h} {
                 lappend actions [ct_l_terminal undriven [list endpoint [ct_js "$owner.$port_name"]] $evidence]; continue
             }
             if {$high ne "" && ![ct_l_transparent $high]} {
+                if {[llength $l1_entry]} {lappend actions [list l1_entry [ct_l1_status] $l1_entry $evidence]}
                 lappend actions [ct_l_terminal unsupported_expression [list endpoint [ct_js "$owner.$port_name"]] $evidence]; continue
             }
         } elseif {$type eq "npiContAssign"} {
@@ -400,6 +412,7 @@ proc ct_l_expand {h} {
         } else {
             lappend actions [ct_l_terminal unknown_cell [list cell [ct_js $type] endpoint [ct_js $owner]] $evidence]; continue
         }
+        if {[llength $l1_entry]} {lappend actions [list l1_entry [ct_l1_status] $l1_entry $evidence]}
         if {![llength $signals]} {
             lappend actions [ct_l_terminal unknown_type [list endpoint [ct_js $name]] $evidence]
         }
@@ -441,14 +454,12 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
     if {$::ct_l_internal || $h eq "" || [ct_l_prop $h npiType] eq "npiOperation"} {set h [dict get $data low]}
     set queue [dict create 0 [list $h 0 "$owner.$pin"]]
     set head 0; set tail 1; set seen [dict create]
-    set l1_entries [dict create]; set traversal_complete 1
     while {$head < $tail} {
         lassign [dict get $queue $head] h parent last_inside
         dict unset queue $head; incr head
         dict incr ::ct_walk_stats processed
         dict set ::ct_walk_stats pending [expr {$tail-$head}]
         if {$::ct_max_steps > 0 && $head > $::ct_max_steps} {
-            set traversal_complete 0
             ct_terminal [ct_result trace_limit $parent]; break
         }
         set name [ct_l_prop $h npiFullName]
@@ -468,13 +479,10 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
         if {[dict exists $seen $key]} {dict incr ::ct_walk_stats duplicates; continue}
         dict set seen $key 1
         set path [ct_l_step $parent [ct_l_ev $h]]
-        if {!$::ct_l_internal} {
+        if {!$::ct_l_internal && $::ct_l_root eq $::ct_l1_scope} {
             set l1_fields [ct_l_l1_fields $h]
             if {[llength $l1_fields]} {
-                if {$::ct_l_root eq $::ct_l1_scope || $::ct_tree_type eq "reset"} {
-                    ct_terminal [ct_result [ct_l1_status] $path {*}$l1_fields]; continue
-                }
-                dict set l1_entries [dict get $l1_fields endpoint] [ct_result [ct_l1_status] $path {*}$l1_fields]
+                ct_terminal [ct_result [ct_l1_status] $path {*}$l1_fields]; continue
             }
         }
         if {![ct_l_transparent $h]} {ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $name]]; continue}
@@ -487,7 +495,7 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
             if {$kind eq "terminal"} {
                 ct_terminal [ct_result $value $step {*}$fields]
             } elseif {$kind eq "l1_entry"} {
-                dict set l1_entries [dict get $fields endpoint] [ct_result $value $step {*}$fields]
+                ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result [ct_result $value $step {*}$fields]]
             } else {
                 if {$kind eq "next"} {set child [npi_handle_by_name -name $value -scope ""]} else {set child $value}
                 if {$child eq ""} {ct_terminal [ct_result error $step message [ct_js "Cannot restore language signal $value"]]; continue}
@@ -495,9 +503,6 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
                 incr tail; dict incr ::ct_walk_stats discovered
             }
         }
-    }
-    if {$traversal_complete} {
-        dict for {endpoint entry} $l1_entries {ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result $entry]}
     }
     if {!$::ct_result_count} {ct_terminal [ct_result error 0 message [ct_js "No target or boundary; possible alias cycle"]]}
     ct_emit [ct_object event [ct_js trace_end] trace_id $trace_id result_count $::ct_result_count path_steps $::ct_l_path_count]

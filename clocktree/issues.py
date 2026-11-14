@@ -17,6 +17,7 @@ LABELS={
     'trace_skipped_timeout':('随实例跳过','本例化其他端口超时，当前端口未追踪'),
     'instance_trace_timeout':('实例超时','查看阶段日志中的超时断点'),
     'missing_pin':('缺失端口','核对端口名及该实例参数化接口'),
+    'undriven':('输入无驱动','检查例化输入绑定及其上游信号是否有驱动'),
     'missing_trace':('未执行追踪','查看 worker 日志及已提交断点'),
     'missing_module':('未找到 module','核对直接父层和 module 定义名'),
     'scope_not_found':('层次不存在','核对 elab 中的完整实例路径'),
@@ -66,7 +67,8 @@ class IssueIndex:
             conn.execute('CREATE INDEX object_issue ON objects(issue)')
             sources=((row,False) for row in self.graph.get('diagnostics',[]))
             from itertools import chain
-            sources=chain(sources,((row,True) for row in self.graph.get('boundaries',[]) if row.get('status') in UNRESOLVED),
+            sources=chain(sources,((row,True) for row in self.graph.get('boundaries',[]) if row.get('status') in UNRESOLVED
+                                   or (row.get('status') == 'undriven' and row.get('direction') == 'driver')),
                           ((row,False) for row in self.extra))
             for row,boundary in sources:
                 if cancel and cancel.is_set():return

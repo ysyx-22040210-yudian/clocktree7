@@ -30,6 +30,14 @@ def memberships(nodes, edges, sources):
     for source in sources:
         loads = [endpoint(load['instance'], load['pin']) for load in source['loads'] if load['instance'] in nodes]
         for load in loads[1:]: join(loads[0], load)
+    # Loads on the same proven L1 input remain one network even when its
+    # driver beyond the interface has no resolved source boundary.
+    entries = {}
+    for key, node in nodes.items():
+        for pin, entry in node.get('l1_inputs', {}).items():
+            if entry.get('status') == 'verified':
+                load = endpoint(key, pin)
+                join(entries.setdefault(entry['signal'], load), load)
     groups = defaultdict(list)
     for key in sorted(parents, key=lambda x:(x[0], x[1] or '')):
         groups[find(key)].append(key)

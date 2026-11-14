@@ -87,6 +87,10 @@ def test_partial_and_ambiguous_l1_trace_never_claims_direct(extra):
     event['results'].append(extra)
     graph=build_graph(events,cfg)
     assert not next(n for n in graph['nodes'] if n['id']=='top.domain.g0').get('l1_inputs')
+    if extra.get('l1_verified'):
+        diagnostic = next(d for d in graph['diagnostics'] if d['code']=='multiple_l1_inputs')
+        assert diagnostic['signals']==['top.domain.clk[3]', 'top.domain.clk[4]']
+        assert not graph['summary']['topology_valid']
 
 
 def test_old_unmarked_boundaries_do_not_gain_new_proofs():
@@ -95,6 +99,68 @@ def test_old_unmarked_boundaries_do_not_gain_new_proofs():
         for r in e.get('results',[]):r.pop('l1_verified',None)
     graph=build_graph(events,cfg)
     assert not any(n.get('l1_inputs') for n in graph['nodes'])
+
+
+@pytest.mark.parametrize('upstream_status, bypass, expected', [
+    ('input_boundary', False, True),
+    ('unknown_cell', False, True),
+    ('unsupported_expression', False, True),
+    ('constant', False, True),
+    ('unknown_cell', True, False),
+    ('multiple', False, False),
+    ('mixed_drivers', False, False),
+    ('trace_limit', False, False),
+    ('trace_timeout', False, False),
+    ('target', False, False),
+])
+def test_l1_interface_proof_survives_only_problems_beyond_the_port(tmp_path, upstream_status, bypass, expected):
+    events, config = fixture()
+    gate = next(n for n in events if n.get('path') == 'top.domain.g0')
+    gate['layer'] = 1
+    trace_at = next(i for i, e in enumerate(events) if e.get('instance') == gate['path'] and e['event'] == 'trace')
+    trace = 101
+    port = 'top.domain.clk[3]'
+    status = 'input_boundary' if upstream_status in ('multiple', 'mixed_drivers') else upstream_status
+    result = {'status':status, 'path_id':3, 'endpoint':'top.source'}
+    if upstream_status == 'target':
+        result.update(instance='top.domain.m', pin='o')
+    results = [result]
+    if upstream_status == 'multiple':
+        results.append(dict(result, endpoint='top.second_source'))
+    if upstream_status == 'mixed_drivers':
+        results.append(dict(status='target', path_id=3, instance='top.domain.m', pin='o'))
+    events[trace_at:trace_at + 1] = [
+        dict(event='trace_begin', trace_id=trace, instance=gate['path'], pin='i', direction='driver'),
+        dict(event='path_step', trace_id=trace, path_id=1, parent_id=0, evidence={'name':'top.domain.local_alias'}),
+        dict(event='path_step', trace_id=trace, path_id=2, parent_id=1, evidence={'name':port}),
+        dict(event='path_step', trace_id=trace, path_id=3, parent_id=1 if bypass else 2, evidence={'name':'top.source'}),
+        dict(event='l1_entry', trace_id=trace, result={'status':'input_boundary', 'path_id':2,
+             'endpoint':port, 'l1_scope':'top.domain', 'l1_port':'clk[3]', 'l1_verified':True}),
+        *(dict(event='trace_result', trace_id=trace, result=value) for value in results),
+        dict(event='trace_end', trace_id=trace, result_count=len(results)),
+    ]
+    store = ResultStore(tmp_path/'result.sqlite', True)
+    try:
+        graph = build_graph(events, config, evidence_store=store)
+        entry = next(n for n in graph['nodes'] if n['id'] == gate['path']).get('l1_inputs', {}).get('i')
+        if expected:
+            assert entry['signal'] == port
+            assert [step['name'] for step in entry['evidence']] == ['top.domain.local_alias', port]
+            if upstream_status != 'input_boundary':
+                assert any(b['instance'] == gate['path'] and b['status'] == upstream_status for b in graph['boundaries'])
+        else:
+            assert entry is None
+        if upstream_status in ('target', 'mixed_drivers'):
+            assert any(e['source'] == 'top.domain.m' and e['target'] == gate['path'] for e in graph['edges'])
+        if upstream_status in ('multiple', 'mixed_drivers'):
+            assert any(d['code'] == 'multiple_drivers' and d['instance'] == gate['path'] for d in graph['diagnostics'])
+        if upstream_status == 'input_boundary':
+            plan = prepare(graph, None, tmp_path/'plan', False)
+            row = next(r for r in plan.branches()[1] if r['instance'] == 'top.domain.g1')
+            resolved = plan.resolve(row, {'without_mux':'$var_pll0 $var_clkip'})
+            assert resolved['ready'] and resolved['values']['var_pll0'] == port
+    finally:
+        store.close()
 
 
 @pytest.mark.parametrize('indexed', [False, True])

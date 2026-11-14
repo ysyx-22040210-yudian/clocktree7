@@ -100,14 +100,16 @@ def test_issues_cover_more_than_500_records_and_expand_objects(tmp_path):
     graph['diagnostics']=[{'code':'missing_trace','instance':'a','pin':'i'} for i in range(701)]
     graph['diagnostics'].append({'code':'cycle_or_cycle_downstream','instances':['a','b','c']})
     graph['boundaries']=[{'status':'trace_timeout','instance':'d','pin':'i','direction':'driver'},
+                         {'status':'undriven','instance':'b','pin':'i','direction':'driver'},
                          {'status':'scope_boundary','instance':'r','pin':'i','direction':'driver'}]
     issues=IssueIndex(graph);issues.build()
     total,affected,rows=issues.query(offset=700)
-    assert total==703 and affected==4 and len(rows)==3
+    assert total==704 and affected==4 and len(rows)==4
     assert len(issues.objects(rows[1][0]))==3
     path=tmp_path/'all.csv';assert issues.export(path)==total
     with path.open(encoding='utf-8-sig',newline='') as stream:assert len(list(csv.reader(stream)))==total+1
     assert issues.query(category='端口超时')[0]==1
+    assert issues.query(category='输入无驱动')[0]==1
     issues.close()
 
 

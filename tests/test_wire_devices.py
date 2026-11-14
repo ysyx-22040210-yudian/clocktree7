@@ -109,6 +109,39 @@ def test_wire_partial_terminal_and_ambiguous_internal_source():
     assert wire['has_unresolved_output'] and not any(c['output']=='x' for c in wire['internal_connections'])
 
 
+@pytest.mark.parametrize('legacy', [False, True])
+def test_wire_range_exit_is_not_an_sv_endpoint_on_a_fanned_out_channel(tmp_path, legacy):
+    from clocktree.sv_templates import prepare
+
+    config_ = {'design':{'top':'chip','filelist':'rtl.f'}, 'trace_scope':'chip.d',
+               'layers':[{'index':1,'hierarchy':'chip.d','modules':[]}]}
+    instance = 'chip.d.w'
+    events = [dict(event='instance', path=instance, module='W', kind='wire', layer=1,
+        inputs=['i'], output=None, outputs=['exit_pin','local_pin'],
+        port_connections={p:{'status':'connected', 'full_name':'chip.d.'+p}
+                          for p in ('i','exit_pin','local_pin')})]
+    def trace(pin,direction,result):
+        return dict(event='trace',instance=instance,pin=pin,direction=direction,results=[result])
+
+    events.append(trace('i','driver',dict(status='scope_boundary', endpoint='chip.d.i')))
+    for pin in ('exit_pin','local_pin'):
+        events.append(trace(pin,'internal',dict(status='target',instance=instance,pin='i')))
+    events.append(trace('exit_pin','load',dict(status='scope_boundary',endpoint='chip.d.exit_pin')))
+    events.append(trace('local_pin','load',dict(status='no_load')))
+    events.append({'event':'complete'})
+    graph=build_graph(events,config_)
+    wire=graph['nodes'][0]
+    assert wire['scope_output_boundary'] and wire['terminal']
+    assert wire['terminal_inputs']==['i'] and wire['terminal_outputs']==['local_pin']
+    if legacy:
+        wire.pop('terminal_outputs')
+    plan=prepare(graph,None,tmp_path/'plan',False)
+    total, rows=plan.branches()
+    assert total == 1 and rows[0]['pin'] == 'local_pin'
+    result=plan.resolve(rows[0],{'without_mux':'$var_pll0 $var_clkip'})
+    assert result['ready'] and result['values']['var_clkip']=='chip.d.local_pin'
+
+
 def test_layout_worker_preserves_multi_output_anchors():
     import time
     from clocktree.layout_job import LayoutJob

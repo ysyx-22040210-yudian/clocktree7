@@ -370,7 +370,6 @@ proc ct_walk {seed direction owner pin trace_id} {
     set ct_walk_noted_net 0
     ct_journal item_begin trace $trace_context "port trace begin"
     set ct_result_count 0
-    set l1_entries [dict create]; set traversal_complete 1
     ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
     # Dictionary FIFO: remove each entry as soon as it is processed. Entries
     # carry only a parent path ID; branch prefixes are written exactly once.
@@ -390,7 +389,6 @@ proc ct_walk {seed direction owner pin trace_id} {
         dict incr ct_walk_stats processed
         dict incr ct_walk_stats pending -1
         if {$ct_max_steps > 0 && $cursor > $ct_max_steps} {
-            set traversal_complete 0
             ct_terminal [ct_result trace_limit $path]
             break
         }
@@ -409,18 +407,23 @@ proc ct_walk {seed direction owner pin trace_id} {
             set formal [ct_prop $hdl npiNlName]
             if {[regexp {^(.*)\[-?[0-9]+:-?[0-9]+\]#\[(-?[0-9]+)\]$} $formal -> base bit]} {set formal "$base\[$bit\]"}
             set trace_root [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]
-            set stop_at_l1 [expr {$trace_root eq $::ct_l1_scope || $::ct_tree_type eq "reset"}]
+            set stop_at_l1 [expr {$trace_root eq $::ct_l1_scope}]
             if {![dict exists $::ct_l_l1_inputs "$::ct_l1_scope.$formal"]} {
                 if {$stop_at_l1} {
                     ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $current_name] message [ct_js "L1 formal bit could not be confirmed"]]
                     continue
                 }
             } else {
-                set endpoint "$::ct_l1_scope.$formal"
-                set entry [ct_result [ct_l1_status] $path endpoint [ct_js $endpoint] scope [ct_js $::ct_l1_scope] \
-                    boundary_role [ct_js input] l1_scope [ct_js $::ct_l1_scope] l1_port [ct_js $formal] l1_verified true]
-                if {$stop_at_l1} {ct_terminal $entry; continue}
-                dict set l1_entries $endpoint $entry
+                set formal [dict get $::ct_l_l1_inputs "$::ct_l1_scope.$formal"]
+                set fields [ct_l1_fields $formal]
+                if {$stop_at_l1} {ct_terminal [ct_result [ct_l1_status] $path {*}$fields]; continue}
+                # The actual of a pseudo port can be a concat or slice, so
+                # use its formal's language-model binding to check for open.
+                if {[dict exists $::ct_l1_open_inputs $formal]} {
+                    ct_terminal [ct_result undriven $path endpoint [dict get $fields endpoint]]
+                    continue
+                }
+                ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result [ct_result [ct_l1_status] $path {*}$fields]]
             }
         }
         # Root interface ports are the strict boundary, including selected
@@ -485,6 +488,17 @@ proc ct_walk {seed direction owner pin trace_id} {
             set status [expr {$direction eq "load" ? "no_load" : "undriven"}]
             if {[string match *Port $type] && ![string match *InstPort $type]} {
                 set status [expr {$direction eq "load" ? "output_boundary" : "input_boundary"}]
+                if {!$is_seed && $direction eq "driver" && $inst_path ne "" && [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
+                    # Top and configured scope entries were handled above.
+                    # A nested formal with no actual binding is an open input.
+                    set formal [ct_full $hdl]
+                    set data [ct_l_port $inst_path [ct_prop $formal npiNlName]]
+                    if {$formal ne $hdl} {ct_release $formal}
+                    if {[dict get $data port] ne "" && [dict get $data direction] eq "npiInput" && ![dict get $data connected]} {
+                        set status undriven
+                    }
+                    ct_l_free_port $data
+                }
             }
             if {[string match *Net $type] && [npi_nl_get -property npiNlIsLiteral -object $hdl]} {set status constant}
             if {$direction eq "driver"} {
@@ -506,9 +520,6 @@ proc ct_walk {seed direction owner pin trace_id} {
         } else {
             ct_terminal [ct_result error 0 message [ct_js "No terminal or target found; possible connectivity cycle"]]
         }
-    }
-    if {$traversal_complete} {
-        dict for {endpoint entry} $l1_entries {ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result $entry]}
     }
     ct_emit [ct_object event [ct_js trace_end] trace_id $trace_id result_count $ct_result_count path_steps $path_count]
     flush $ct_stream
@@ -724,8 +735,19 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
         }
         if {$status ne ""} {
             if {$emit} {
+                set fields {}
+                if {$status eq "missing_pin" && $role eq "input"} {
+                    # The netlist can omit a physically open instport. Check
+                    # the exact formal in the language model before labeling it.
+                    set data [ct_l_port $path $pin]
+                    if {[dict get $data status] eq "ok" && [dict get $data direction] eq "npiInput" && ![dict get $data connected]} {
+                        set status undriven
+                        set fields [list endpoint [ct_js "$path.$pin"]]
+                    }
+                    ct_l_free_port $data
+                }
                 ct_emit [ct_object event [ct_js trace] instance [ct_js $path] pin [ct_js $pin] direction [ct_js $direction] \
-                    results [ct_array [list [ct_object status [ct_js $status] path {[]}]]]]
+                    results [ct_array [list [ct_object status [ct_js $status] path {[]} {*}$fields]]]]
             }
             ct_release $p
             continue

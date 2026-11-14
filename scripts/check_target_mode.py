@@ -101,7 +101,11 @@ def matrix(out):
                 graph,report=run(cfg,out/('scope-{}-{}-{}'.format(generated,mode,bounded)))
                 assert graph['summary']['connectivity_complete'], (graph['diagnostics'],list(graph['boundaries']))
                 expected=4 if mode=='clock' else 3
-                assert len(graph['edges'])==expected+(0 if bounded else 1), edges(graph)
+                assert len(graph['edges']) == expected + int(not bounded), edges(graph)
+                source, sp, sink, dp = (('u_mux','y','u_detour','i') if mode=='clock' else
+                                        ('u_rmux','y','u_rdetour','rst_ni'))
+                detour = [scope+'.'+source, sp, scope+'.'+sink, dp]
+                assert (detour in edges(graph)) == (not bounded)
                 assert len(graph['nodes'])==(6 if mode=='clock' else 5)
                 assert all(q['scope']==scope for q in graph['metadata']['scoped_queries'])
                 if bounded:

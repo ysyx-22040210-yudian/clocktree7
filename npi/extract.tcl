@@ -165,6 +165,63 @@ proc ct_scope_boundary {path endpoint direction} {
     return [ct_result scope_boundary $path scope [ct_js $ct_trace_scope] endpoint [ct_js $endpoint] \
         boundary_role [ct_js [expr {$direction eq "load" ? "output" : "input"}]]]
 }
+proc ct_nl_interface_member {hdl} {
+    # Netlist ports flatten an interface to an inout vector; its ordinal
+    # bit is not the declared SystemVerilog member index.
+    if {[ct_prop $hdl npiNlDirection] ne "npiNlInout"} {return {}}
+    set formal [ct_full $hdl]
+    set port $formal
+    if {[ct_prop $formal npiNlType] eq "npiNlInstPort"} {
+        set port [npi_nl_handle -type npiNlPort -refHandle $formal]
+    }
+    set type ""
+    if {$port ne ""} {catch {set type [npi_nl_get -property npiNlIsIntfTypePort -object $port]}}
+    set name [ct_prop $port npiNlFullName]
+    if {$port ne $formal} {ct_release $port}
+    if {$formal ne $hdl} {ct_release $formal}
+    if {$type ne "1" || ![llength [info commands npi_get_unflatten_name]]} {
+        return {}
+    }
+    if {[npi_nl_get -property npiNlSize -object $hdl] != 1} {return {}}
+    set index [npi_nl_get -property npiNlLeft -object $hdl]
+    set member [npi_get_unflatten_name -name $name -left $index -right $index]
+    if {$member eq ""} {return {}}
+    set owner [ct_inst_prop $hdl npiNlFullName]
+    if {[string first "$owner." $member] == 0} {set name $member} else {set name "$owner.$member"}
+    set reference [npi_handle_by_name -name $name -scope ""]
+    set record [ct_l_interface_member $reference]
+    if {[dict size $record]} {return [dict set record evidence_type npiRefObj]}
+    # Some valid bit references only have a Language Model handle when
+    # reached through their HDL use. Confirm their direction on the bound
+    # modport declaration instead of requiring a separate named bit handle.
+    set member [string range $name [expr {[string length $owner]+1}] end]
+    if {![regexp {^([^.]+)\.([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\[-?[0-9]+\])?$} $member -> interface field]} {return {}}
+    set ref [npi_handle_by_name -name "$owner.$interface" -scope ""]
+    if {[ct_l_prop $ref npiType] ne "npiRefObj"} {return {}}
+    set modport [npi_handle -type npiActual -refHandle $ref]
+    if {[ct_l_prop $modport npiType] ne "npiModport"} {return {}}
+    set it [npi_iterate -type npiIODecl -refHandle $modport]
+    if {$it eq ""} {return {}}
+    while {[set port [npi_scan -iterator $it]] ne ""} {
+        if {[ct_l_prop $port npiName] eq $field} {
+            set direction [ct_l_prop $port npiDirection]
+            npi_release_handle -object $it
+            return [dict create direction $direction owner $owner formal $member evidence_type npiIODecl]
+        }
+        npi_release_handle -object $port
+    }
+    return {}
+}
+proc ct_nl_modport_bundle {hdl type} {
+    if {$type ni {npiNlPort npiNlPseudoPort} || [ct_prop $hdl npiNlDirection] ne "npiNlInout"} {return 0}
+    set formal [ct_full $hdl]
+    set name [ct_prop $formal npiNlFullName]
+    if {$formal ne $hdl} {ct_release $formal}
+    set modport [npi_handle_by_name -name $name -scope ""]
+    set result [expr {[ct_l_prop $modport npiType] eq "npiModport"}]
+    if {$modport ne ""} {npi_release_handle -object $modport}
+    return $result
+}
 proc ct_pin {path pin} {
     set base $pin
     set bit ""
@@ -254,7 +311,15 @@ proc ct_schedule {hdl path last_inside} {
     set state [ct_state $hdl]
     if {[dict exists $scheduled $state]} {
         dict incr ct_walk_stats duplicates
-        if {[string match *Port [lindex $state 0]]} {dict incr ct_walk_stats repeated_ports}
+        if {[string match *Port [lindex $state 0]] && [ct_prop $hdl npiNlDirection] ne "npiNlInout"} {
+            set inst [ct_inst $hdl]
+            set is_modport 0
+            if {[ct_prop $inst npiNlCellType] eq "npiNlMacroCell"} {
+                catch {set is_modport [npi_nl_get -property npiNlIsModport -object $inst]}
+            }
+            ct_release $inst
+            if {$is_modport ne "1"} {dict incr ct_walk_stats repeated_ports}
+        }
         ct_release $hdl
         return
     }
@@ -303,7 +368,10 @@ proc ct_expand {hdl direction path last_inside} {
         # A directional iterator alone omits slice/concat aliases in Verdi
         # 2018. Walk net connectivity, filtering direction at each pin.
         set relation npiNlConnectivity
-    } elseif {[string match *InstPort $type] && [ct_inst_prop $hdl npiNlCellType] ne "npiNlModuleCell"} {
+    } elseif {([string match *InstPort $type] && [ct_inst_prop $hdl npiNlCellType] ne "npiNlModuleCell") ||
+            [ct_nl_modport_bundle $hdl $type]} {
+        # The iterator on a bound modport bundle only returns the reverse
+        # alias. The native one-step query reaches its interface connector.
         set port_direction [ct_prop $hdl npiNlDirection]
         if {($direction eq "load" && $port_direction eq "npiNlInput") ||
                 ($direction eq "driver" && $port_direction eq "npiNlOutput") || $port_direction eq "npiNlInout"} {
@@ -402,6 +470,38 @@ proc ct_walk {seed direction owner pin trace_id} {
         set type [ct_prop $hdl npiNlType]
         set current_name [ct_prop $hdl npiNlFullName]
         if {$current_name ne ""} {set last_inside $current_name}
+        if {[string match *Port $type] && [ct_prop $hdl npiNlDirection] eq "npiNlInout"} {
+            set member [ct_nl_interface_member $hdl]
+            if {[dict size $member]} {
+                set member_owner [dict get $member owner]
+                set member_direction [dict get $member direction]
+                set formal [dict get $member formal]
+                set member_name "$member_owner.$formal"
+                set trace_root [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]
+                if {$direction eq "driver" && [ct_l_interface_input $member_direction] && $type in {npiNlPort npiNlPseudoPort}} {
+                    set previous $path
+                    set path [incr path_count]
+                    ct_emit [ct_object event [ct_js path_step] trace_id $trace_id path_id $path parent_id $previous \
+                        evidence [ct_object type [ct_js [dict get $member evidence_type]] name [ct_js $member_name] net [ct_js ""]]]
+                    set last_inside $member_name
+                    if {$member_owner eq $::ct_l1_scope} {
+                        set fields [ct_l1_fields $formal]
+                        if {$member_owner eq $trace_root} {ct_terminal [ct_result [ct_l1_status] $path {*}$fields]; continue}
+                        ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result [ct_result [ct_l1_status] $path {*}$fields]]
+                    } elseif {$ct_trace_scope ne "" && $member_owner eq $trace_root} {
+                        ct_terminal [ct_scope_boundary $path $member_name $direction]; continue
+                    }
+                } elseif {$ct_trace_scope ne "" && $member_owner eq $trace_root} {
+                    # The inout netlist bundle includes both directions. A
+                    # driver walk from inside cannot source a modport output
+                    # from the parent side of the boundary.
+                    if {$direction eq "driver" && $member_direction eq "npiOutput" && $type in {npiNlInstPort npiNlPseudoInstPort}} {continue}
+                    if {$direction eq "load" && $member_direction in {npiOutput unspecified} && $type in {npiNlPort npiNlPseudoPort}} {
+                        ct_terminal [ct_scope_boundary $path $member_name $direction]; continue
+                    }
+                }
+            }
+        }
         if {$direction eq "driver" && [info exists ::ct_l1_scope] && [string match *Port $type] &&
                 [ct_inst_prop $hdl npiNlFullName] eq $::ct_l1_scope && [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
             set formal [ct_prop $hdl npiNlName]
@@ -452,10 +552,15 @@ proc ct_walk {seed direction owner pin trace_id} {
             if {[dict exists $ct_owner_paths $inst_path]} {set inst_path [dict get $ct_owner_paths $inst_path]}
             set cell [ct_prop $inst npiNlCellType]
             set is_interface_connector 0
+            set is_modport 0
             if {$cell eq "npiNlMacroCell"} {
                 catch {set is_interface_connector [npi_nl_get -property npiNlIsIntfConnector -object $inst]}
+                catch {set is_modport [npi_nl_get -property npiNlIsModport -object $inst]}
             }
             ct_release $inst
+            # The modport view of a wired interface is a parallel projection
+            # of the bundle. Actual instances and drivers are on its net path.
+            if {$is_modport eq "1"} {continue}
             if {$inst_path eq $ct_top && $type in {npiNlPort npiNlPseudoPort}} {
                 set port_direction [ct_prop $hdl npiNlDirection]
                 if {($direction eq "load" && $port_direction eq "npiNlOutput") || ($direction eq "driver" && $port_direction eq "npiNlInput")} {
@@ -513,8 +618,8 @@ proc ct_walk {seed direction owner pin trace_id} {
     ct_release $owned
     dict for {index entry} $queue {if {![lindex $entry 2]} {ct_release [lindex $entry 0]}}
     if {!$ct_result_count} {
-        # Net-to-net alias links are bidirectional and may form a harmless
-        # cycle with no load. A repeated pin instead indicates a logic loop.
+        # Nets and inout bundles have bidirectional aliases and may revisit
+        # the same object without finding a load or traversing a logic loop.
         if {$direction eq "load" && ![dict get $ct_walk_stats repeated_ports]} {
             ct_terminal [ct_result no_load $path endpoint [ct_js "$owner.$pin"]]
         } else {
@@ -1013,6 +1118,7 @@ proc ct_main {} {
         } else {
             ct_walk $p $direction $owner $pin $count
             ct_release $p
+            npi_release_all_handles
         }
         ct_trace_deadline_finish $count
         # Commit a completed expensive port immediately so an interruption on

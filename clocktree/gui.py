@@ -8,6 +8,7 @@ from pathlib import Path
 import queue
 import re
 import signal
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -23,7 +24,10 @@ from .paths import default_runs_dir
 from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
-from .devices import DEVICE_TYPES, LABEL_TO_KIND, kind_label, type_labels, node_height, matching_rule, connection_details
+from .devices import DIV_SOURCE_STYLES, LABEL_TO_KIND, device_style, kind_label, type_labels, node_height, matching_rule, connection_details
+from .div_sources import read_div_source_levels
+from .register_results import latest_register_result
+from .ui_state import UIState, design_key
 from .auxiliary import AUX_ROLES, DIRECTIONS, validate_aux_ports
 from .input_ports import port_names
 from .devices import auxiliary_details, wire_details
@@ -281,8 +285,10 @@ class ClockTreeApp(tk.Tk):
         self.runs.mkdir(parents=True, exist_ok=True)
         self.events = queue.Queue()
         self._session_store=SessionStore(self.runs,session_dir) if remember else None
-        from .ui_state import UIState
         self.ui_state=UIState((Path(session_dir) if session_dir else user_state_root())/'ui-preferences.json')
+        self._div_color_after = None
+        self._div_color_request = None
+        self._div_color_context = None
         self._session_writer=SessionWriter(self._session_store,lambda error:self.events.put(('session_save_error',error))) if remember else None
         self._session_ready=False
         self._session_restoring=False
@@ -673,18 +679,11 @@ class ClockTreeApp(tk.Tk):
         legend.create_rectangle(100,10,110,20,outline='#698dbd',dash=(2,1))
         legend.create_text(116,15,text='聚合',anchor='w',fill='#7e93b0',font=(self.family,8))
         legend.pack(side='right',padx=12)
-        devices=tk.Canvas(scopebar,width=312,height=31,bg='#edf2fa',highlightthickness=0)
-        self.devices_legend=devices
-        devices.create_polygon(4,7,22,11,22,21,4,25,fill='#e0efff',outline=DEVICE_TYPES['mux']['color'])
-        devices.create_text(29,16,text='选择器',anchor='w',fill='#6680a4',font=(self.family,8))
-        devices.create_arc(81,8,103,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline='#2eac8d')
-        devices.create_rectangle(81,8,92,24,fill='#d7f3ea',outline='#2eac8d')
-        devices.create_text(110,16,text='门控',anchor='w',fill='#6680a4',font=(self.family,8))
-        devices.create_polygon(164,8,180,8,184,12,184,21,180,25,164,25,160,21,160,12,fill='#fff0d7',outline='#d09b45')
-        devices.create_text(192,16,text='OCC',anchor='w',fill='#6680a4',font=(self.family,8))
-        devices.create_polygon(234,8,250,8,257,16,250,25,234,25,227,16,fill='#eee5ff',outline='#9a77df')
-        devices.create_text(264,16,text='DIV',anchor='w',fill='#6680a4',font=(self.family,8))
-        devices.pack(side='right')
+        self.devices_legend = tk.Canvas(self.center, width=1, height=24, bg='#edf2fa', highlightthickness=0)
+        self._legend_font = tkfont.Font(root=self, font=(self.family, 8))
+        self._legend_key = None
+        self.devices_legend.bind('<Configure>', self._draw_device_legend)
+        self.devices_legend.pack(fill='x')
         self.diagram=ClockDiagram(self.center,self.family,self.inspect_node,self.inspect_edges,self.view_changed,self.set_status,on_branch=self.open_branch)
         self.diagram.pack(fill='both',expand=True)
         self.log_toggle=ttk.Button(self.center,text='任务日志与诊断  ▴',command=self.toggle_log)
@@ -827,8 +826,59 @@ class ClockTreeApp(tk.Tk):
         if self._filling:
             return
         self._schedule_session_save()
+        self.refresh_div_colors()
         if self.graph and not self.busy:
-            self.set_status('DIV 来源路径已更新。打开寄存器窗口或重新分析 SV 分支即可应用。')
+            self.set_status('DIV 来源路径已更新，画布按已完成的寄存器追踪刷新。')
+
+    def refresh_div_colors(self):
+        self._div_color_request = token = object()
+        if self._div_color_after is not None:
+            self.after_cancel(self._div_color_after)
+            self._div_color_after = None
+        model = self.diagram.model
+        if self.graph is None or model is None or model.tree_type != 'clock':
+            self._div_color_context = None
+            return
+        config = self.graph['config']
+        draft = self.get_config(validate=False)
+        try:
+            scopes = div_source_scopes(draft if design_key(draft) == design_key(config) else config)
+        except ValueError:
+            scopes = ()
+        context = (model, scopes)
+        if context != self._div_color_context:
+            self._div_color_context = context
+            self._apply_div_colors(model, {})
+        if scopes:
+            self._div_color_after = self.after(180, self._start_div_colors, model, config, scopes, token)
+
+    def _start_div_colors(self, model, config, scopes, token):
+        self._div_color_after = None
+        preferences = self.ui_state.get(config)
+        known = tuple(preferences.get(key) for key in ('register_trace_completed_directory',
+                      'register_trace_directory', 'sv_register_trace_directory'))
+
+        def worker():
+            try:
+                directory = latest_register_result(config, self.runs, known)
+                levels = read_div_source_levels(directory, scopes)
+            except (OSError, ValueError, KeyError, TypeError, AttributeError, sqlite3.DatabaseError) as error:
+                self.events.put(('div_colors', token, model, {}, str(error)))
+            else:
+                self.events.put(('div_colors', token, model, levels, ''))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_div_colors(self, model, levels):
+        if levels == model.div_source_levels:
+            return
+        model.div_source_levels = levels
+        self.diagram.schedule()
+        from .branch_view import BranchDialog
+        for branch in self.winfo_children():
+            if isinstance(branch, BranchDialog) and branch.source_model is model and branch.diagram.model:
+                branch.diagram.model.div_source_levels = levels
+                branch.diagram.schedule()
 
     def _badge(self,text,kind='idle'):
         colors={'pass':('#e2f4ec','#217d5b'),'warn':('#fff0da','#a36a17'),'busy':('#e6efff','#2868df'),'idle':('#edf2fa','#70819a')}
@@ -1007,39 +1057,58 @@ class ClockTreeApp(tk.Tk):
             self.view_label.set('全部'+info['network'])
         self.diagram.tree_type=self._active_tree_type
         self.diagram.schedule()
-        c=self.devices_legend
-        c.delete('all')
-        x = 4
-        legend_font = tkfont.Font(root=self, font=(self.family, 8))
+        self._draw_device_legend()
+
+    def _draw_device_legend(self, event=None):
+        c = self.devices_legend
+        width = c.winfo_width()
+        if width <= 1:
+            return
         kinds = list(selectable_kinds(self._base_config))
-        if clock_mode:
+        if self._active_tree_type == 'clock':
             configured = {rule.get('kind') for layer in self.layers for rule in layer.get('modules', [])}
-            for legacy, replacement in [('gate', 'sync_gate'), ('occ', 'occ_root')]:
-                if legacy in configured and replacement not in configured:
-                    kinds[kinds.index(replacement)] = legacy
-        for kind in kinds:
-            color=DEVICE_TYPES[kind]['color']
-            if kind=='mux':
-                c.create_polygon(x,7,x+18,11,x+18,21,x,25,fill='#e0efff',outline=color)
+            for legacy, subtype in [('gate', 'sync_gate'), ('occ', 'occ_root')]:
+                if legacy in configured:
+                    kinds.insert(kinds.index(subtype), legacy)
+        key = (width, self._active_tree_type, tuple(kinds))
+        if key == self._legend_key:
+            return
+        self._legend_key = key
+        c.delete('all')
+        x, y = 12, 11
+        entries = [(kind, level) for kind in kinds
+                   for level in (tuple(DIV_SOURCE_STYLES) + (None,) if kind == 'div' else (None,))]
+        for kind, div_level in entries:
+            style = device_style(kind, div_level)
+            color, fill = style['color'], style['fill']
+            labels = {'mux': 'MUX' if self._active_tree_type == 'reset' else '选择器', 'gate': '门控', 'wire': '穿线'}
+            label = 'DIV 未归类' if kind == 'div' and div_level is None else labels.get(kind, style['short'])
+            step = 38 + self._legend_font.measure(label)
+            if x > 12 and x + step > width:
+                x, y = 12, y + 23
+            if kind == 'mux':
+                c.create_polygon(x,y-8,x+22,y-5,x+22,y+5,x,y+8,fill=fill,outline=color)
             elif kind in GATE_KINDS:
-                c.create_arc(x,8,x+22,24,start=-90,extent=180,style='pieslice',fill='#d7f3ea',outline=color)
-                c.create_rectangle(x,8,x+11,24,fill='#d7f3ea',outline=color)
-            elif kind=='rsy_sync':
-                c.create_rectangle(x,8,x+24,25,fill='#ffe6ef',outline='#c86c93')
-                c.create_line(x+7,12,x+7,21,x+17,21,x+17,12,fill='#c86c93')
-            elif kind=='subsystem':
-                c.create_rectangle(x+5,8,x+24,25,fill='#e3f4fa',outline=color)
-                for yy in (12,20):c.create_line(x,yy,x+5,yy,fill=color)
-            elif kind=='wire':
-                c.create_rectangle(x,8,x+24,25,fill='#fff4d7',outline=color)
-                c.create_line(x+3,12,x+21,21,fill='#b59647')
-                c.create_line(x+3,21,x+21,12,fill='#b59647')
+                c.create_polygon(x,y-8,x+13,y-8,x+19,y-6,x+22,y-2,x+22,y+2,x+19,y+6,x+13,y+8,x,y+8,
+                                 fill=fill,outline=color)
+            elif kind == 'div':
+                c.create_polygon(x+5,y-8,x+19,y-8,x+24,y,x+19,y+8,x+5,y+8,x,y,fill=fill,outline=color)
+            elif kind == 'rsy_sync':
+                c.create_rectangle(x,y-8,x+24,y+8,fill=fill,outline=color)
+                c.create_line(x+7,y-4,x+7,y+4,x+17,y+4,x+17,y-4,fill=color)
+            elif kind == 'subsystem':
+                c.create_rectangle(x+5,y-8,x+24,y+8,fill=fill,outline=color)
+                for yy in (y-4, y+4):
+                    c.create_line(x,yy,x+5,yy,fill=color)
+            elif kind == 'wire':
+                c.create_rectangle(x,y-8,x+24,y+8,fill=fill,outline=color)
+                c.create_line(x+3,y-4,x+21,y+4,fill=color)
+                c.create_line(x+3,y+4,x+21,y-4,fill=color)
             else:
-                c.create_polygon(x+4,8,x+20,8,x+24,12,x+24,21,x+20,25,x+4,25,x,21,x,12,fill='#eee5ff' if kind=='div' else '#fff0d7',outline=color)
-            label={'mux':'MUX' if self._active_tree_type=='reset' else '选择器','gate':'门控','wire':'穿线'}.get(kind,DEVICE_TYPES[kind]['short'])
-            c.create_text(x+29,16,text=label,anchor='w',fill='#6680a4',font=(self.family,8))
-            x += 42 + legend_font.measure(label)
-        c.configure(width=x)
+                c.create_polygon(x+4,y-8,x+20,y-8,x+24,y-4,x+24,y+4,x+20,y+8,x+4,y+8,x,y+4,x,y-4,fill=fill,outline=color)
+            c.create_text(x+28,y,text=label,anchor='w',fill='#586e8b',font=self._legend_font)
+            x += step
+        c.configure(height=y+12)
 
     def switch_tree_type(self,event=None):
         target=event if isinstance(event,str) and event in TREE_PROFILES else LABEL_TO_TREE[self.analysis_var.get()]
@@ -1174,6 +1243,7 @@ class ClockTreeApp(tk.Tk):
         selected=self.diagram.selected
         self._apply_profile()
         self.diagram.model=IndexedGraphView(self.graph) if isinstance(self.graph,IndexedGraph) else GraphView(self.graph)
+        self.refresh_div_colors()
         self.diagram.rebuild()
         if selected in self.diagram.model.nodes:self.diagram.select(self.diagram.model.nodes[selected])
         self.set_status('已将 {} 的 {} 个实例更新为{}模型。'.format(new['module'],matching_count,kind_label(new['kind'],self._active_tree_type)))
@@ -1187,7 +1257,7 @@ class ClockTreeApp(tk.Tk):
             self.refresh_rules()
             self.mark_dirty()
 
-    def set_config(self,config):
+    def set_config(self,config,refresh_colors=True):
         mode=tree_type(config)
         if mode not in TREE_PROFILES:raise ValueError('tree_type must be clock or reset')
         if mode!=self._active_tree_type:
@@ -1217,6 +1287,8 @@ class ClockTreeApp(tk.Tk):
         self._config_dirty=False
         self.refresh_runs()
         self._schedule_session_save()
+        if refresh_colors:
+            self.refresh_div_colors()
 
     def get_config(self,validate=True):
         self._save_layer_inputs()
@@ -1397,7 +1469,7 @@ class ClockTreeApp(tk.Tk):
             self._runtime_stamp=None
         if path:bind_gui(Path(path).parent,self.gui_journal)
         self.diagram.runtime_context={'result':str(path) if path else None,'backend_run_id':runtime.get('run_id')}
-        self.set_config(graph['config'])
+        self.set_config(graph['config'], refresh_colors=False)
         self.graph=graph
         self.graph_file=Path(path) if path else None
         memory=graph.get('metadata',{}).get('memory_protection',{})
@@ -1423,6 +1495,7 @@ class ClockTreeApp(tk.Tk):
         self.component_combo.configure(values=values)
         self.component_combo.current(0)
         self.diagram.load(graph)
+        self.refresh_div_colors()
         preferences=self.ui_state.get(graph['config'])
         self.diagram.layout_mode=preferences.get('layout','branch')
         self.layout_var.set('按层排列' if self.diagram.layout_mode=='layers' else '分支紧凑布局')
@@ -1610,6 +1683,11 @@ class ClockTreeApp(tk.Tk):
                     self._set_busy(None);self.show_recovery(item[1])
                 elif kind=='session_save_error':
                     if not self._closing:self.set_status('自动恢复记录未能保存：'+item[1])
+                elif kind=='div_colors':
+                    _,token,model,levels,error = item
+                    if token is self._div_color_request and model is self.diagram.model:
+                        self._apply_div_colors(model, levels)
+                        if error:self.set_status('DIV 来源读取失败：'+error)
                 elif kind=='loaded':
                     _,graph,path,job=item
                     self._set_busy(None)
@@ -1978,7 +2056,7 @@ class ClockTreeApp(tk.Tk):
             lines=['L1 输入：'+source['l1_entry']['signal'],'  → '+edge['target']+'.'+edge['target_pin'],
                    '输入反查已确认；L1 输入端口不计为器件实例。']
         if edge.get('l1_boundary'):
-            lines.append('接口方向为 input；箭头表示信号进入 L1 内部。')
+            lines.append('驱动追踪确认信号经此端口进入 L1。')
         elif directions.get('load') and directions.get('driver'):
             lines.append('验证结论：输入反查与输出负载双向证据一致。')
         elif directions.get('driver'):
@@ -2001,6 +2079,9 @@ class ClockTreeApp(tk.Tk):
             lines+=['',label,connection_details(node,[edge[pin_key]])]
         for direction,label in [('load','输出 → 全部负载'),('driver','输入 ← 实际驱动')]:
             lines+=['','─'*24,label,'']
+            if direction=='load' and edge.get('l1_boundary'):
+                lines.append('L1 入口以目标器件的输入反查为依据。')
+                continue
             if direction=='load' and self.graph['summary'].get('extraction_mode')=='target':
                 lines.append('本次为目标结构提取，未执行输出全负载核验。')
                 continue

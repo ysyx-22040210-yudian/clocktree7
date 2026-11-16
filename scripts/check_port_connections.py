@@ -12,8 +12,6 @@ sys.path.insert(0, str(ROOT))
 from clocktree.storage import write_graph
 from clocktree.session import read_graph
 from clocktree.devices import connection_label
-from clocktree.gui import ClockTreeApp
-from check_flexible_gui import pump, capture
 
 
 def fixture(out):
@@ -84,6 +82,9 @@ def main():
             expression=True,positional=True,implicit=True,generate=True,vector_whole_connection=True,
             topology_scope='annotation fixture; combinational expression may have unresolved trace diagnostics')
     else:
+        from clocktree.gui import ClockTreeApp
+        from check_flexible_gui import pump, capture
+
         graph=read_graph(out/'run/clocktree.json');nodes=check(graph)
         errors=[]
         app=ClockTreeApp(runs=out/'gui-runs',remember=False)

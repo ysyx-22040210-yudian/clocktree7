@@ -60,9 +60,9 @@ def lookup_node(model,identifier):
 
 def describe(node):
     value=node['l1_entry']
-    return [('显示类型','L1 RTL 层次的真实 input 端口；不是新增器件实例'),
+    return [('显示类型','L1 RTL 层次的实际输入路径'),
             ('L1 层次',value['scope']),('连接端口',value['port']),('完整信号',value['signal']),
-            ('连接依据','目标器件输入 driver trace 已确认到达此 L1 input。'+
+            ('连接依据','目标器件的输入反查确认信号经此处进入 L1。'+
              ('当前为聚合显示，展开目标 RTL 范围后查看各端口。' if value.get('aggregate_count') else ''))]
 
 

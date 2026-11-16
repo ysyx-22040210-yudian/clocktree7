@@ -6,7 +6,7 @@ from contextlib import closing
 import pytest
 
 from clocktree.config import div_source_scopes
-from clocktree.div_sources import classify_div_source
+from clocktree.div_sources import classify_div_source, div_source_level, read_div_source_levels
 from clocktree.register_trace import RegisterIndex, create_database
 from clocktree.storage import write_graph
 from clocktree.sv_templates import graph_for_templates, prepare
@@ -22,6 +22,34 @@ def test_div_scope_matching_uses_rtl_boundaries_and_the_most_specific_path():
     assert classify_div_source('chip.crg2.Q', scopes)['status'] == 'outside'
     assert classify_div_source('chip.crg', scopes)['status'] == 'outside'
     assert classify_div_source('chip.crg.Q', ()) == {'status': 'unconfigured'}
+
+
+@pytest.mark.parametrize('state,mappings,expected', [
+    ('complete', [('ratio[0]', 'chip.ctrl_a.Q[3]'), ('ratio[1]', 'chip.ctrl_a.Q[4]')], 1),
+    ('complete', [('ratio[0]', 'chip.ctrl_b.Q[0]'), ('ratio[1]', 'chip.ctrl_b.Q[1]')], 2),
+    ('complete', [('ratio[0]', 'chip.ctrl_a.Q[0]'), ('ratio[1]', 'chip.ctrl_b.Q[1]')], None),
+    ('complete', [('ratio[0]', 'chip.ctrl_a.Q[0]')], None),
+    ('complete', [('ratio[0]', 'chip.ctrl_a.Q[0]'), ('ratio[1]', 'chip.ctrl_a_extra.Q[1]')], None),
+    ('complete', [('ratio[0]', 'chip.ctrl_a.Q[0]'), ('ratio[1]', 'chip.ctrl_a.Q[1]'),
+                  ('ratio[1]', 'chip.ctrl_a.Q[2]')], None),
+    ('pending', [('ratio[0]', 'chip.ctrl_a.Q[0]'), ('ratio[1]', 'chip.ctrl_a.Q[1]')], None),
+])
+def test_canvas_div_color_requires_a_complete_current_port_mapping(tmp_path, state, mappings, expected):
+    divider = node('d', 'div', 3)
+    divider['aux_ports'] = {'div': 'ratio'}
+    seed = {'instance': divider['id'], 'module': divider['module'], 'pin': 'ratio',
+            'role': 'div', 'direction': 'driver'}
+    summary = {'bits': [divider['id'] + '.ratio[{}]'.format(bit) for bit in range(2)]}
+    with closing(create_database(tmp_path/'registers.sqlite')) as db:
+        db.execute('INSERT INTO jobs VALUES(1,?,?,?)', (json.dumps(seed), state, json.dumps(summary)))
+        db.executemany('INSERT INTO results VALUES(NULL,?,?,?,?,?,?,?,?,?)',
+                       [(1, bit, endpoint, 'Q', 'direct', 'register', '', None, '{}') for bit, endpoint in mappings])
+        db.commit()
+    levels = read_div_source_levels(tmp_path, ('chip.ctrl_a', 'chip.ctrl_b'))
+    assert div_source_level(divider, levels) == expected
+    assert div_source_level(dict(divider, aux_ports={'div': 'new_ratio'}), levels) is None
+    assert div_source_level(dict(divider, module='different_div'), levels) is None
+    assert div_source_level(dict(divider, kind='occ_root'), levels) is None
 
 
 @pytest.mark.parametrize('paths', [

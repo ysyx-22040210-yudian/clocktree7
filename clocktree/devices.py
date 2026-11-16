@@ -11,17 +11,28 @@ DEVICE_TYPES = {
     'mux': {'label': '选择器', 'short': 'MUX', 'color': '#66b7ff', 'fill': '#193954'},
     'gate': {'label': '门控', 'short': 'GATE', 'color': '#42d1b2', 'fill': '#163b38'},
     'sync_gate': {'label': 'SYNC_GATE', 'short': 'SYNC_GATE', 'color': '#42d1b2', 'fill': '#163b38'},
-    'gate_wrap': {'label': 'GATE_WRAP', 'short': 'GATE_WRAP', 'color': '#a2d67f', 'fill': '#2b412a'},
+    'gate_wrap': {'label': 'GATE_WRAP', 'short': 'GATE_WRAP', 'color': '#c5e66a', 'fill': '#343e24'},
     'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
-    'occ_root': {'label': 'OCC_ROOT', 'short': 'OCC_ROOT', 'color': '#f1ba64', 'fill': '#3c3125'},
-    'occ_branch': {'label': 'OCC_BRANCH', 'short': 'OCC_BRANCH', 'color': '#ff9f84', 'fill': '#472e2c'},
-    'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#bb9bff', 'fill': '#302847'},
+    'occ_root': {'label': 'OCC_ROOT', 'short': 'OCC_ROOT', 'color': '#ffc067', 'fill': '#3c3125'},
+    'occ_branch': {'label': 'OCC_BRANCH', 'short': 'OCC_BRANCH', 'color': '#ff758f', 'fill': '#47263a'},
+    'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#9bb0c7', 'fill': '#29394b'},
     'rsy_sync': {'label': 'RSY_SYNC', 'short': 'RSY_SYNC', 'color': '#f39bbd', 'fill': '#402939'},
     'subsystem': {'label': '子系统 SUBSYSTEM', 'short': 'SUBSYS', 'color': '#80ceea', 'fill': '#193c4d'},
     'wire': {'label': '穿线', 'short': 'WIRE', 'color': '#f2d788', 'fill': '#363226'},
 }
 LABEL_TO_KIND = {v['label']: k for k, v in DEVICE_TYPES.items()}
 LABEL_TO_KIND['MUX'] = 'mux'
+DIV_SOURCE_STYLES = {
+    1: {'short': 'DIV · 源 1', 'color': '#bb9bff', 'fill': '#302847'},
+    2: {'short': 'DIV · 源 2', 'color': '#69deff', 'fill': '#163a49'},
+}
+UNTYPED_STYLE = {'color': '#8199b9', 'fill': '#1c2d44', 'short': '未分类'}
+
+
+def device_style(kind, div_level=None):
+    if kind == 'div' and div_level in DIV_SOURCE_STYLES:
+        return DIV_SOURCE_STYLES[div_level]
+    return DEVICE_TYPES.get(kind, UNTYPED_STYLE)
 
 
 def kind_label(kind, tree='clock'):
@@ -204,7 +215,7 @@ def auxiliary_port_y(node, height, pin):
     return None
 
 
-def symbol_parts(node, width, height, selected=False):
+def symbol_parts(node, width, height, selected=False, div_level=None):
     """Return neutral drawing primitives consumed by native Tk and SVG alike.
 
     Only primary ports have external wires. Auxiliary ports are text only.
@@ -214,7 +225,7 @@ def symbol_parts(node, width, height, selected=False):
     parts = []
     kind = node.get('kind')
     aggregate = node.get('aggregate', False)
-    info = DEVICE_TYPES.get(kind, {'color': '#8199b9', 'fill': '#1c2d44', 'short': '未分类'})
+    info = device_style(kind, div_level)
     color = info['color']
     inputs, output = port_offsets(node, width, height)
     total_height = height
@@ -330,8 +341,9 @@ def symbol_parts(node, width, height, selected=False):
             add('polygon', points=[(left+12,cy-31),(right-12,cy-31),(right,cy),
                                    (right-12,cy+31),(left+12,cy+31),(left,cy)],
                 fill=info['fill'], stroke=color, width=1.8)
-            text(118, cy-10, 'DIV', size=15, fill=color, bold=True, anchor='center')
-            text(118, cy+12, '÷N', size=17, fill='#d6c3ff', anchor='center')
+            title = 'DIV {}'.format(div_level) if div_level in DIV_SOURCE_STYLES else 'DIV'
+            text(118, cy-10, title, size=15, fill=color, bold=True, anchor='center')
+            text(118, cy+12, '÷N', size=17, fill=color, anchor='center')
             input_end, output_start = left, right
         elif kind == 'rsy_sync':
             left, right = 66, 178

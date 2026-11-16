@@ -2,6 +2,7 @@
 from collections import Counter, defaultdict, deque
 from xml.sax.saxutils import escape, quoteattr
 from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg, pin_index, output_offset
+from .div_sources import div_source_level
 from .profiles import tree_type
 
 
@@ -66,6 +67,7 @@ def horizontal_ranks(nodes, edges, same_layer=True):
 class GraphView:
     def __init__(self, graph, layout_mode='branch'):
         self.graph = graph
+        self.div_source_levels = {}
         self.layout_mode=layout_mode
         self.tree_type = tree_type(graph.get('config',graph))
         self.original = typed_nodes(graph)
@@ -273,7 +275,7 @@ class GraphView:
             path = node.get('path', node['id'])
             device_kind = 'aggregate' if node.get('aggregate') else node.get('kind') or 'unclassified'
             lines.append('<g class="device" data-device-kind={} data-instance={} transform="translate({},{})"><title>{}</title>'.format(quoteattr(device_kind),quoteattr(path),x,y,escape(path)))
-            lines.append(symbol_svg(symbol_parts(node,w,h)))
+            lines.append(symbol_svg(symbol_parts(node,w,h,div_level=div_source_level(node, self.div_source_levels))))
             lines.append('</g>')
         return '\n'.join(lines + ['</svg>'])
 

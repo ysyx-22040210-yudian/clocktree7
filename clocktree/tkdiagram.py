@@ -5,7 +5,7 @@ import time
 from collections import OrderedDict
 
 from .viewmodel import GraphView
-from .devices import DEVICE_TYPES, symbol_parts
+from .devices import symbol_parts
 from .profiles import tree_type
 from .navigation_target import display_node, location_target
 
@@ -21,11 +21,11 @@ def rounded(canvas, x, y, w, h, radius=8, **kwargs):
                                  smooth=True, splinesteps=12, **kwargs)
 
 
-def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cache=None):
+def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cache=None,div_level=None):
     """Use exactly the same symbol primitives and port anchors as SVG export."""
     font_cache = font_cache if font_cache is not None else {}
     tooltips = {}
-    for p in symbol_parts(node,w,h,selected):
+    for p in symbol_parts(node,w,h,selected,div_level):
         op=p['op']
         if op=='rect':
             options={'fill':p['fill'],'outline':p['stroke'],'width':p['width'],'tags':tags}

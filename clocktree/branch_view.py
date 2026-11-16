@@ -159,7 +159,9 @@ class BranchDialog(tk.Toplevel):
             self.counts.set('已取消分支准备'); self.retry_button.configure(state='normal'); return
         self.graph = graph
         self.journal.emit('end','load','分支记录已准备',{'instances':len(graph['nodes']),'edges':len(graph['edges'])})
-        try:self.diagram.load(graph)
+        try:
+            self.diagram.load(graph)
+            self.diagram.model.div_source_levels = self.source_model.div_source_levels
         except Exception as error:
             self.diagram.cancel_layout(restore=False)
             self.load_failed('画布加载',error,traceback.format_exc()); return

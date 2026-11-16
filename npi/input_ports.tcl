@@ -1,4 +1,24 @@
 # Read language-model formal ports. No driver, load or child traversal.
+proc ct_declared_range {signal} {
+    set range $signal
+    set typespec [npi_handle -type npiTypespec -refHandle $signal]
+    set ranges {}
+    if {$typespec ne ""} {
+        set it [npi_iterate -type npiRange -refHandle $typespec]
+        if {$it ne ""} {while {[set item [npi_scan -iterator $it]] ne ""} {lappend ranges $item}}
+        if {[llength $ranges]} {set range [lindex $ranges 0]}
+    }
+    set bounds {}
+    foreach method {npiLeftRange npiRightRange} {
+        set h [npi_handle -type $method -refHandle $range]
+        if {$h eq ""} {lappend bounds ""; continue}
+        lappend bounds [npi_get_value -format npiDecStrVal -object $h]
+        npi_release_handle -object $h
+    }
+    foreach item $ranges {npi_release_handle -object $item}
+    if {$typespec ne ""} {npi_release_handle -object $typespec}
+    return $bounds
+}
 proc ct_input_ports {inst {direction npiInput} {read_binding 0}} {
     set result {}
     set it [npi_iterate -type npiPort -refHandle $inst]
@@ -10,24 +30,7 @@ proc ct_input_ports {inst {direction npiInput} {read_binding 0}} {
             set left ""; set right ""
             if {$low ne ""} {
                 set width [npi_get -property npiSize -object $low]
-                set range $low
-                set typespec [npi_handle -type npiTypespec -refHandle $low]
-                set range_it ""
-                if {$typespec ne ""} {set range_it [npi_iterate -type npiRange -refHandle $typespec]}
-                set ranges {}
-                if {$range_it ne ""} {
-                    while {[set r [npi_scan -iterator $range_it]] ne ""} {lappend ranges $r}
-                    if {[llength $ranges]} {set range [lindex $ranges 0]}
-                }
-                foreach method {npiLeftRange npiRightRange} variable {left right} {
-                    set h [npi_handle -type $method -refHandle $range]
-                    if {$h ne ""} {
-                        set $variable [npi_get_value -format npiDecStrVal -object $h]
-                        npi_release_handle -object $h
-                    }
-                }
-                foreach r $ranges {npi_release_handle -object $r}
-                if {$typespec ne ""} {npi_release_handle -object $typespec}
+                lassign [ct_declared_range $low] left right
                 npi_release_handle -object $low
             }
             set record [list [npi_get_str -property npiName -object $p] $width $left $right]

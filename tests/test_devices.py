@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from clocktree.config import validate_config, write_tcl_config
-from clocktree.devices import symbol_parts, port_offsets, node_height, resolve_kind
+from clocktree.devices import device_style, symbol_parts, port_offsets, node_height, resolve_kind
 from clocktree.graph import build_graph
 from clocktree.viewmodel import GraphView
 
@@ -69,6 +69,32 @@ def test_symbols_have_distinct_geometry_and_real_wire_pin_anchors():
         xml=ET.fromstring(view.svg())
         assert xml.find('.//{http://www.w3.org/2000/svg}g').get('data-device-kind')==kind
     assert sides['mux']==4 and sides['occ']==8 and sides['gate']>20 and sides['div']==6
+
+
+def test_clock_subtypes_use_distinct_styles_and_keep_their_logical_kinds_in_svg():
+    styles = [('sync_gate', None), ('gate_wrap', None), ('occ_root', None), ('occ_branch', None),
+              ('div', 1), ('div', 2), ('div', None)]
+    ids = ['top.u{}'.format(i) for i in range(len(styles))]
+    nodes = [dict(node(kind), id=key, path=key, aux_ports={'div': 'ratio'} if kind == 'div' else {})
+             for key, (kind, _) in zip(ids, styles)]
+    view = GraphView({'nodes': nodes, 'edges': []}).project()
+    bounds = view.positions.copy()
+    view.div_source_levels = {key: ('ratio', 'clock_cell', level)
+                              for key, (kind, level) in zip(ids, styles) if kind == 'div' and level}
+    svg = ET.fromstring(view.svg())
+    namespace = {'svg': 'http://www.w3.org/2000/svg'}
+    swatches = set()
+    for key, (kind, level) in zip(ids, styles):
+        group = svg.find("./svg:g[@data-instance='{}']".format(key), namespace)
+        assert group.get('data-device-kind') == kind
+        symbol = group.find('svg:polygon', namespace)
+        color = symbol.get('stroke')
+        assert color == device_style(kind, level)['color']
+        swatches.add(color)
+        if level:
+            assert 'DIV {}'.format(level) in [part.text for part in group.findall('svg:text', namespace)]
+    assert len(swatches) == len(styles)
+    assert view.positions == bounds and view.edges == []
 
 
 def test_mux_many_inputs_route_to_exact_same_anchors_as_exported_symbol():

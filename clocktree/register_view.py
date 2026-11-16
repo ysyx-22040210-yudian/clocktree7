@@ -175,6 +175,7 @@ class RegisterDialog(tk.Toplevel):
         if self.process.returncode in (0,2) and result.exists():
             summary=json.loads(result.read_text(encoding='utf-8'))['summary']
             self.app.ui_state.update(self.graph['config'],register_trace_completed_directory=str(self.directory))
+            self.app.refresh_div_colors()
             self.status.set('已完成 {} 个辅助端口 · {} 个 bit 找到寄存器 · {} 条寄存器映射 · {} · {}'.format(
                 summary['ports'],summary['register_bits'],summary['counts'].get('register',0),
                 '存在未解析/边界/条件，请查看状态列' if not summary['complete'] else '追踪完成',str(self.directory)))
@@ -231,7 +232,11 @@ class RegisterDialog(tk.Toplevel):
         if self.process and self.process.poll() is None:return
         path=filedialog.askopenfilename(parent=self,title='选择寄存器任务 manifest.json 或 register-trace.json',filetypes=[('JSON','*.json')])
         if path:
-            try:self.load_directory(Path(path).parent)
+            try:
+                self.load_directory(Path(path).parent)
+                if self.index and self.result_div_scopes is not None:
+                    self.app.ui_state.update(self.graph['config'], register_trace_directory=str(self.directory))
+                    self.app.refresh_div_colors()
             except (OSError,ValueError,KeyError) as error:self.status.set(str(error))
 
     def export_csv(self):

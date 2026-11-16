@@ -108,6 +108,7 @@ class SQLSelection:
 class IndexedGraphView(GraphView):
     def __init__(self, graph, layout_mode='branch'):
         self.graph, self.store = graph, graph.store
+        self.div_source_levels = {}
         self.layout_mode=layout_mode
         self.tree_type = tree_type(graph.get('config', graph))
         self.original, self.original_edges = RecordMap(graph, 'nodes'), RecordMap(graph, 'edges')

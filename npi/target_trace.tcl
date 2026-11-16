@@ -58,6 +58,7 @@ proc ct_l_init {} {
     set ::ct_l_internal 0
     set ::ct_l_l1_inputs [dict create]
     set ::ct_l1_open_inputs [dict create]
+    set ::ct_l_interface_ports [dict create]
     set ::ct_l_cache [dict create]
     set ::ct_l_cache_bytes 0
     set ::ct_l_cache_written 0
@@ -89,6 +90,75 @@ proc ct_l_index_l1 {} {
     }
     npi_release_handle -object $root
 }
+proc ct_l_index_interface_ports {module owner} {
+    if {[dict exists $::ct_l_interface_ports $owner]} {return}
+    set ports [dict create]
+    set it [npi_iterate -type npiPort -refHandle $module]
+    if {$it ne ""} {
+        while {[set port [npi_scan -iterator $it]] ne ""} {
+            set type [ct_l_prop $port npiPortType]
+            if {$type in {npiInterfacePort npiModportPort}} {dict set ports [ct_l_prop $port npiName] $type}
+            npi_release_handle -object $port
+        }
+    }
+    # Keep only port descriptors and bound the cache for large designs.
+    if {[dict size $::ct_l_interface_ports] >= 2048} {set ::ct_l_interface_ports [dict create]}
+    dict set ::ct_l_interface_ports $owner $ports
+}
+proc ct_l_interface_member {h} {
+    # An instance of an interface is different from a module's formal
+    # interface port. The Language Model distinguishes them via npiScope.
+    if {[ct_l_prop $h npiType] ne "npiRefObj"} {return {}}
+    set scope [npi_handle -type npiScope -refHandle $h]
+    set scope_type [ct_l_prop $scope npiType]
+    if {$scope_type ni {npiRefObj npiInterface}} {return {}}
+    set name [ct_l_prop $h npiFullName]
+    set object [ct_l_prop $scope npiFullName]
+    if {$object eq "" || [string first "$object." $name] != 0} {return {}}
+    set member [string range $name [expr {[string length $object]+1}] end]
+    if {![regexp {^[a-zA-Z_$][a-zA-Z0-9_$]*(?:\[(-?[0-9]+)\])?$} $member -> bit]} {return {}}
+    set actual [npi_handle -type npiActual -refHandle $h]
+    set actual_type [ct_l_prop $actual npiType]
+    if {$actual_type eq "npiMpPortBit"} {
+        set port [npi_handle -type npiParent -refHandle $actual]
+    } else {set port $actual}
+    if {$scope_type eq "npiInterface"} {
+        if {$actual_type ni {npiNet npiReg npiNetBit npiRegBit} || [ct_l_size $actual] != 1} {return {}}
+        return [dict create signal $actual direction local owner "" formal ""]
+    }
+    set module [npi_handle -type npiScope -refHandle $scope]
+    if {[ct_l_prop $module npiType] ne "npiModule"} {return {}}
+    set owner [ct_l_prop $module npiFullName]
+    if {[string first "$owner." $object] != 0} {return {}}
+    set interface [string range $object [expr {[string length $owner]+1}] end]
+    if {![regexp {^([a-zA-Z_$][a-zA-Z0-9_$]*)(?:\[-?[0-9]+\])*$} $interface -> base]} {return {}}
+    ct_l_index_interface_ports $module $owner
+    if {![dict exists $::ct_l_interface_ports $owner $base]} {return {}}
+    set direction unspecified
+    set target $actual
+    if {[ct_l_prop $port npiType] eq "npiMpPort"} {
+        if {$bit eq "" && [ct_l_size $port] != 1} {return {}}
+        set direction [ct_l_prop $port npiDirection]
+        set target [npi_handle -type npiExpr -refHandle $port]
+        if {$bit ne "" && $actual_type eq "npiMpPortBit" && [ct_l_prop $target npiType] in {npiNet npiReg}} {
+            # The same declared index identifies a bit of an unaliased
+            # member. The generic driver wrapper reverses some ascending buses.
+            set target [npi_handle_by_index -object $target -index $bit]
+        } elseif {$bit ne ""} {set target ""}
+    }
+    if {$target eq "" || [ct_l_prop $target npiType] ni {npiNet npiReg npiNetBit npiRegBit} || [ct_l_size $target] != 1} {
+        if {$direction eq "unspecified"} {return {}}
+        set target ""
+    }
+    if {$direction eq "unspecified"} {
+        # An unrestricted interface can be driven by the module. Check the
+        # formal reference itself before following a possible incoming wire.
+        set uses {}
+        ::npi_L1::npi_trace_driver_by_hdl2 $h uses 0
+        if {[llength $uses]} {set direction npiOutput}
+    }
+    return [dict create signal $target direction $direction owner $owner formal "$interface.$member"]
+}
 proc ct_l1_fields {formal} {
     set endpoint "$::ct_l1_scope.$formal"
     return [list endpoint [ct_js $endpoint] scope [ct_js $::ct_l1_scope] boundary_role [ct_js input] \
@@ -107,6 +177,104 @@ proc ct_l_l1_fields {h} {
     return [ct_l1_fields [dict get $::ct_l_l1_inputs $name]]
 }
 proc ct_l1_status {} {return [expr {$::ct_trace_scope ne "" && $::ct_trace_scope eq $::ct_l1_scope ? "scope_boundary" : "input_boundary"}]}
+proc ct_l_interface_input {direction} {return [expr {$direction in {npiInput unspecified}}]}
+proc ct_l_interface_signal {h} {
+    set type [ct_l_prop $h npiType]
+    if {$type ni {npiNet npiReg npiNetBit npiRegBit}} {return 0}
+    return [expr {[ct_l_prop [npi_handle -type npiScope -refHandle $h] npiType] eq "npiInterface"}]
+}
+proc ct_l_bounds {h} {
+    lassign [ct_declared_range $h] left right
+    if {![string is integer -strict $left] || ![string is integer -strict $right] ||
+            abs($left-$right)+1 != [ct_l_size $h]} {return {}}
+    return [list $left $right]
+}
+proc ct_l_expression_bit {h offset} {
+    # Offset is measured from the right-hand end of the expression.
+    set width [ct_l_size $h]
+    if {![string is integer -strict $width] || $offset < 0 || $offset >= $width} {return ""}
+    if {$width == 1} {return $h}
+    set type [ct_l_prop $h npiType]
+    if {$type in {npiNet npiReg}} {
+        lassign [ct_l_bounds $h] left right
+        if {$left eq ""} {return ""}
+        set index [expr {$left < $right ? $right-$offset : $right+$offset}]
+        return [npi_handle_by_index -object $h -index $index]
+    }
+    if {$type ne "npiOperation" || [ct_l_prop $h npiOpType] ne "npiConcatOp"} {return ""}
+    set position [expr {$width-1-$offset}]
+    set it [npi_iterate -type npiOperand -refHandle $h]
+    if {$it eq ""} {return ""}
+    while {[set part [npi_scan -iterator $it]] ne ""} {
+        set size [ct_l_size $part]
+        if {![string is integer -strict $size]} {break}
+        if {$position < $size} {
+            npi_release_handle -object $it
+            return [ct_l_expression_bit $part [expr {$size-1-$position}]]
+        }
+        incr position -$size
+    }
+    return ""
+}
+proc ct_l_interface_assignment_bit {bit vector rhs} {
+    if {$rhs eq "" || [ct_l_size $rhs] != [ct_l_size $vector]} {return ""}
+    lassign [ct_l_bounds $vector] left right
+    if {$left eq "" || ![regexp {\[(-?[0-9]+)\]$} [ct_l_prop $bit npiName] -> index]} {return ""}
+    return [ct_l_expression_bit $rhs [expr {abs($index-$right)}]]
+}
+proc ct_l_interface_drivers {h rows} {
+    set drivers {}
+    foreach row $rows {
+        lassign $row src scope pass uses use signals
+        if {[ct_l_prop $use npiType] ne "npiMpPort" || [ct_l_prop $use npiDirection] ne "npiOutput"} {
+            lappend drivers $row
+            continue
+        }
+        # Resolve the native modport view to its actual driving statement.
+        foreach signal $signals {
+            set through {}
+            ::npi_L1::npi_trace_driver_by_hdl2 $signal through 1
+            dict incr ::ct_l_totals driver_queries
+            foreach item $through {lappend drivers $item}
+        }
+    }
+    # The 2018 driver wrapper can omit direct hierarchical writes to a
+    # member. Consider only assignments whose bound LHS covers this bit.
+    # Use the single member's streaming iterator; never query its loads.
+    set seen [dict create]
+    foreach row $drivers {dict set seen [lindex $row 4] 1}
+    set vector [npi_handle -type npiParent -refHandle $h]
+    set it [npi_iterate -type npiUse -refHandle $h]
+    if {$it eq ""} {return $drivers}
+    while {[set use [npi_scan -iterator $it]] ne ""} {
+        if {[dict exists $seen $use]} {continue}
+        if {[ct_l_prop $use npiType] ni {npiContAssign npiAssignment}} {npi_release_handle -object $use; continue}
+        set lhs [npi_handle -type npiLhs -refHandle $use]
+        if {[ct_l_prop $lhs npiType] ne "npiExtRef"} {
+            if {$lhs ne ""} {npi_release_handle -object $lhs}
+            npi_release_handle -object $use
+            continue
+        }
+        set actual [npi_handle -type npiActual -refHandle $lhs]
+        set exact [expr {$actual ne "" && [npi_compare_objects -object1 $actual -object2 $h]}]
+        set whole [expr {$actual ne "" && $vector ne "" && [npi_compare_objects -object1 $actual -object2 $vector]}]
+        if {!$exact && !$whole} {
+            if {$actual ne ""} {npi_release_handle -object $actual}
+            npi_release_handle -object $lhs
+            npi_release_handle -object $use
+            continue
+        }
+        set rhs [npi_handle -type npiRhs -refHandle $use]
+        if {$exact} {
+            set signal $rhs
+        } else {
+            set signal [ct_l_interface_assignment_bit $h $vector $rhs]
+        }
+        set owner [npi_handle -type npiScope -refHandle $use]
+        lappend drivers [list $h $owner 0 1 $use [expr {$signal eq "" ? {} : [list $signal]}]]
+    }
+    return $drivers
+}
 proc ct_l_register_wire {path outputs} {
     foreach pin $outputs {
         dict set ::ct_pins_to_trace $::ct_pin_count [list "" internal $path $pin]
@@ -172,6 +340,10 @@ proc ct_l_constant_expr {h {seen {}}} {
 proc ct_l_transparent {h} {
     if {$h eq ""} {return 0}
     set type [ct_l_prop $h npiType]
+    if {$type eq "npiExtRef"} {
+        # A direct reference to an interface member is a signal alias.
+        return [ct_l_interface_signal [npi_handle -type npiActual -refHandle $h]]
+    }
     if {$type ne "npiOperation"} {
         if {$type ni {npiNet npiReg npiNetBit npiRegBit npiBitSelect npiPartSelect npiConstant npiParameter npiParameterBit npiRefObj npiIndexedPartSelect}} {return 0}
         # A generate parameter can appear symbolically in npiName even though
@@ -240,7 +412,7 @@ proc ct_l_cache_open {} {
         while {[gets $stream line] >= 0} {
             append record $line \n
             if {![info complete $record]} {continue}
-            if {![catch {llength $record} length] && $length == 3 && [lindex $record 0] eq "ct_language_step_v3"} {
+            if {![catch {llength $record} length] && $length == 3 && [lindex $record 0] eq "ct_language_step_v5"} {
                 lassign $record version key actions
                 dict set ::ct_l_cache $key $actions
                 incr ::ct_l_cache_bytes [string bytelength $record]
@@ -254,7 +426,7 @@ proc ct_l_cache_open {} {
     set ::ct_l_cache_stream [open $path w]
     fconfigure $::ct_l_cache_stream -encoding utf-8 -translation lf
     dict for {key actions} $::ct_l_cache {
-        set record [list ct_language_step_v3 $key $actions]
+        set record [list ct_language_step_v5 $key $actions]
         puts $::ct_l_cache_stream $record
         incr ::ct_l_cache_written [string bytelength $record]
     }
@@ -263,7 +435,7 @@ proc ct_l_cache_open {} {
 proc ct_l_cache_put {key actions} {
     if {$key eq ""} {return}
     foreach action $actions {if {[lindex $action 0] eq "handle"} {return}}
-    set record [list ct_language_step_v3 $key $actions]
+    set record [list ct_language_step_v5 $key $actions]
     set bytes [string bytelength $record]
     if {$bytes > 262144} {return}
     if {[dict size $::ct_l_cache] >= 2048 || $::ct_l_cache_bytes+$bytes > 4194304} {
@@ -280,7 +452,7 @@ proc ct_l_cache_put {key actions} {
     puts $::ct_l_cache_stream $record
     incr ::ct_l_cache_written $bytes
 }
-proc ct_l_expand {h} {
+proc ct_l_expand {h {member_signal ""}} {
     set key [ct_l_key $h]
     if {$key ne "" && $::ct_l_internal} {set key [list internal $::ct_l_root $key]}
     if {$key ne "" && [dict exists $::ct_l_cache $key]} {
@@ -304,6 +476,15 @@ proc ct_l_expand {h} {
     ct_l_note driver_begin $name npi_trace_driver_by_hdl2 1
     set rows {}
     ::npi_L1::npi_trace_driver_by_hdl2 $h rows 0
+    if {[ct_l_interface_signal $h]} {
+        ct_l_note interface_driver_begin $name npiUse 1
+        set rows [ct_l_interface_drivers $h $rows]
+        set member_signal $h
+    }
+    set member_vector ""
+    if {[ct_l_prop $member_signal npiType] in {npiNetBit npiRegBit}} {
+        set member_vector [npi_handle -type npiParent -refHandle $member_signal]
+    }
     # Verdi 2018 can return scalar 0 with a nonempty list. Read the list.
     dict incr ::ct_l_totals driver_queries
     dict incr ::ct_walk_stats scanned [llength $rows]
@@ -400,8 +581,23 @@ proc ct_l_expand {h} {
                 lappend actions [ct_l_terminal unsupported_expression [list endpoint [ct_js "$owner.$port_name"]] $evidence]; continue
             }
         } elseif {$type eq "npiContAssign"} {
-            if {![ct_l_transparent [npi_handle -type npiRhs -refHandle $use]]} {
+            set rhs [npi_handle -type npiRhs -refHandle $use]
+            if {![ct_l_transparent $rhs]} {
                 lappend actions [ct_l_terminal unknown_cell [list cell [ct_js $type] endpoint [ct_js $owner]] $evidence]; continue
+            }
+            if {$member_vector ne ""} {
+                set lhs [npi_handle -type npiLhs -refHandle $use]
+                if {[ct_l_prop $lhs npiType] eq "npiRefObj"} {
+                    set bound [npi_handle -type npiActual -refHandle $lhs]
+                    if {[ct_l_prop $bound npiType] eq "npiMpPort"} {set bound [npi_handle -type npiExpr -refHandle $bound]}
+                    if {$bound ne "" && [npi_compare_objects -object1 $bound -object2 $member_vector]} {
+                        # The driver row identifies the assignment. Derive its
+                        # RHS bit from the declared range, not the ordinal
+                        # returned by the 2018 wrapper for a modport reference.
+                        set signal [ct_l_interface_assignment_bit $member_signal $member_vector $rhs]
+                        set signals [expr {$signal eq "" ? {} : [list $signal]}]
+                    }
+                }
             }
         } elseif {$type eq "npiPrimTerm"} {
             set primitive [npi_handle -type npiPrimitive -refHandle $use]
@@ -479,6 +675,40 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
         if {[dict exists $seen $key]} {dict incr ::ct_walk_stats duplicates; continue}
         dict set seen $key 1
         set path [ct_l_step $parent [ct_l_ev $h]]
+        if {$type eq "npiExtRef" && [ct_l_transparent $h]} {
+            set actual [npi_handle -type npiActual -refHandle $h]
+            if {[ct_l_size $actual] == 1} {
+                dict set queue $tail [list $actual $path $last_inside]
+                incr tail; dict incr ::ct_walk_stats discovered
+                continue
+            }
+        }
+        set member [ct_l_interface_member $h]
+        set member_signal ""
+        if {[dict size $member]} {
+            set member_owner [dict get $member owner]
+            set member_direction [dict get $member direction]
+            set member_signal [dict get $member signal]
+            set formal [dict get $member formal]
+            set is_ingress [ct_l_interface_input $member_direction]
+            if {!$::ct_l_internal && $is_ingress && $member_owner eq $::ct_l1_scope} {
+                set fields [ct_l1_fields $formal]
+                if {$member_owner eq $::ct_l_root} {ct_terminal [ct_result [ct_l1_status] $path {*}$fields]; continue}
+                ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result [ct_result [ct_l1_status] $path {*}$fields]]
+            } elseif {$is_ingress && $member_owner eq $::ct_l_root} {
+                ct_terminal [ct_result scope_boundary $path endpoint [ct_js $name] scope [ct_js $::ct_l_root] boundary_role [ct_js input]]
+                continue
+            }
+            if {$member_direction ni {npiOutput npiInout}} {
+                if {$member_signal eq ""} {
+                    ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $name] message [ct_js "Interface member binding could not be mapped to one RTL signal bit"]]
+                } else {
+                    dict set queue $tail [list $member_signal $path $name]
+                    incr tail; dict incr ::ct_walk_stats discovered
+                }
+                continue
+            }
+        }
         if {!$::ct_l_internal && $::ct_l_root eq $::ct_l1_scope} {
             set l1_fields [ct_l_l1_fields $h]
             if {[llength $l1_fields]} {
@@ -486,8 +716,8 @@ proc ct_l_walk {owner pin trace_id {direction driver}} {
             }
         }
         if {![ct_l_transparent $h]} {ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $name]]; continue}
-        if {$type eq "npiOperation" || [ct_l_size $h] != 1} {ct_terminal [ct_result unsupported_expression $path endpoint [ct_js [::npi_L1::npi_expr_decompile $h]]]; continue}
-        if {[catch {ct_l_expand $h} actions]} {ct_terminal [ct_result error $path message [ct_js $actions]]; continue}
+        if {$type in {npiOperation npiExtRef} || (![dict size $member] && [ct_l_size $h] != 1)} {ct_terminal [ct_result unsupported_expression $path endpoint [ct_js [::npi_L1::npi_expr_decompile $h]]]; continue}
+        if {[catch {ct_l_expand $h $member_signal} actions]} {ct_terminal [ct_result error $path message [ct_js $actions]]; continue}
         foreach action $actions {
             lassign $action kind value fields evidence
             set step $path

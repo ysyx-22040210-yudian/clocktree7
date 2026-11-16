@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">CLOCKTREE7  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="clocktree7-gui">ClockTree7 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本：3.12 · 更新日期：2026-11-15 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本：3.12 · 更新日期：2026-11-16 · 适用界面：Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶部 <strong>WORKSPACE</strong> 可切换时钟树与复位树。时钟树有 MUX、SYNC_GATE、GATE_WRAP、OCC_ROOT、OCC_BRANCH、DIV、穿线和 SUBSYSTEM。复位树有 MUX、RSY_SYNC、穿线和 SUBSYSTEM。关注端口及辅助端口都可从 elab 正则筛选后写入文本框，也可直接编辑。两种分析均默认两级，可自定义层数并分别保存配置草稿、结果和搜索历史。端口操作见 <a href="#device-ports-and-div-sources">第 36 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -164,7 +164,7 @@ python -m clocktree gui
 <li>启动 GUI，程序会先恢复历史工作区；没有历史时显示 L1、L2 两级空白配置。点击顶栏 <strong>查看示例</strong>，打开随附两级四类器件记录样例；新建配置可随时回到两级空白规则。</li>
 <li>若当前没有显示样例，点击顶栏 <strong>打开结果</strong>，选择仓库中的 <code>examples/flexible_layers/clocktree.json</code>。</li>
 <li>顶部应显示下表中的统计值。</li>
-<li>查看 L1、L2 两列。蓝色梯形为选择器、青绿色 D 形为门控、琥珀色切角块为 OCC、紫色六边形为 DIV。</li>
+<li>查看 L1、L2 两列。梯形为选择器，D 形为门控，切角块为 OCC，六边形为 DIV。画布上方的图例标明各器件的颜色。</li>
 <li>点击 L1 的选择器，右侧查看输入 <code>a</code>、<code>b</code> 和输出 <code>o</code>；滚轮向上可放大。</li>
 <li>按 F5 恢复全图。切换“全部时钟网络”下拉框，观察两个网络；再切回全部。</li>
 </ol>
@@ -386,7 +386,7 @@ L7  fixture_top.l7
 <td>一个关注输入</td>
 <td>一个关注输出</td>
 <td><code>gate_wrap</code></td>
-<td>浅绿色 D 形，显示 GATE_WRAP</td>
+<td>黄绿色 D 形，显示 GATE_WRAP</td>
 </tr>
 <tr>
 <td>OCC_ROOT</td>
@@ -400,14 +400,14 @@ L7  fixture_top.l7
 <td>一个关注输入</td>
 <td>一个关注输出</td>
 <td><code>occ_branch</code></td>
-<td>橙红色切角块，显示 OCC_BRANCH</td>
+<td>珊瑚红色切角块，显示 OCC_BRANCH</td>
 </tr>
 <tr>
 <td>DIV 分频器</td>
 <td>恰好一个关注输入</td>
 <td>唯一关注输出</td>
 <td><code>div</code></td>
-<td>紫色六边形，标注 DIV / ÷N</td>
+<td>六边形。来源 1 为紫色，来源 2 为亮青蓝色，未归类为灰蓝色</td>
 </tr>
 <tr>
 <td>子系统 SUBSYSTEM</td>
@@ -2468,6 +2468,8 @@ end
 <p>画布用 <strong>L1 · INPUT</strong> 箭头模型显示端口名、完整 L1 信号路径及到目标输入的连线。它是已存在的 RTL 接口，不计入器件实例总数。点击入口或连线可查看属性及原始 driver 证据；沿上下游跳转、独立分支画布、上游/整分支高亮、SVG 和重开后的结果恢复均保留入口。层次概览中多个入口可合并显示为 <code>输入端口 ×N</code>；展开目标范围后显示各个真实端口及 bit。</p>
 <p><a class="figure" href="images/l1-input-workbench.png" target="_blank"><img alt="L1 层次输入及实际连线" src="images/l1-input-workbench.png" /></a></p>
 <p>L1 总线即使在更外层被重新拼接，也记录 L1 内的真实 formal bit。例如 <code>.raw({pads[4],pads[6],pads[5],pads[7]})</code> 中 <code>raw[3]</code> 的来源可能是 <code>pads[5]</code>，本功能保存的是 <code>chip.u_crg.raw[3]</code>。单 bit 向量如 <code>input [5:5] clk_in</code> 显示 <code>clk_in[5]</code>。更新后使用相同配置重新提取，旧结果按原有证据显示。</p>
+<p>SystemVerilog <code>interface</code> 作为 L1 RTL 层次的端口时，器件规则仍填写器件本身的端口名。例如门控 <code>.clk_i(ext.bus[2])</code> 的关注输入填写 <code>clk_i</code>。工具沿 elab 绑定识别实际进入 L1 的成员，在画布入口显示 <code>chip.u_crg.ext.bus[2]</code>，并保留成员的声明位号。对于 L1 内部写入的成员，追踪继续向内部驱动查找。允许追踪父层且找到已配置的源器件时，画布连接该源器件。</p>
+<p>同一个 interface 绑定到 <code>mst</code> 和 <code>slv</code> 时，工具根据每个模块实例实际绑定的 modport 判定成员方向。例如 <code>from_mst[2]</code> 可以是 <code>mst</code> 的输出和 <code>slv</code> 的输入。追踪根设为 <code>slv</code> 时，来自 <code>mst</code> 的分支在 <code>slv</code> 的成员入口显示。追踪根覆盖两侧时，工具恢复实际跨侧连线。两侧也可以各自读取同一个 <code>ref_clk</code> 成员。</p>
 <h3 id="352-sv">35.2 SV 生成规则</h3>
 <p>L1 RTL 输入接口可以出现在某条连接的中途。时钟和复位追踪在配置范围内继续向上游查找。找到关注器件输出时，图上连接该实际器件。若输入追踪已经唯一确认到达 L1 端口，且后续未解析的证据都位于该接口外侧，画布仍显示 L1 到器件的连线，问题表保留接口外的诊断。追踪根设为 L1 时，停在真实接口边界。接口到 L1 本层器件与跨级进入后续器件均适用。</p>
 <p>L1 接口直接进入后续层的非 MUX 起始器件时，使用“起始无选择器”模板和下表默认值。对直接例化在 L1 的非 MUX 起始器件，<code>$var_pll0</code> 也优先采用已确认的接口路径。首个真实器件是 MUX 时，按顺序采用该选择器的关注输入。末端和分支数量依实际器件连接确定。</p>
@@ -2542,6 +2544,7 @@ end
 <pre><code class="language-json">&quot;div_source_scopes&quot;: [&quot;chip.u_ctrl_a&quot;, &quot;chip.u_ctrl_b&quot;]
 </code></pre>
 <p>打开 <strong>辅助口 → 寄存器</strong>。<code>div</code> 端口经过反查得到实际时序 Q 路径后，表格的 <strong>DIV 来源</strong> 列按 bit 显示归属，选中行可查看路径与依据。例如 <code>chip.u_ctrl_a.Q[7]</code> 属于来源层次 1，<code>chip.u_ctrl_b.Q[2]</code> 属于来源层次 2。两条路径均包含该寄存器时，采用更具体的子层次。两条路径都未匹配时显示“来源未归属”。</p>
-<p>这两个来源编号独立于传播规则的 L1、L2。它们只用于寄存器归类。已有逐位寄存器结果可以在填写路径后直接打开查看。修改路径后重新打开寄存器窗口或重新分析 SV 分支，配置会随工作区保留。</p>
+<p>这两个来源编号独立于传播规则的 L1、L2。画布读取当前设计最新完成的寄存器追踪。一个 DIV 的 <code>div</code> 端口各 bit 均有明确的 Q 映射且同属一个来源时，器件标为 <strong>DIV · 源 1</strong>（紫色）或 <strong>DIV · 源 2</strong>（亮青蓝色）。混合来源、来源范围外、缺少完整映射或尚未追踪的器件显示为灰蓝色，对应图例的 <strong>DIV 未归类</strong>。主画布、分支窗口和 SVG 使用相同的颜色。</p>
+<p>填写或编辑这两条路径后，画布会用已有的逐位寄存器证据重新归类。可在 <strong>辅助口 → 寄存器</strong> 中运行追踪或打开历史追踪结果。修改后的路径随工作区保留。</p>
 <p>CSV 和寄存器证据 JSON 记录来源，SV 候选、代码预览以及引用 <code>$var_div</code> 的分支映射保留各 bit 的归属。<code>$var_div</code> 继续按实际位序替换为原寄存器信号表达式。多个候选或跨寄存器映射按原流程核对并确认。</p>
 <p><a class="figure" href="images/div-register-sources.png" target="_blank"><img alt="DIV 各 bit 的来源层次和未归属标记" src="images/div-register-sources.png" /></a></p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

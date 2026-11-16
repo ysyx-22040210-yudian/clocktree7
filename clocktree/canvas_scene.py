@@ -1,7 +1,8 @@
 """Retained Tk scene: transforms existing items and updates viewport differences."""
 from collections import Counter
 
-from .devices import DEVICE_TYPES
+from .devices import device_style
+from .div_sources import div_source_level
 from .layout import SpatialIndex
 
 
@@ -133,10 +134,14 @@ class CanvasScene:
             issue=getattr(d,'issue_port',(None,None))
             issue_pin=issue[1] if issue[0] and issue[0] in (key,node.get('reference_of')) else None
             navigation_pin=(getattr(d,'selection_target',None) or {}).get('pin') if selected else None
-            detail_key = ('coarse' if coarse else 'detail', round(scale,5) if not zooming else None,selected,issue_pin,navigation_pin)
+            div_level = div_source_level(node, m.div_source_levels)
+            detail_key = ('coarse' if coarse else 'detail', round(scale,5) if not zooming else None,
+                          selected,issue_pin,navigation_pin,div_level)
             if old:
                 tag,previous,_ = old
-                if previous[0] == detail_key[0] and previous[2] == selected and (zooming or previous == detail_key): continue
+                if (previous[0] == detail_key[0] and previous[2] == selected and previous[-1] == div_level
+                        and (zooming or previous == detail_key)):
+                    continue
                 for item in c.find_withtag(tag): d.port_tooltips.pop(item,None)
                 c.delete(tag)
             else:
@@ -144,12 +149,14 @@ class CanvasScene:
             x,y,w,h = m.positions[key]
             tags=('world','node',tag)
             if coarse or zooming:
-                color=DEVICE_TYPES.get(node.get('kind'),{}).get('color','#8199b9')
+                color=device_style(node.get('kind'), div_level)['color']
                 c.create_rectangle(x*scale+ox,y*scale+oy,(x+w)*scale+ox,(y+h)*scale+oy,
                                    fill=color,outline='#def0ff' if selected else '',tags=tags)
-                if zooming and not coarse: detail_key=('temporary',None,selected,issue_pin,navigation_pin)
+                if zooming and not coarse:
+                    detail_key = ('temporary',) + detail_key[1:]
             else:
-                d.port_tooltips.update(draw_device(c,node,x*scale+ox,y*scale+oy,w,h,scale,d.family,selected,tags,d._font_cache))
+                d.port_tooltips.update(draw_device(c,node,x*scale+ox,y*scale+oy,w,h,scale,d.family,
+                                                   selected,tags,d._font_cache,div_level))
                 if issue_pin or navigation_pin:
                     from .devices import port_offsets,pin_index,auxiliary_port_y,output_offset
                     pin=issue_pin or navigation_pin

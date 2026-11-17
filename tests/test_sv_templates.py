@@ -226,6 +226,138 @@ def test_partial_output_lists_all_candidates_then_regenerates_without_duplicates
     assert result['blocks']==2 and result['skipped']==0 and output.read_text().count('// CT7 branch ')==2
 
 
+@pytest.mark.parametrize('problem_owner,problem_pin', [('chip.gate', 'i'), ('chip.sink', 'clk_other')])
+def test_unresolved_clock_path_and_missing_variable_skip_only_the_dependent_branch(tmp_path, problem_owner, problem_pin):
+    graph, reg = setup(tmp_path)
+    graph['summary']['connectivity_complete'] = False
+    graph['boundaries'] = [{'status':'unsupported_expression', 'instance':problem_owner,
+                            'pin':problem_pin, 'direction':'driver'}]
+    db = create_database(reg/'registers.sqlite')
+    db.execute("UPDATE results SET status='unresolved',reason='no_sequential_endpoint' WHERE job=4")
+    db.commit()
+    db.close()
+    plan = prepare(graph, reg, tmp_path/'plan', False)
+    templates = {'with_mux':'wire [3:0] good = $var_pllsel;', 'without_mux':'wire bad = $var_gt0;'}
+    path = tmp_path/'mixed.sv'
+    result = plan.export(templates, path)
+    assert (result['blocks'], result['skipped']) == (1, 1), result
+    assert 'wire [3:0] good = chip.D[5:2];' in path.read_text(encoding='utf-8')
+    assert 'wire bad' not in path.read_text(encoding='utf-8')
+    report = json.loads((tmp_path/'mixed.sv.mapping.json').read_text(encoding='utf-8'))
+    assert report['source']['connectivity_complete'] is False
+    rows = {row['pin']: row for row in report['branches']}
+    assert rows['clk_mux']['ready'] and rows['clk_mux']['issues'] == []
+    issues = rows['clk_other']['issues']
+    assert not rows['clk_other']['ready']
+    assert any(problem_owner+'.'+problem_pin in issue for issue in issues)
+    assert any('$var_gt0' in issue for issue in issues)
+
+
+def test_fanout_sibling_edge_problem_does_not_block_the_verified_load(tmp_path):
+    graph, registers = setup(tmp_path)
+    graph['summary']['connectivity_complete'] = False
+    graph['edges'][1].update(id='good-edge', source_pin='o')
+    graph['edges'][2].update(id='bad-edge', source='chip.div', source_pin='o')
+    graph['diagnostics'] = [{'code':'trace_mismatch', 'edge':'bad-edge'}]
+    graph['boundaries'] = [{'status':'unknown_cell', 'instance':'chip.div', 'pin':'o', 'direction':'load'}]
+    plan = prepare(graph, registers, tmp_path/'plan', False)
+    rows = {row['pin']:plan.resolve(row, {'with_mux':'$var_pllsel'}) for row in plan.branches()[1]}
+    assert rows['clk_mux']['ready'], rows['clk_mux']['issues']
+    assert rows['clk_other']['issues'] == ['chip.sink.clk_other · 输入反查与输出负载证据不一致']
+
+
+def test_cycle_on_other_subsystem_input_does_not_block_ready_branch(tmp_path):
+    graph, registers = setup(tmp_path)
+    graph['edges'].append({'source':'chip.gate', 'source_pin':'o', 'target':'chip.gate', 'target_pin':'i'})
+    plan = prepare(graph, registers, tmp_path/'plan', False)
+    templates = {'with_mux':'$var_pllsel', 'without_mux':'$var_gt0'}
+    rows = {row['pin']:plan.resolve(row, templates) for row in plan.branches()[1]}
+    assert rows['clk_mux']['ready'], rows['clk_mux']['issues']
+    assert '上游包含组合环路' in rows['clk_other']['issues']
+
+
+def test_unfinished_extraction_still_blocks_even_with_a_local_diagnostic(tmp_path):
+    graph, registers = setup(tmp_path)
+    graph['summary'].update(connectivity_complete=False, extraction_finished=False)
+    graph['boundaries'] = [{'status':'trace_timeout', 'instance':'chip.gate', 'pin':'i', 'direction':'driver'}]
+    plan = prepare(graph, registers, tmp_path/'plan', False)
+    good = next(row for row in plan.branches()[1] if row['pin']=='clk_mux')
+    assert plan.resolve(good, {'with_mux':'$var_pllsel'})['issues'] == ['架构提取未正常完成，请查看运行日志']
+
+
+def test_distinct_result_revision_cannot_reuse_an_identical_header_plan(tmp_path):
+    from clocktree.sv_templates import architecture_signature, graph_for_templates, write_source, read_source
+
+    graph, _ = setup(tmp_path)
+    graph['components'] = []
+    graph['config']['layers'] = [{'index':1, 'hierarchy':'chip', 'modules':[
+        {'module':'sink', 'kind':'subsystem', 'clock_inputs':['clk_mux','clk_other']}]}]
+    newer = copy.deepcopy(graph)
+    newer['nodes'][-1]['port_connections']['clk_mux']['full_name'] = 'chip.changed_clock'
+    original = graph_for_templates(graph, graph['config'])
+    original['sv_source_revision'] = 'result-a'
+    changed = graph_for_templates(newer, newer['config'])
+    changed['sv_source_revision'] = 'result-b'
+    assert architecture_signature(original) != architecture_signature(changed)
+    path = tmp_path/'architecture.json'
+    write_source(path, original)
+    assert architecture_signature(read_source(path)) == architecture_signature(original)
+
+
+@pytest.mark.parametrize('failure', ['worker_exit', 'port_deadline', 'wrong_bit'])
+def test_elab_fallback_only_blocks_the_failed_terminal(tmp_path, monkeypatch, failure):
+    from clocktree import sv_templates
+    from clocktree.register_worker import PortDeadline, WorkerFault
+
+    graph, registers = setup(tmp_path)
+    terminal = graph['nodes'][-1]
+    terminal.update(inputs=['clk[8]', 'clk[7]'], port_connections={})
+    graph['edges'][1]['target_pin'], graph['edges'][2]['target_pin'] = terminal['inputs']
+    if failure=='port_deadline':graph['config']['port_trace_timeout_s']=10
+    stops = []
+    queries = []
+
+    class Worker:
+        deadline = None
+        def __init__(self, *args):pass
+        def ensure(self):pass
+        def query(self, operation, instance, pin):
+            assert (operation, instance, pin) == ('port', 'chip.sink', 'clk')
+            assert (self.deadline is not None) == (failure=='port_deadline')
+            queries.append(pin)
+            if len(queries)==1:
+                if failure=='worker_exit':raise WorkerFault('Verdi exited reading clk')
+                if failure=='port_deadline':raise PortDeadline('读取 clk 超时')
+            formal = dict(type='npiNet', width=1, full='chip.sink.clk', ranges=[[7, 7]])
+            actual = dict(type='npiNet', width=1, full='chip.clk7')
+            return [{'direction':'npiInput','low':formal,'high':actual}]
+        def stop(self):stops.append(True)
+        def close(self):pass
+
+    monkeypatch.setattr(sv_templates, 'RegisterWorker', Worker)
+    plan = prepare(graph, registers, tmp_path/'plan')
+    templates = {'with_mux':'$var_clkip', 'without_mux':'$var_clkip'}
+    rows = {b['pin']:plan.resolve(b, templates) for b in plan.branches()[1]}
+    assert rows['clk[7]']['ready'] and rows['clk[7]']['values']['var_clkip']=='chip.clk7'
+    assert not rows['clk[8]']['ready'] and any('$var_clkip' in issue for issue in rows['clk[8]']['issues'])
+    if failure!='wrong_bit':
+        assert len(stops)==1 and len(queries)==2
+        reason = 'Verdi exited reading clk' if failure=='worker_exit' else '读取 clk 超时'
+        assert any(reason in issue for issue in rows['clk[8]']['issues'])
+    else:assert len(queries)==1
+
+
+def test_template_render_error_on_one_terminal_keeps_other_sv_blocks(tmp_path):
+    graph, registers = setup(tmp_path)
+    graph['nodes'][-1]['port_connections']['clk_mux']['full_name'] = '$'
+    plan = prepare(graph, registers, tmp_path/'plan', False)
+    template = 'wire check_$var_clkip_sva;'
+    result = plan.export(dict(with_mux=template, without_mux=template), tmp_path/'generated.sv')
+    assert (result['blocks'], result['skipped']) == (1, 1)
+    assert 'wire check_chip_clk_other_sva;' in (tmp_path/'generated.sv').read_text(encoding='utf-8')
+    assert '变量值无法组成 SV 名称' in result['issues'][0]
+
+
 def test_pll_input_order_and_missing_plls_and_gates_are_one(tmp_path):
     graph,reg=setup(tmp_path);plan=prepare(graph,reg,tmp_path/'plan',False)
     text='$var_pll0 $var_pll1 $var_pll2 $var_pll3 $var_gt0 $var_gt1 $var_gt2'

@@ -1,8 +1,11 @@
-"""Proven L1 interface entries. Display nodes never count as RTL instances."""
+"""Proven hierarchy inputs for the canvas and navigation."""
 from collections import defaultdict
 import hashlib
 import json
 from collections.abc import Sequence
+
+
+INPUT_SOURCE_KINDS = ('l1_input', 'boundary_input')
 
 
 def key(*parts):
@@ -10,7 +13,9 @@ def key(*parts):
 
 
 def entries(node):
-    return {pin:value for pin,value in node.get('l1_inputs',{}).items()
+    values = dict(node.get('l1_inputs', {}))
+    values.update(node.get('input_boundaries', {}))
+    return {pin:value for pin,value in values.items()
             if pin in node.get('inputs',[]) and value.get('status')=='verified'}
 
 
@@ -19,35 +24,47 @@ def aggregate_entries(model,node):
     if hasattr(model,'store'):
         conn=model.store.connection()
         if not conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='ct7_l1_entries'").fetchone():
-            conn.execute('CREATE TEMP TABLE ct7_l1_entries(instance TEXT,scope TEXT,pin TEXT,PRIMARY KEY(instance,pin))')
-            for data, in conn.execute("SELECT data FROM nodes WHERE instr(data,'\"l1_inputs\"')>0"):
+            conn.execute('CREATE TEMP TABLE ct7_l1_entries(instance TEXT,scope TEXT,pin TEXT,layer INTEGER,kind TEXT,PRIMARY KEY(instance,pin))')
+            for data, in conn.execute("""SELECT data FROM nodes WHERE instr(data,'"l1_inputs"')>0
+                                       OR instr(data,'"input_boundaries"')>0"""):
                 item=json.loads(data)
-                conn.executemany('INSERT OR IGNORE INTO ct7_l1_entries VALUES(?,?,?)',
-                    ((item['id'],value['scope'],pin) for pin,value in entries(item).items()))
+                conn.executemany('INSERT OR IGNORE INTO ct7_l1_entries VALUES(?,?,?,?,?)',
+                    ((item['id'],value['scope'],pin,value.get('layer',0),value.get('source_kind','port'))
+                     for pin,value in entries(item).items()))
         where,params=model.member_condition(node)
-        return list(conn.execute('SELECT scope,COUNT(*) FROM ct7_l1_entries WHERE instance IN (SELECT id FROM nodes WHERE '+where+') GROUP BY scope',params))
+        return list(conn.execute('SELECT scope,layer,kind,COUNT(*) FROM ct7_l1_entries WHERE instance IN (SELECT id FROM nodes WHERE '+where+') GROUP BY scope,layer,kind',params))
     grouped=defaultdict(int)
     for instance in node['members']:
-        for value in entries(model.original[instance]).values():grouped[value['scope']]+=1
-    return sorted(grouped.items())
+        for value in entries(model.original[instance]).values():
+            grouped[(value['scope'], value.get('layer', 0), value.get('source_kind','port'))] += 1
+    return [(*entry, count) for entry, count in sorted(grouped.items())]
 
 
 def project_sources(model):
     ports,wires={},[]
     for target in list(model.nodes.values()):
         if target.get('aggregate'):
-            values=[('输入',{'scope':scope,'port':'输入端口 ×{}'.format(count),'signal':scope,
-                    'aggregate_count':count}) for scope,count in aggregate_entries(model,target)]
+            values=[('输入',{'scope':scope,
+                    'port':'{} ×{}'.format('wire' if kind=='wire' else '输入端口',count),'signal':scope,
+                    'aggregate_count':count,'layer':layer,'source_kind':kind})
+                    for scope,layer,kind,count in aggregate_entries(model,target)]
         else:values=list(entries(target).items())
         for pin,entry in values:
             aggregate=entry.get('aggregate_count',0)
-            identifier=key(entry['signal'],target['component'],target['id'] if aggregate else '')
-            ports.setdefault(identifier,dict(id=identifier,path=entry['scope'],module='L1 层次输入 · elab 已确认',
-                kind='l1_input',virtual=True,layer=1,component=target['component'],inputs=[],output=entry['port'],
-                root=True,terminal=False,l1_entry=entry,port_connections={entry['port']:{'status':'connected',
+            identifier=key(entry['signal'],target['component'],
+                           (target['id'],entry['source_kind']) if aggregate else '')
+            explicit = bool(entry.get('layer'))
+            layer = entry.get('layer') or 1
+            source = ports.setdefault(identifier,dict(id=identifier,path=entry['scope'],
+                module='层次边界 · elab 已确认' if explicit else 'L1 层次输入 · elab 已确认',
+                kind='boundary_input' if explicit else 'l1_input',virtual=True,layer=layer,component=target['component'],
+                inputs=[],output=entry['port'],root=True,terminal=False,input_entry=entry,port_connections={entry['port']:{'status':'connected',
                 'expression':entry['port'],'full_name':entry['signal'],'coverage':'port'}}))
+            if not explicit:
+                source.setdefault('l1_entry', entry)
             wires.append(dict(id=key(identifier,target['id'],pin),source=identifier,source_pin=entry['port'],
-                target=target['id'],target_pin=pin,layer_delta=target['layer']-1,l1_boundary=True,
+                target=target['id'],target_pin=pin,layer_delta=target['layer']-layer,input_boundary=True,
+                l1_boundary=not explicit, boundary_layer=layer,
                 aggregate_count=aggregate,evidence={'driver':entry.get('evidence',[])}))
     model.l1_nodes,model.l1_edges=ports,{edge['id']:edge for edge in wires}
     model.nodes.update(ports);model.edges.extend(wires)
@@ -58,11 +75,26 @@ def lookup_node(model,identifier):
     return shown if shown and (shown.get('virtual') or shown.get('aggregate')) else model.original[identifier]
 
 
+def source_title(node):
+    if node['kind'] == 'l1_input':
+        return 'L1 输入端口'
+    title = 'wire 边界' if node['input_entry'].get('source_kind') == 'wire' else '输入边界'
+    return 'L{} · {}'.format(node['layer'], title)
+
+
+def source_basis(node):
+    if node['kind'] == 'l1_input':
+        return '输入反查确认信号经此端口进入 L1。'
+    if node['input_entry'].get('source_kind') == 'wire':
+        return '输入反查到达该层直接声明的 wire 信号并停止。'
+    return '输入反查到达配置的 RTL 输入口并停止。'
+
+
 def describe(node):
-    value=node['l1_entry']
-    return [('显示类型','L1 RTL 层次的实际输入路径'),
-            ('L1 层次',value['scope']),('连接端口',value['port']),('完整信号',value['signal']),
-            ('连接依据','目标器件的输入反查确认信号经此处进入 L1。'+
+    value=node['input_entry']
+    return [('显示类型',source_title(node)), ('RTL 层次',value['scope']),
+            ('连接信号',value['port']),('完整信号',value['signal']),
+            ('连接依据',source_basis(node)+
              ('当前为聚合显示，展开目标 RTL 范围后查看各端口。' if value.get('aggregate_count') else ''))]
 
 

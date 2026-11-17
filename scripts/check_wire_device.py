@@ -156,14 +156,17 @@ def sv(out,result):
     db=create_database(registers/'registers.sqlite');db.close()
     plan=prepare(graph,registers,out/'plan')
     rows=plan.branches()[1];assert len(rows)==7
-    expected={'g0':('x','b'),'g1':('y','a'),'g2':('z','a'),'g3':('q[2]','bus[2]'),
-              'g4':('q[3]','bus[3]'),'g5':('q[4]','bus[0]'),'g6':('q[5]','bus[1]')}
+    # The bus lanes enter directly through L1. Those branches use the final
+    # gate output for $var_clkip; q is the gate's input after the bit remap.
+    expected={'g0':('x','b'),'g1':('y','a'),'g2':('z','a'),'g3':('sinks[3]','bus[2]'),
+              'g4':('sinks[4]','bus[3]'),'g5':('sinks[5]','bus[0]'),'g6':('sinks[6]','bus[1]')}
     for row in rows:
         clkip,pll=expected[row['instance'].split('.')[-1]];bindings=json.loads(row['bindings'])
         assert bindings['var_clkip']['value']=='wire_top.'+clkip,(row,bindings)
         assert bindings['var_pll0']['value']=='wire_top.'+pll,(row,bindings)
         assert not json.loads(row['issues']),row
     result=plan.export({'with_mux':'// $var_clkip <- $var_pll0\n','without_mux':'// $var_clkip <- $var_pll0\n'},out/'branches.sv')
+    assert result['blocks']==len(expected) and result['skipped']==0,result
     write_graph(out/'acceptance.json',{'passed':True,'branches':7,'bit_mapping':expected,'export':result})
 
 

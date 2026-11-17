@@ -19,13 +19,14 @@ from itertools import islice
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
-from .config import div_source_scopes, extraction_settings, load_config, validate_config, EXTRACTION_MODES
+from .config import configured_input_boundaries, div_source_scopes, extraction_settings, load_config, validate_config, EXTRACTION_MODES
 from .paths import default_runs_dir
 from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
 from .devices import DIV_SOURCE_STYLES, LABEL_TO_KIND, device_style, kind_label, type_labels, node_height, matching_rule, connection_details
 from .div_sources import read_div_source_levels
+from .l1_inputs import INPUT_SOURCE_KINDS, source_title, source_basis
 from .register_results import latest_register_result
 from .ui_state import UIState, design_key
 from .auxiliary import AUX_ROLES, DIRECTIONS, validate_aux_ports
@@ -473,6 +474,7 @@ class ClockTreeApp(tk.Tk):
         self.div_source_vars = [tk.StringVar(), tk.StringVar()]
         self.memory_status=tk.StringVar(value='等待提取 · RSS 监测在 Linux 上启用')
         self.hierarchy_var=tk.StringVar()
+        self.layer_input_boundary_var=tk.BooleanVar()
         self.layer_reset_var=tk.StringVar()
         top_label=ttk.Frame(settings,style='White.TFrame')
         top_label.pack(fill='x')
@@ -535,6 +537,11 @@ class ClockTreeApp(tk.Tk):
         self.layer_title.pack(anchor='w')
         ttk.Entry(settings,textvariable=self.hierarchy_var).pack(fill='x',pady=(5,10))
         ttk.Label(settings,text='填写父层路径，仅查本层直接例化\n不递归查找子层次中的 module',style='Muted.TLabel').pack(anchor='w',pady=(0,8))
+        self.layer_input_boundary_check = ttk.Checkbutton(
+            settings, text='将此层的输入口和 wire 设为边界',
+            variable=self.layer_input_boundary_var, command=self.change_input_boundary)
+        self.layer_input_boundary_check.pack(anchor='w')
+        ttk.Label(settings, text='反查到达此层的输入口或本层 wire 时停止。\n已勾选的层标有 *。', style='Muted.TLabel', wraplength=255).pack(anchor='w', pady=(3, 10))
         ttk.Label(settings,text='该层复位信号 · $var_rst',style='Small.TLabel').pack(anchor='w')
         self.layer_reset_entry=ttk.Entry(settings,textvariable=self.layer_reset_var)
         self.layer_reset_entry.pack(fill='x',pady=(5,4))
@@ -1133,11 +1140,19 @@ class ClockTreeApp(tk.Tk):
         for button in self.layer_buttons:button.destroy()
         self.layer_buttons=[]
         for index in range(1,len(self.layers)+1):
-            button=ttk.Button(self.layerrow,text='L{}'.format(index),width=4,style='Layer.TButton',command=lambda i=index:self.select_layer(i))
+            button=ttk.Button(self.layerrow,text=self.layer_button_label(index),width=4,style='Layer.TButton',command=lambda i=index:self.select_layer(i))
             button.grid(row=(index-1)//5,column=(index-1)%5,sticky='ew',padx=(0,3),pady=(0,4))
             self.layer_buttons.append(button)
         for column in range(5):self.layerrow.columnconfigure(column,weight=1)
         self.layer_count_var.set('传播规则 · {} 级'.format(len(self.layers)))
+
+    def layer_button_label(self, index):
+        return 'L{}{}'.format(index, '*' if self.layers[index-1].get('input_boundary') else '')
+
+    def change_input_boundary(self):
+        self._save_layer_inputs()
+        self.layer_buttons[self.active_layer-1].configure(text=self.layer_button_label(self.active_layer))
+        self.mark_dirty()
 
     def add_layer(self):
         self._save_layer_inputs()
@@ -1173,6 +1188,7 @@ class ClockTreeApp(tk.Tk):
         self.active_layer=index
         self._filling=True
         self.hierarchy_var.set(self.layers[index-1].get('hierarchy',''))
+        self.layer_input_boundary_var.set(self.layers[index-1].get('input_boundary', False))
         self.layer_reset_var.set(self.layers[index-1].get('reset_signal',''))
         self._filling=False
         self.layer_title.configure(text='L{} · RTL 父层路径'.format(index))
@@ -1184,6 +1200,10 @@ class ClockTreeApp(tk.Tk):
     def _save_layer_inputs(self):
         layer=self.layers[self.active_layer-1]
         layer['hierarchy']=self.hierarchy_var.get().strip()
+        if self.layer_input_boundary_var.get():
+            layer['input_boundary'] = True
+        else:
+            layer.pop('input_boundary', None)
         reset=self.layer_reset_var.get().strip()
         if reset:layer['reset_signal']=reset
         else:layer.pop('reset_signal',None)
@@ -1482,11 +1502,15 @@ class ClockTreeApp(tk.Tk):
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
         summary=graph['summary']
+        input_boundaries = configured_input_boundaries(graph['config'])
         undriven=summary.get('undriven_inputs',0)
         if summary['connectivity_complete'] and undriven:
             self._badge('追踪完成 · {:,} 个输入无驱动'.format(undriven),'warn')
         elif summary['connectivity_complete'] and summary.get('topology_valid',True):
-            self._badge('目标结构连接已解析 · 未核验普通负载' if summary.get('extraction_mode')=='target' else ('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析'),'pass')
+            if input_boundaries:
+                self._badge('按已选层次边界解析 · {} 条入口'.format(summary.get('input_boundary_connections',0)),'pass')
+            else:
+                self._badge('目标结构连接已解析 · 未核验普通负载' if summary.get('extraction_mode')=='target' else ('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析'),'pass')
         elif summary['connectivity_complete']:self._badge('连接完整 · 结构存在异常','warn')
         else:self._badge('{} 个例化 trace 超时 · 连接不完整'.format(summary['trace_timeout_instances']) if summary.get('trace_timeout_instances') else '存在未解析断点 / 诊断','warn')
         components=graph['components'][:500]
@@ -1512,6 +1536,8 @@ class ClockTreeApp(tk.Tk):
         self.inspector_tabs.select(0)
         self._properties('全网提取概况', [('设计顶层',graph['config']['design'].get('top','')),
             ('端口追踪范围',graph['config'].get('trace_scope') or '设计顶层（兼容模式）'),
+            *([('配置的边界层次', '\n'.join('L{} · {}'.format(layer, scope) for scope, layer in input_boundaries.items()))]
+              if input_boundaries else []),
             ('范围出口','{} 个实例；出口不计为分支末端'.format(summary.get('scope_output_instances',0))),
             ('覆盖规模','{:,} 个结构 · {:,} 条端口连线'.format(summary['instances'],summary['edges'])),
             ('器件类型',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in (graph.kind_counts() if isinstance(graph,IndexedGraph) else Counter(n.get('kind') for n in self.diagram.model.original.values())).items())),
@@ -1922,13 +1948,13 @@ class ClockTreeApp(tk.Tk):
         text.yview_moveto(0)
 
     def inspect_node(self,node):
-        if node.get('kind')=='l1_input':
+        if node.get('kind') in INPUT_SOURCE_KINDS:
             from .l1_inputs import describe
             self.selected_object=node
             for button in (self.expand_button,self.upstream_button):button.configure(state='disabled')
             extra=[e for e in self.diagram.model.edges if e['source']==node['id']]
             self.downstream_button.configure(text='下游 ({})'.format(len(extra)),state='normal' if extra else 'disabled')
-            self._properties('L1 输入端口',describe(node))
+            self._properties(source_title(node),describe(node))
             self._fill_connections(extra,{node['id']})
             self.inspector_tabs.select(0)
             return
@@ -2007,7 +2033,8 @@ class ClockTreeApp(tk.Tk):
             upstream=members and edge['target'] in members
             other=edge['source'] if upstream else edge['target']
             label='.'.join(other.split('.')[-2:])
-            if upstream and edge.get('l1_boundary'):label='L1 · '+edge['source_pin']
+            if upstream and edge.get('input_boundary'):
+                label='L{} · {}'.format(edge['boundary_layer'],edge['source_pin'])
             key=str(i)
             self.related_edges[key]=edge
             self.connections.insert('','end',iid=key,text=label,values=('上游' if upstream else '下游',edge['source_pin'] if upstream else edge['target_pin']))
@@ -2016,8 +2043,8 @@ class ClockTreeApp(tk.Tk):
         self.connection_next.configure(state='normal' if self._connection_offset+500<total else 'disabled')
 
     def inspect_edges(self,display_edges):
-        if any(e.get('l1_boundary') for e in display_edges):
-            edges=list({e['id']:e for e in display_edges if e.get('l1_boundary')}.values())
+        if any(e.get('input_boundary') for e in display_edges):
+            edges=list({e['id']:e for e in display_edges if e.get('input_boundary')}.values())
         elif isinstance(self.graph,IndexedGraph):
             # A clipped line may represent several bundles. SQL UNION preserves
             # exact unique edge counts and enables paging without materializing.
@@ -2052,18 +2079,17 @@ class ClockTreeApp(tk.Tk):
         directions=edge.get('evidence',{})
         lines=['{}.{}（{}）'.format(edge['source'],edge['source_pin'],connection_label(source,edge['source_pin'])),
                '  → {}.{}（{}）'.format(edge['target'],edge['target_pin'],connection_label(target,edge['target_pin'])),'']
-        if edge.get('l1_boundary'):
-            lines=['L1 输入：'+source['l1_entry']['signal'],'  → '+edge['target']+'.'+edge['target_pin'],
-                   '输入反查已确认；L1 输入端口不计为器件实例。']
-        if edge.get('l1_boundary'):
-            lines.append('驱动追踪确认信号经此端口进入 L1。')
+        if edge.get('input_boundary'):
+            lines=[source_title(source)+'：'+source['input_entry']['signal'],
+                   '  → '+edge['target']+'.'+edge['target_pin'],source_basis(source)]
         elif directions.get('load') and directions.get('driver'):
             lines.append('验证结论：输入反查与输出负载双向证据一致。')
         elif directions.get('driver'):
             lines.append('验证结论：输入反查已找到此输出。')
             lines.append('输出全负载方向：未执行。' if self.graph['summary'].get('extraction_mode')=='target' else '输出方向缺少证据，请查看问题表。')
         else:lines.append('验证结论：缺少输入反查证据，请查看问题表。')
-        lines.append('规则层次：L{} → L{}{}'.format(source['layer'],target['layer'],' · 逆序层连接' if edge['layer_delta']<0 else ''))
+        lines.append('规则层次：L{} → L{}{}'.format(source['layer'],target['layer'],
+                     ' · 逆序层连接' if edge['layer_delta']<0 and not edge.get('input_boundary') else ''))
         if edge['source'].rsplit('.',1)[0]!=edge['target'].rsplit('.',1)[0]:lines.append('连接跨越不同 RTL 父层；展开原始证据可回查跨层及别名映射。')
         from .evidence import mapping_excerpt
         mapping=mapping_excerpt(edge)
@@ -2079,8 +2105,8 @@ class ClockTreeApp(tk.Tk):
             lines+=['',label,connection_details(node,[edge[pin_key]])]
         for direction,label in [('load','输出 → 全部负载'),('driver','输入 ← 实际驱动')]:
             lines+=['','─'*24,label,'']
-            if direction=='load' and edge.get('l1_boundary'):
-                lines.append('L1 入口以目标器件的输入反查为依据。')
+            if direction=='load' and edge.get('input_boundary'):
+                lines.append('层次入口以目标器件的输入反查为依据。')
                 continue
             if direction=='load' and self.graph['summary'].get('extraction_mode')=='target':
                 lines.append('本次为目标结构提取，未执行输出全负载核验。')
@@ -2117,8 +2143,8 @@ class ClockTreeApp(tk.Tk):
     def open_branch(self,node,source_model=None):
         model=source_model or self.diagram.model
         if model is None:return
-        if node.get('kind')=='l1_input':
-            self.set_status('这是 L1 层次输入口；双击其下游真实器件可打开对应分支。');return
+        if node.get('kind') in INPUT_SOURCE_KINDS:
+            self.set_status('双击该边界的下游器件，可打开对应分支。');return
         if node.get('aggregate'):
             self.set_status('请先展开 RTL 聚合框，再双击具体器件。');return
         from .branch_view import BranchDialog

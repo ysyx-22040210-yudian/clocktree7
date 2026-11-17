@@ -5,6 +5,7 @@ import unicodedata
 from xml.sax.saxutils import escape, quoteattr
 from .profiles import GATE_KINDS, profile, rule_ports, output_ports, selectable_kinds
 from .auxiliary import aux_entries, aux_height, aux_problem, DIRECTIONS
+from .l1_inputs import INPUT_SOURCE_KINDS, source_title
 
 
 DEVICE_TYPES = {
@@ -26,17 +27,22 @@ DIV_SOURCE_STYLES = {
     1: {'short': 'DIV · 源 1', 'color': '#bb9bff', 'fill': '#302847'},
     2: {'short': 'DIV · 源 2', 'color': '#69deff', 'fill': '#163a49'},
 }
+INPUT_SOURCE_STYLES = {
+    'l1_input': {'short': 'L1 · INPUT', 'color': '#80ceea', 'fill': '#193c4d'},
+    'boundary_input': {'short': '层次边界', 'color': '#7ee1c6', 'fill': '#1c4340'},
+}
 UNTYPED_STYLE = {'color': '#8199b9', 'fill': '#1c2d44', 'short': '未分类'}
 
 
 def device_style(kind, div_level=None):
     if kind == 'div' and div_level in DIV_SOURCE_STYLES:
         return DIV_SOURCE_STYLES[div_level]
-    return DEVICE_TYPES.get(kind, UNTYPED_STYLE)
+    return DEVICE_TYPES.get(kind) or INPUT_SOURCE_STYLES.get(kind, UNTYPED_STYLE)
 
 
 def kind_label(kind, tree='clock'):
     if kind == 'l1_input':return 'L1 层次输入口'
+    if kind == 'boundary_input':return '层次边界'
     if kind == 'mux' and tree == 'reset':
         return 'MUX'
     return DEVICE_TYPES[kind]['label'] if kind in DEVICE_TYPES else '未分类'
@@ -262,16 +268,17 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         line([(width-18, output[1]), output], fill='#8eabc8')
         text(22, output[1], '输入', size=9)
         text(width-22, output[1], '输出', size=9, anchor='e')
-    elif kind == 'l1_input':
-        color='#80ceea'
-        text(width-11,16,'L1 · INPUT',size=10,fill=color,bold=True,anchor='e')
+    elif kind in INPUT_SOURCE_KINDS:
+        entry = node['input_entry']
+        label = source_title(node) if kind == 'boundary_input' else info['short']
+        text(width-11,16,label,size=10,fill=color,bold=True,anchor='e')
         cy=output[1]
         add('polygon',points=[(22,cy-24),(width-72,cy-24),(width-48,cy),(width-72,cy+24),(22,cy+24)],
-            fill='#193c4d',stroke=color,width=1.5)
-        text(34,cy,node['output'],size=13,fill=color,bold=True,max_width=width-110,tooltip=node['l1_entry']['signal'])
+            fill=info['fill'],stroke=color,width=1.5)
+        text(34,cy,node['output'],size=13,fill=color,bold=True,max_width=width-110,tooltip=entry['signal'])
         line([(width-48,cy),output],fill=color)
-        text(12,height-16,'展开目标层次查看各口' if node['l1_entry'].get('aggregate_count') else node['l1_entry']['signal'],
-            size=10,fill='#9fcfc3',max_width=width-24,tooltip=node['l1_entry']['signal'])
+        text(12,height-16,'展开目标层次查看各口' if entry.get('aggregate_count') else entry['signal'],
+            size=10,fill='#9fcfc3',max_width=width-24,tooltip=entry['signal'])
     elif kind == 'wire':
         text(width-11, 16, '穿线 · L{}'.format(node.get('layer','?')), size=10, fill=color, bold=True, anchor='e')
         left, right = width*.35, width*.65

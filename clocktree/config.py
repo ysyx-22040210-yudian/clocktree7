@@ -47,6 +47,17 @@ def hierarchy_contains(path, root):
     return not root or path == root or path.startswith(root + '.') or path.startswith(root + '[')
 
 
+def configured_input_boundaries(config):
+    """Map each selected physical RTL scope to its first selected rule layer."""
+    trace_root = config.get('trace_scope', '').strip().rstrip('./') or config.get('design', {}).get('top', '')
+    scopes = {}
+    for layer in config.get('layers', []):
+        if layer.get('input_boundary'):
+            scope = layer['hierarchy'].strip().rstrip('./') or trace_root
+            scopes.setdefault(scope, layer['index'])
+    return scopes
+
+
 def div_source_scopes(config, allow_incomplete=False):
     """Two user-configured RTL scopes, in the order shown in the editor."""
     values = config.get('div_source_scopes', [])
@@ -71,6 +82,8 @@ def extraction_settings(config):
     result.pop('div_source_scopes', None)
     for layer in result.get('layers', []):
         layer.pop('reset_signal', None)
+        if not layer.get('input_boundary'):
+            layer.pop('input_boundary', None)
         for rule in layer.get('modules', []):
             for field in ('input_regex', 'output_regex', 'port_selection'):
                 rule.pop(field, None)
@@ -95,6 +108,8 @@ def validate_config(config, allow_incomplete=False):
     for layer in layers:
         if not isinstance(layer.get("hierarchy"), str):
             raise ValueError("Each layer needs an RTL hierarchy string")
+        if type(layer.get('input_boundary', False)) is not bool:
+            raise ValueError('L{} 的 input_boundary 必须为 true 或 false'.format(layer['index']))
         validate_reset_signal(layer.get('reset_signal',''),allow_incomplete)
         for rule in layer.get("modules", []):
             if not rule.get("module") or not isinstance(rule["module"], str):
@@ -152,6 +167,11 @@ def validate_config(config, allow_incomplete=False):
             scope = layer['hierarchy'].strip().rstrip('./')
             if layer.get('modules') and scope and not hierarchy_contains(scope, trace_scope):
                 raise ValueError('L{} hierarchy must be inside trace_scope {}; leave it blank to use that root'.format(layer['index'], trace_scope))
+    if not allow_incomplete:
+        trace_root = trace_scope or design['top']
+        for scope, layer in configured_input_boundaries(config).items():
+            if any(c in scope for c in '*?') or not hierarchy_contains(scope, trace_root):
+                raise ValueError('L{} 的输入边界必须是追踪根 {} 内的实际 RTL 模块层次'.format(layer, trace_root))
     return config
 
 
@@ -162,9 +182,13 @@ def tcl_string(value):
 
 def write_tcl_config(config, path, output):
     first = next((layer for layer in config['layers'] if layer['index'] == 1), {})
-    l1 = first.get('hierarchy', '').strip().rstrip('./') or config.get('trace_scope', '').strip().rstrip('./') or config['design'].get('top', '')
+    boundaries = configured_input_boundaries(config)
+    l1 = '' if boundaries else (first.get('hierarchy', '').strip().rstrip('./') or
+                                config.get('trace_scope', '').strip().rstrip('./') or config['design'].get('top', ''))
     lines = ["set ct_rules {}", 'set ct_tree_type ' + tcl_string(tree_type(config)),
              'set ct_l1_scope ' + tcl_string(l1),
+             'set ct_input_boundaries [dict create ' + ' '.join('{} {}'.format(tcl_string(scope), index)
+                                                               for scope, index in boundaries.items()) + ']',
              'set ct_extraction_mode ' + tcl_string(config.get('extraction_mode', 'target')),
              'set ct_port_trace_timeout_s ' + str(config.get('port_trace_timeout_s', 0)),
              'set ct_trace_scope ' + tcl_string(config.get('trace_scope', '').strip().rstrip('./'))]

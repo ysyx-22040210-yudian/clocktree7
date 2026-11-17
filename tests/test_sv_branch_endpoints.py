@@ -5,6 +5,7 @@ import json
 import pytest
 
 from clocktree.register_trace import create_database
+from clocktree.graph import build_graph
 from clocktree.storage import write_graph,ResultStore,index_graph
 from clocktree.sv_templates import prepare,architecture_signature,identity
 
@@ -43,6 +44,58 @@ def registers(tmp_path,g,rows):
         db.execute('INSERT INTO results VALUES(NULL,?,?,?,?,?,?,?,?,?)',(i,pin,signal,'D' if role=='sw_done' else 'Q',
             'direct','register','',None,'{}'))
     db.commit();db.close();return path
+
+
+@pytest.mark.parametrize('mode', ['target', 'full'])
+@pytest.mark.parametrize('legacy', [False, True])
+def test_subsystem_timeout_keeps_earlier_input_and_reports_other_lanes(tmp_path, mode, legacy):
+    sink = node('sink', kind='subsystem', inputs=('clk[2]', 'clk[1]', 'clk[0]'), outputs=())
+    config = graph([])['config']
+    events = [{'event':'metadata', 'extraction_mode':mode}, dict(sink, event='instance', path=sink['id'])]
+    events.append({'event':'instance_trace_timeout', 'detail':{'instance':sink['id'], 'pin':'clk[1]', 'direction':'driver'}})
+    for pin, status in zip(sink['inputs'], ('input_boundary', 'trace_timeout', 'trace_skipped_timeout')):
+        events.append({'event':'trace','instance':sink['id'],'pin':pin,'direction':'driver',
+                       'results':[{'status':status,'endpoint':'chip.clk'}]})
+    result = build_graph(events+[{'event':'complete'}], config)
+    assert not result['summary']['connectivity_complete']
+    if legacy:
+        result['nodes'][0]['terminal'] = False
+    else:
+        assert result['nodes'][0]['terminal']
+    plan = prepare(result, None, tmp_path/'plan', False)
+    rows = {b['pin']:plan.resolve(b, {'without_mux':'$var_clkip'}) for b in plan.branches()[1]}
+    assert rows['clk[2]']['ready'], rows['clk[2]']['issues']
+    assert any('端口超时' in issue for issue in rows['clk[1]']['issues'])
+    assert any('随实例跳过' in issue for issue in rows['clk[0]']['issues'])
+
+
+@pytest.mark.parametrize('broken', ['unproven_internal', 'unresolved_load', 'missing_load', 'unknown_load_target'])
+def test_wire_full_mode_terminal_is_proven_per_output(tmp_path, broken):
+    wire = node('w', kind='wire', inputs=('a', 'b'), outputs=('x', 'y'))
+    config = graph([])['config']
+    events = [dict(wire, event='instance', path=wire['id'])]
+
+    def trace(port, direction, **result):
+        events.append({'event':'trace','instance':wire['id'],'pin':port,'direction':direction,'results':[result]})
+
+    for input_pin, output_pin in zip(wire['inputs'], wire['outputs']):
+        trace(input_pin, 'driver', status='input_boundary', endpoint='chip.'+input_pin)
+        if output_pin=='y' and broken=='unproven_internal':
+            trace(output_pin, 'internal', status='unknown_cell')
+        else:
+            trace(output_pin, 'internal', status='target', instance=wire['id'], pin=input_pin)
+        if output_pin=='y' and broken=='unknown_load_target':
+            trace(output_pin, 'load', status='target', instance='chip.missing', pin='i')
+        elif output_pin!='y' or broken!='missing_load':
+            trace(output_pin, 'load', status='trace_limit' if output_pin=='y' and broken=='unresolved_load' else 'no_load')
+    result = build_graph(events+[{'event':'complete'}], config)
+    assert not result['summary']['connectivity_complete']
+    assert result['nodes'][0]['terminal_outputs'] == ['x']
+    plan = prepare(result, None, tmp_path/'plan', False)
+    count, rows = plan.branches()
+    assert count==1 and rows[0]['pin']=='x'
+    ready = plan.resolve(rows[0], {'without_mux':'$var_pll0 $var_clkip'})
+    assert ready['ready'] and ready['values']=={'var_pll0':'chip.w_a','var_clkip':'chip.w_x'}, ready
 
 
 @pytest.mark.parametrize('kind',['gate','div','occ','mux'])

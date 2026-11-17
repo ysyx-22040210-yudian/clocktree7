@@ -54,6 +54,7 @@ class CandidateDialog(tk.Toplevel):
 class SVDialog(tk.Toplevel):
     def __init__(self,app):
         graph=graph_for_templates(app.graph,app.get_config(validate=False))
+        graph['sv_source_revision'] = app._graph_token
         super().__init__(app);self.app=app;self.graph=graph;self.plan=None;self.directory=None;self.process=None;self.stream=None;self.offset=0;self.closed=False;self.rows={}
         saved=app.ui_state.get(self.graph['config']);self.selections=dict(saved.get('sv_branch_selections',{}));self.export_result=None
         self.export_plan_path=saved.get('sv_export_plan_path','')
@@ -128,7 +129,7 @@ class SVDialog(tk.Toplevel):
                 plan=SVPlan(previous)
                 if plan.source().get('architecture_signature')==architecture_signature(self.graph) and self.plan_matches_registers(plan):
                     self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh();self.export_button.configure(state='normal')
-                else:self.status.set('架构、复位配置或寄存器结果已更新，请重新分析全部分支；模板和候选选择已保留。')
+                else:self.status.set('当前分支计划需要更新，请重新分析全部分支。')
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
         if self.plan and self.export_plan_path==str(self.plan.path) and saved.get('sv_export_signature')==architecture_signature(self.graph) and saved.get('sv_export_result'):
             self.show_export_result(saved['sv_export_result'],select=False)
@@ -259,6 +260,7 @@ class SVDialog(tk.Toplevel):
             text += '\n\nDIV 来源\n' + '\n'.join('{} · {} {}'.format(
                 source['signal'], div_source_label(source), source.get('scope', source.get('hierarchy', ''))) for source in sources)
         if result.get('l1_input'):text+='\n\nL1 直达来源：'+', '.join(result['l1_input']['signals'])+'\n采用无选择器模板；$var_clkip 取末端输出，无输出器件取对应输入。'
+        if result.get('input_boundary'):text+='\n\n层次边界：'+', '.join(result['input_boundary']['signals'])
         reset=result.get('reset',{})
         if 'var_rst' in result['values']:
             for origin in reset.get('origins',[reset]):

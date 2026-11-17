@@ -165,6 +165,54 @@ proc ct_scope_boundary {path endpoint direction} {
     return [ct_result scope_boundary $path scope [ct_js $ct_trace_scope] endpoint [ct_js $endpoint] \
         boundary_role [ct_js [expr {$direction eq "load" ? "output" : "input"}]]]
 }
+proc ct_configured_input_scope {scope} {
+    return [expr {[info exists ::ct_input_boundaries] && [dict exists $::ct_input_boundaries $scope]}]
+}
+proc ct_tracked_input_scope {scope} {
+    return [expr {[ct_configured_input_scope $scope] || ($scope ne "" && [info exists ::ct_l1_scope] && $scope eq $::ct_l1_scope)}]
+}
+proc ct_boundary_fields {scope formal {direction driver} {field boundary_port}} {
+    set fields [list endpoint [ct_js "$scope.$formal"] scope [ct_js $scope] \
+        boundary_role [ct_js [expr {$direction eq "load" ? "output" : "input"}]]]
+    if {[ct_configured_input_scope $scope]} {
+        return [concat $fields [list boundary_layer [dict get $::ct_input_boundaries $scope] $field [ct_js $formal]]]
+    }
+    return [concat $fields [list l1_scope [ct_js $scope] l1_port [ct_js $formal] l1_verified true]]
+}
+proc ct_input_status {scope} {
+    if {[ct_configured_input_scope $scope]} {return layer_input_boundary}
+    return [expr {$::ct_trace_scope ne "" && $::ct_trace_scope eq $scope ? "scope_boundary" : "input_boundary"}]
+}
+proc ct_stop_at_input {scope root} {
+    return [expr {$scope eq $root || [ct_configured_input_scope $scope]}]
+}
+proc ct_inside_input_side {scope name previous_type previous_name} {
+    # A netlist formal and its parent-side InstPort can share a name.
+    # Arrival from the latter is an alias of the load, not an incoming driver.
+    return [expr {[ct_scope_match $previous_name $scope] &&
+        !([string match *InstPort $previous_type] && $previous_name eq $name)}]
+}
+proc ct_nl_wire_boundary {hdl} {
+    if {[ct_prop $hdl npiNlType] ni {npiNlDeclNet npiNlPseudoNet npiNlSliceNet}} {return {}}
+    set scope [ct_inst_prop $hdl npiNlFullName]
+    if {![ct_configured_input_scope $scope] || [npi_nl_get -property npiNlSize -object $hdl] != 1} {return {}}
+    set name [ct_prop $hdl npiNlFullName]
+    if {[regexp {^(.*?)(?:\[-?[0-9]+:-?[0-9]+\])?#\[(-?[0-9]+)\]$} $name -> base bit]} {
+        set name "$base\[$bit\]"
+    } elseif {[regexp {^(.*)\[-?[0-9]+:-?[0-9]+\]$} $name -> base]} {
+        set bit [npi_nl_get -property npiNlLeft -object $hdl]
+        if {![string is integer -strict $bit]} {return {}}
+        set name "$base\[$bit\]"
+    }
+    if {[dict exists $::ct_nl_wire_cache $name]} {return [dict get $::ct_nl_wire_cache $name]}
+    set signal [npi_handle_by_name -name $name -scope ""]
+    set entry [ct_l_wire_boundary $signal]
+    if {$signal ne ""} {npi_release_handle -object $signal}
+    if {[lindex $entry 0] ne $scope} {set entry {}}
+    if {[dict size $::ct_nl_wire_cache] >= 8192} {set ::ct_nl_wire_cache [dict create]}
+    dict set ::ct_nl_wire_cache $name $entry
+    return $entry
+}
 proc ct_nl_interface_member {hdl} {
     # Netlist ports flatten an interface to an inout vector; its ordinal
     # bit is not the declared SystemVerilog member index.
@@ -306,9 +354,17 @@ proc ct_trace_note {phase hdl api {force 0}} {
 proc ct_schedule {hdl path last_inside} {
     # Called only by ct_expand: transfer one acquired handle to the FIFO or
     # release a duplicate immediately. Never accumulate a second fanout list.
-    upvar 1 queue queue tail tail scheduled scheduled
+    upvar 1 queue queue tail tail scheduled scheduled type previous_type direction direction has_input_boundaries has_input_boundaries
     global ct_walk_stats
     set state [ct_state $hdl]
+    if {$has_input_boundaries && $direction eq "driver" && [lindex $state 0] in {npiNlPort npiNlPseudoPort}} {
+        set scope [ct_inst_prop $hdl npiNlFullName]
+        if {[ct_configured_input_scope $scope] &&
+                ![ct_inside_input_side $scope [lindex $state 1] $previous_type $last_inside]} {
+            # An outside alias must not consume the visit from the inside.
+            lappend state outside
+        }
+    }
     if {[dict exists $scheduled $state]} {
         dict incr ct_walk_stats duplicates
         if {[string match *Port [lindex $state 0]] && [ct_prop $hdl npiNlDirection] ne "npiNlInout"} {
@@ -324,13 +380,13 @@ proc ct_schedule {hdl path last_inside} {
         return
     }
     dict set scheduled $state 1
-    dict set queue $tail [list $hdl $path 0 $last_inside]
+    dict set queue $tail [list $hdl $path 0 $last_inside $previous_type]
     incr tail
     dict incr ct_walk_stats discovered
     dict incr ct_walk_stats pending
 }
 proc ct_expand {hdl direction path last_inside} {
-    upvar 1 queue queue tail tail scheduled scheduled
+    upvar 1 queue queue tail tail scheduled scheduled has_input_boundaries has_input_boundaries
     global ct_walk_stats ct_walk_noted_net
     set type [ct_prop $hdl npiNlType]
     if {$direction eq "driver"} {
@@ -441,16 +497,18 @@ proc ct_walk {seed direction owner pin trace_id} {
     ct_emit [ct_object event [ct_js trace_begin] trace_id $trace_id instance [ct_js $owner] pin [ct_js $pin] direction [ct_js $direction]]
     # Dictionary FIFO: remove each entry as soon as it is processed. Entries
     # carry only a parent path ID; branch prefixes are written exactly once.
-    set queue [dict create 0 [list $seed 0 1 "$owner.$pin"]]
+    set queue [dict create 0 [list $seed 0 1 "$owner.$pin" ""]]
     set tail 1
     set cursor 0
     set path_count 0
     set scheduled [dict create [ct_state $seed] 1]
+    set trace_root [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]
+    set has_input_boundaries [expr {[info exists ::ct_input_boundaries] && [dict size $::ct_input_boundaries] > 0}]
     set owned ""
     while {$cursor < $tail} {
         ct_release $owned
         set owned ""
-        lassign [dict get $queue $cursor] hdl path is_seed last_inside
+        lassign [dict get $queue $cursor] hdl path is_seed last_inside previous_type
         dict unset queue $cursor
         if {!$is_seed} {set owned $hdl}
         incr cursor
@@ -469,6 +527,7 @@ proc ct_walk {seed direction owner pin trace_id} {
         ct_emit [ct_object event [ct_js path_step] trace_id $trace_id path_id $path parent_id $parent evidence [ct_evidence $hdl]]
         set type [ct_prop $hdl npiNlType]
         set current_name [ct_prop $hdl npiNlFullName]
+        set previous_name $last_inside
         if {$current_name ne ""} {set last_inside $current_name}
         if {[string match *Port $type] && [ct_prop $hdl npiNlDirection] eq "npiNlInout"} {
             set member [ct_nl_interface_member $hdl]
@@ -477,17 +536,20 @@ proc ct_walk {seed direction owner pin trace_id} {
                 set member_direction [dict get $member direction]
                 set formal [dict get $member formal]
                 set member_name "$member_owner.$formal"
-                set trace_root [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]
-                if {$direction eq "driver" && [ct_l_interface_input $member_direction] && $type in {npiNlPort npiNlPseudoPort}} {
+                if {[ct_l_interface_input $member_direction] &&
+                        (($direction eq "driver" && $type in {npiNlPort npiNlPseudoPort}) ||
+                         ($direction eq "load" && [string match *InstPort $type] && [ct_configured_input_scope $member_owner]))} {
+                    if {$direction eq "driver" && [ct_configured_input_scope $member_owner] &&
+                            ![ct_inside_input_side $member_owner $current_name $previous_type $previous_name]} {continue}
                     set previous $path
                     set path [incr path_count]
                     ct_emit [ct_object event [ct_js path_step] trace_id $trace_id path_id $path parent_id $previous \
                         evidence [ct_object type [ct_js [dict get $member evidence_type]] name [ct_js $member_name] net [ct_js ""]]]
                     set last_inside $member_name
-                    if {$member_owner eq $::ct_l1_scope} {
-                        set fields [ct_l1_fields $formal]
-                        if {$member_owner eq $trace_root} {ct_terminal [ct_result [ct_l1_status] $path {*}$fields]; continue}
-                        ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result [ct_result [ct_l1_status] $path {*}$fields]]
+                    if {[ct_tracked_input_scope $member_owner]} {
+                        set result [ct_result [ct_input_status $member_owner] $path {*}[ct_boundary_fields $member_owner $formal $direction]]
+                        if {[ct_stop_at_input $member_owner $trace_root]} {ct_terminal $result; continue}
+                        ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result $result]
                     } elseif {$ct_trace_scope ne "" && $member_owner eq $trace_root} {
                         ct_terminal [ct_scope_boundary $path $member_name $direction]; continue
                     }
@@ -502,28 +564,36 @@ proc ct_walk {seed direction owner pin trace_id} {
                 }
             }
         }
-        if {$direction eq "driver" && [info exists ::ct_l1_scope] && [string match *Port $type] &&
-                [ct_inst_prop $hdl npiNlFullName] eq $::ct_l1_scope && [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
-            set formal [ct_prop $hdl npiNlName]
-            if {[regexp {^(.*)\[-?[0-9]+:-?[0-9]+\]#\[(-?[0-9]+)\]$} $formal -> base bit]} {set formal "$base\[$bit\]"}
-            set trace_root [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]
-            set stop_at_l1 [expr {$trace_root eq $::ct_l1_scope}]
-            if {![dict exists $::ct_l_l1_inputs "$::ct_l1_scope.$formal"]} {
-                if {$stop_at_l1} {
-                    ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $current_name] message [ct_js "L1 formal bit could not be confirmed"]]
-                    continue
+        if {($direction eq "driver" || $has_input_boundaries) && [string match *Port $type] &&
+                [ct_prop $hdl npiNlDirection] eq "npiNlInput"} {
+            set input_scope [ct_inst_prop $hdl npiNlFullName]
+            set configured [ct_configured_input_scope $input_scope]
+            set instance_port [string match *InstPort $type]
+            if {($direction eq "driver" && [ct_tracked_input_scope $input_scope] && (!$configured || !$instance_port || $is_seed)) ||
+                    ($direction eq "load" && $configured && $instance_port)} {
+                if {$direction eq "driver" && $configured && !$is_seed &&
+                        ![ct_inside_input_side $input_scope $current_name $previous_type $previous_name]} {continue}
+                set formal [ct_prop $hdl npiNlName]
+                if {[regexp {^(.*)\[-?[0-9]+:-?[0-9]+\]#\[(-?[0-9]+)\]$} $formal -> base bit]} {set formal "$base\[$bit\]"}
+                set stop [ct_stop_at_input $input_scope $trace_root]
+                if {![dict exists $::ct_l_formal_inputs "$input_scope.$formal"]} {
+                    if {$stop} {
+                        ct_terminal [ct_result unsupported_expression $path endpoint [ct_js $current_name] \
+                            message [ct_js "Boundary input bit could not be confirmed"]]
+                        continue
+                    }
+                } else {
+                    set formal [lindex [dict get $::ct_l_formal_inputs "$input_scope.$formal"] 1]
+                    set fields [ct_boundary_fields $input_scope $formal $direction]
+                    set result [ct_result [ct_input_status $input_scope] $path {*}$fields]
+                    if {$stop} {ct_terminal $result; continue}
+                    # Check the formal binding for a legacy open L1 input.
+                    if {[dict exists $::ct_l1_open_inputs $formal]} {
+                        ct_terminal [ct_result undriven $path endpoint [dict get $fields endpoint]]
+                        continue
+                    }
+                    ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result $result]
                 }
-            } else {
-                set formal [dict get $::ct_l_l1_inputs "$::ct_l1_scope.$formal"]
-                set fields [ct_l1_fields $formal]
-                if {$stop_at_l1} {ct_terminal [ct_result [ct_l1_status] $path {*}$fields]; continue}
-                # The actual of a pseudo port can be a concat or slice, so
-                # use its formal's language-model binding to check for open.
-                if {[dict exists $::ct_l1_open_inputs $formal]} {
-                    ct_terminal [ct_result undriven $path endpoint [dict get $fields endpoint]]
-                    continue
-                }
-                ct_emit [ct_object event [ct_js l1_entry] trace_id $trace_id result [ct_result [ct_l1_status] $path {*}$fields]]
             }
         }
         # Root interface ports are the strict boundary, including selected
@@ -534,6 +604,25 @@ proc ct_walk {seed direction owner pin trace_id} {
             if {($direction eq "driver" && $port_direction eq "npiNlInput") ||
                     ($direction eq "load" && $port_direction eq "npiNlOutput")} {
                 ct_terminal [ct_scope_boundary $path $last_inside $direction]
+                continue
+            }
+        }
+        if {$has_input_boundaries} {
+            # The one-step driver can jump over an instance port's actual net.
+            set net ""
+            if {[string match *InstPort $type]} {
+                set net [npi_nl_handle -type npiNlNet -refHandle $hdl]
+            }
+            set candidate [expr {$net ne "" ? $net : $hdl}]
+            lassign [ct_nl_wire_boundary $candidate] wire_scope wire
+            if {$wire_scope ne "" && $net ne ""} {
+                set previous $path
+                set path [incr path_count]
+                ct_emit [ct_object event [ct_js path_step] trace_id $trace_id path_id $path parent_id $previous evidence [ct_evidence $net]]
+            }
+            ct_release $net
+            if {$wire_scope ne ""} {
+                ct_terminal [ct_result layer_wire_boundary $path {*}[ct_boundary_fields $wire_scope $wire $direction boundary_wire]]
                 continue
             }
         }
@@ -907,7 +996,7 @@ proc ct_main {} {
     global env ct_output ct_rules ct_stream ct_selected ct_instances ct_elab ct_filelist ct_top ct_max_steps ct_owner_paths ct_tree_type ct_trace_scope ct_pending
     global ct_context ct_target_file ct_target_stream ct_resume_completed_queries ct_resume_completed_traces ct_resume_instances ct_resume_stage ct_pins_to_trace ct_pin_count
     global ct_resume_completed_modules ct_resume_last_module ct_completed_modules ct_last_module ct_saved_module ct_total_modules
-    global ct_extraction_mode ct_port_trace_timeout_s ct_timeout_instances ct_l1_scope
+    global ct_extraction_mode ct_port_trace_timeout_s ct_timeout_instances ct_l1_scope ct_input_boundaries
     ct_journal begin worker {} "read worker configuration"
     source $env(CT7_CONFIG)
     set ct_context [info exists env(CT7_RESUME)]
@@ -925,6 +1014,8 @@ proc ct_main {} {
     if {![info exists ct_tree_type]} {set ct_tree_type clock}
     if {![info exists ct_extraction_mode]} {set ct_extraction_mode full}
     if {![info exists ct_trace_scope]} {set ct_trace_scope ""}
+    if {![info exists ct_l1_scope]} {set ct_l1_scope ""}
+    if {![info exists ct_input_boundaries]} {set ct_input_boundaries [dict create]}
     if {![info exists ct_port_trace_timeout_s]} {set ct_port_trace_timeout_s 0}
     if {![info exists ct_timeout_instances]} {set ct_timeout_instances [dict create]}
     if {$ct_port_trace_timeout_s > 0 && !$ct_context} {error "Port trace deadlines require the external extraction controller"}
@@ -976,7 +1067,7 @@ proc ct_main {} {
     puts "CT7_IMPORT_END"
     flush stdout
     ct_validate_compiler_log verdiLog/compiler.log
-    ct_l_index_l1
+    ct_l_index_input_ports
     set top_hdl [npi_handle_by_name -name $ct_top -scope ""]
     if {$top_hdl eq ""} {error "Requested top was not elaborated: $ct_top"}
     if {$ct_trace_scope ne "" && [npi_handle_by_name -name $ct_trace_scope -scope ""] eq ""} {

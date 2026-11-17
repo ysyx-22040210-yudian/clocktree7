@@ -91,7 +91,9 @@ class SVCodeEditor(tk.Frame):
         self.text.bind('<KeyRelease>',self._cursor);self.text.bind('<ButtonRelease-1>',self._cursor)
         self.text.bind('<Configure>',self._queue_gutter)
         self.text.bind('<Tab>',self.indent);self.text.bind('<Shift-Tab>',lambda e:self.indent(e,True))
-        self.text.bind('<ISO_Left_Tab>',lambda e:self.indent(e,True));self.text.bind('<Return>',self.newline)
+        if self.tk.call('tk','windowingsystem') == 'x11':
+            self.text.bind('<ISO_Left_Tab>',lambda e:self.indent(e,True))
+        self.text.bind('<Return>',self.newline)
         self.text.bind('<Control-a>',self.select_all);self.text.bind('<Control-z>',self.undo)
         self.text.bind('<Control-y>',self.redo);self.text.bind('<Control-Shift-Z>',self.redo)
         self.text.bind('<Control-f>',self.show_find);self.text.bind('<F3>',self.find_next)

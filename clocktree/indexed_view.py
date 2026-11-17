@@ -310,7 +310,7 @@ class IndexedGraphView(GraphView):
             'SELECT data FROM nodes WHERE instr(lower(id),?)>0 OR instr(lower(module),?)>0 ORDER BY seq', (query, query), decode=True)
 
     def actual_edges(self, edge):
-        if edge.get('l1_boundary'):return [edge]
+        if edge.get('input_boundary'):return [edge]
         if 'members' not in edge:
             return [self.original_edges[edge['id']]]
         members = edge['members']

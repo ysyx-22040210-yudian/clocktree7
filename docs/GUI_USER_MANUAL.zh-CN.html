@@ -57,6 +57,7 @@
 <li><a href="#wire-device">多输入、多输出穿线器件</a></li>
 <li><a href="#l1-direct-input">L1 层次输入直达分支与 SV 默认值</a></li>
 <li><a href="#device-ports-and-div-sources">正则添加端口、器件细分和 DIV 寄存器来源</a></li>
+<li><a href="#layer-input-boundaries">选择 RTL 层次边界</a></li>
 </ol>
 <p><a id="scope"></a></p>
 <h2 id="1">1. 用途、术语与结果范围</h2>
@@ -1271,7 +1272,7 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 </tr>
 <tr>
 <td>每层 RTL 父层路径</td>
-<td>只在该路径下扫描直接例化的 module，不递归查找子层次，也不匹配根实例本身。不是端口追踪边界。</td>
+<td>在该路径下查找直接例化的 module。启用该层的边界选项后，输入反查也会在该层的输入口或本层声明的 wire 停止。</td>
 </tr>
 </tbody>
 </table>
@@ -2252,7 +2253,10 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <li>非直接映射（反相、组合依赖或未固定条件）需人工核对并明确选择。选择表示用户接受该端点供模板使用，工具不会自动把反相或逻辑运算加到寄存器路径上。</li>
 <li>模板只对实际引用的变量要求映射；未引用的可选辅助变量不会因缺位单独阻止生成。未知 <code>$var_xxx</code>、空模板、缺失映射、旧端口规则不一致等在分支预览中给出原因。</li>
 <li>工作区状态和问题表显示关注输入的无驱动情况，包括实例留空、上游层次端口留空和无驱动网络。配置中填入不存在的端口仍会提示「缺失端口」。SV 预览会标出经过无驱动、多驱动或多个 L1 来源输入的分支并跳过，其他已核对的分支仍可生成。穿线按实际通道判断，问题只影响使用相关输入的分支。</li>
-<li>如果当前架构提取的连接完整性为假，则保守阻止生成，以免把截断路径误判为完整末端。先解决原树的超时、未解析等问题再分析。</li>
+<li>架构部分解析时，SV 按已确认的末端逐条核对实际经过的器件、端口和模板变量。问题只影响引用该变量或经过该端口的分支。可生成的分支会写入同一个 <code>.sv</code> 文件，跳过原因在分支预览及 <code>.sv.mapping.json</code> 中按实例和端口列出。映射文件的 <code>source.connectivity_complete</code> 记录整棵架构的覆盖状态。</li>
+<li>子系统输入按端口及 bit 评估。某个输入超时时，已有输入完成追踪的子系统会在同一预览中列出各输入的结果。就绪的分支可以生成，超时及随后跳过的输入会标明原因。全负载核验按输出通道确认穿线末端，需要该通道已有直接连线证据、完成负载追踪且未发现下游关注器件。在目标结构提取中，输入追踪存在缺口时，可能无法确认普通器件的末端。</li>
+<li>历史结果缺失精确连接信号时，生成器可向 elab 回查指定端口及 bit。回查沿用端口超时设置。失败的分支会显示原因，有完整映射的分支可以继续生成。</li>
+<li>打开旧结果时，点击 <strong>“分析全部分支”</strong> 更新生成计划。可定位的连接问题由相关分支单独报告。架构导入中断、枚举未完成或连接资料缺少可定位诊断时，预览会提示核对提取日志。</li>
 </ul>
 <p>DFT 假设来自<strong>寄存器任务的实际设置</strong>，不是导出阶段再次猜测；文件头及映射 JSON 一并记录。当前 SV 路径支持普通层次标识符、静态 bit/range 和已证明的拼接；无法安全表示的转义标识符或动态表达式会报告原因。</p>
 <h3 id="335">33.5 模板示例及导入格式</h3>
@@ -2547,4 +2551,16 @@ end
 <p>这两个来源编号独立于传播规则的 L1、L2。画布读取当前设计最新完成的寄存器追踪。一个 DIV 的 <code>div</code> 端口各 bit 均有明确的 Q 映射且同属一个来源时，器件标为 <strong>DIV · 源 1</strong>（紫色）或 <strong>DIV · 源 2</strong>（亮青蓝色）。混合来源、来源范围外、缺少完整映射或尚未追踪的器件显示为灰蓝色，对应图例的 <strong>DIV 未归类</strong>。主画布、分支窗口和 SVG 使用相同的颜色。</p>
 <p>填写或编辑这两条路径后，画布会用已有的逐位寄存器证据重新归类。可在 <strong>辅助口 → 寄存器</strong> 中运行追踪或打开历史追踪结果。修改后的路径随工作区保留。</p>
 <p>CSV 和寄存器证据 JSON 记录来源，SV 候选、代码预览以及引用 <code>$var_div</code> 的分支映射保留各 bit 的归属。<code>$var_div</code> 继续按实际位序替换为原寄存器信号表达式。多个候选或跨寄存器映射按原流程核对并确认。</p>
-<p><a class="figure" href="images/div-register-sources.png" target="_blank"><img alt="DIV 各 bit 的来源层次和未归属标记" src="images/div-register-sources.png" /></a></p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>
+<p><a class="figure" href="images/div-register-sources.png" target="_blank"><img alt="DIV 各 bit 的来源层次和未归属标记" src="images/div-register-sources.png" /></a></p>
+<p><a id="layer-input-boundaries"></a></p>
+<h2 id="37-rtl">37. 选择 RTL 层次边界</h2>
+<ol>
+<li>在 <strong>提取配置 → 传播规则</strong> 选择一层，例如 <strong>L2</strong>。</li>
+<li>在 <strong>RTL 父层路径</strong> 填写该层的模块例化路径，例如 <code>chip.u_crg</code>。该层只用于设边界时可以留空 module 列表。</li>
+<li>勾选 <strong>将此层的输入口和 wire 设为边界</strong>。层级按钮会变为 <strong>L2*</strong>。可切换到其他层继续勾选。</li>
+<li>重新提取。输入反查沿实际连线，在第一个匹配的输入口或 wire 停止。主画布和分支窗口显示 <strong>输入边界</strong> 或 <strong>wire 边界</strong>、层级及完整 RTL 信号。点击入口或连线可查看证据。</li>
+</ol>
+<p>例如选中 <code>chip.u_crg</code> 和 <code>chip.u_crg.u_domain</code>，如果器件输入先接到 <code>chip.u_crg.u_domain.clk_pre[2]</code>，且 <code>clk_pre</code> 是该模块直接声明的 wire，画布会标出这个位，下游分支从该位开始。同层两个器件通过这个 wire 相连时，它也会成为下游分支的起点。反查先遇到普通输入或 Interface 输入成员时，画布显示对应的输入边界。</p>
+<p>每个勾选项都对应配置 JSON 中该层的 <code>"input_boundary": true</code>。父层路径留空时取端口追踪根，追踪根留空时取设计顶层。所选层次必须是追踪根内已 elaboration 的实际模块。同一个 RTL 路径在多层重复勾选时只建一个边界，采用最早勾选的层级编号。时钟树和复位树的勾选各自保存，重新打开 GUI 会恢复。</p>
+<p><strong>端口追踪根层次</strong>限制整个分析的搜索范围。层级上的勾选定义范围内的入口。wire 按 elab 的声明所属层匹配。子层次的 wire 保留其实际归属，RTL 变量和表达式继续按常规追踪。全负载核验到达同一边界时记录为上游出口。目标结构提取按可见的关注器件连接计算末端。全部取消勾选时沿用既有 L1 输入识别。</p>
+<p>在 SV 生成中，配置边界上的真实输入信号可作为分支的时钟来源。复位仍取该分支首个真实器件所属层的配置。若两个不同入口共同驱动同一关注输入，问题表会列出来源。</p><footer>由 GUI_USER_MANUAL.zh-CN.md 生成。图片可点击以原始分辨率查看；此页面无需联网。</footer></main></body></html>

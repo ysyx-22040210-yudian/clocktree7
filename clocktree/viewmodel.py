@@ -249,7 +249,7 @@ class GraphView:
         return exact or [n for n in self.original.values() if query in n['id'].lower() or query in n['module'].lower()]
 
     def actual_edges(self, edge):
-        if edge.get('l1_boundary'):return [edge]
+        if edge.get('input_boundary'):return [edge]
         return [self.original_edges[k] for k in edge['members']] if 'members' in edge else [self.original_edges[edge['id']]]
 
     def path_edges(self, instance, direction, seed_pins=None):

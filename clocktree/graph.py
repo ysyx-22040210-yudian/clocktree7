@@ -5,12 +5,21 @@ import json
 import sys
 from .devices import resolve_kind
 from .profiles import profile, tree_type, output_ports
-from .config import hierarchy_contains
+from .config import configured_input_boundaries, hierarchy_contains
 
 
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression",
               "trace_timeout", "trace_skipped_timeout", "wire_connection_unresolved", "unselected_wire_input"}
-TOPOLOGY_ERRORS = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "multiple_l1_inputs", "layer_conflict"}
+LAYER_BOUNDARY_FIELDS = {'layer_input_boundary': 'boundary_port', 'layer_wire_boundary': 'boundary_wire'}
+SCOPE_BOUNDARIES = {'scope_boundary'}.union(LAYER_BOUNDARY_FIELDS)
+TOPOLOGY_ERRORS = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "multiple_l1_inputs",
+                   "multiple_layer_inputs", "layer_conflict"}
+
+
+def has_traced_subsystem_input(node):
+    """Keep selected subsystem endpoints that completed before another pin timed out."""
+    statuses = node.get('port_trace_status', {})
+    return node.get('kind') == 'subsystem' and any(statuses.get(pin) == 'completed' for pin in node['inputs'])
 
 
 def build_graph(events, config, evidence_store=None):
@@ -23,7 +32,8 @@ def build_graph(events, config, evidence_store=None):
     trace_index = 0
     output_checks = {}
     timeout_instances = {}
-    l1_traces = []
+    input_traces = []
+    selected_boundaries = configured_input_boundaries(config)
 
     def consume(trace, result):
         if trace['direction'] == 'internal':
@@ -41,6 +51,12 @@ def build_graph(events, config, evidence_store=None):
                 group['examples'].append(result.get('endpoint', ''))
             return
         result = dict(result)
+        field = LAYER_BOUNDARY_FIELDS.get(result['status'])
+        if field:
+            scope, layer, signal = (result.get(key) for key in ('scope', 'boundary_layer', field))
+            if (not isinstance(scope, str) or not isinstance(signal, str) or not signal or type(layer) is not int or
+                    selected_boundaries.get(scope) != layer or result.get('endpoint') != scope+'.'+signal):
+                result.update(status='error', message='Boundary signal does not match the configured RTL scope')
         if 'path_id' in result:
             result['path'] = evidence_store.trace_path(trace['trace_id'], result.pop('path_id'))
         elif evidence_store is not None and 'path' in result:
@@ -70,7 +86,7 @@ def build_graph(events, config, evidence_store=None):
         trace_index += 1
         return trace
 
-    def confirm_l1_input(trace):
+    def confirm_input_boundary(trace):
         results = trace.get('driver_results', ())
         if not results:
             return
@@ -81,22 +97,24 @@ def build_graph(events, config, evidence_store=None):
                 return
             if status == 'target':
                 targets.add((result['instance'], result['pin']))
-            if result.get('l1_verified'):
+            if result.get('l1_verified') or status in LAYER_BOUNDARY_FIELDS:
                 entries[result['endpoint']] = result
-            if result.get('endpoint') and (status in ('input_boundary', 'scope_boundary', 'constant') or
+            if result.get('endpoint') and (status in ('input_boundary', 'constant') or status in SCOPE_BOUNDARIES or
                     status == 'unselected_port_boundary' and result.get('pin_direction') == 'npiNlOutput'):
                 known_sources.add(result['endpoint'])
         passed = trace.get('passed_l1_entries', ())
-        l1_signals = set(entries).union(entry['endpoint'] for entry in passed)
-        if not targets and len(l1_signals) > 1:
-            diagnostics.append({'code':'multiple_l1_inputs','instance':trace['instance'],'pin':trace['pin'],
-                                'signals':sorted(l1_signals), 'message':'输入追到多个 L1 端口，不能唯一生成直达分支'})
+        signals = set(entries).union(entry['endpoint'] for entry in passed)
+        if not targets and len(signals) > 1:
+            explicit = any(entry['status'] in LAYER_BOUNDARY_FIELDS for entry in entries.values())
+            diagnostics.append({'code':'multiple_layer_inputs' if explicit else 'multiple_l1_inputs',
+                                'instance':trace['instance'],'pin':trace['pin'], 'signals':sorted(signals),
+                                'message':'输入追到多个边界信号，不能唯一确认起点'})
             return
         if known_sources and len(targets) <= 1 and len(known_sources) + len(targets) > 1:
             diagnostics.append({'code':'multiple_drivers','instance':trace['instance'],'pin':trace['pin'],
                                 'drivers':[list(target) for target in sorted(targets)] + sorted(known_sources)})
             return
-        if targets or not l1_signals:
+        if targets or not signals:
             return
         prefixes = defaultdict(list)
         for entry in passed:
@@ -104,22 +122,29 @@ def build_graph(events, config, evidence_store=None):
             prefixes[entry['endpoint']].append(path)
             entries.setdefault(entry['endpoint'], dict(entry, path=path))
         signal, entry = next(iter(entries.items()))
-        # An upstream problem cannot invalidate the proven segment on this side
-        # of L1. Reject a competing path unless it crossed the same formal input.
+        # A legacy L1 observation may have results beyond the formal input.
+        # Require proof that every further path passed the same formal port.
         for result in results:
-            if result.get('l1_verified'):
+            if result.get('l1_verified') or result['status'] in LAYER_BOUNDARY_FIELDS:
                 continue
             path = result.get('path')
             if path is None or not any(path.starts_with(prefix) for prefix in prefixes[signal]):
                 return
-        l1_traces.append((trace['instance'], trace['pin'], {'scope':entry['l1_scope'],
-            'port':entry['l1_port'], 'signal':signal, 'status':'verified', 'evidence':entry.get('path', [])}))
+        field = LAYER_BOUNDARY_FIELDS.get(entry['status'])
+        source = {'scope':entry['scope' if field else 'l1_scope'],
+                  'port':entry[field or 'l1_port'],
+                  'signal':signal, 'status':'verified', 'evidence':entry.get('path', [])}
+        if field:
+            source['layer'] = entry['boundary_layer']
+            if field == 'boundary_wire':
+                source['source_kind'] = 'wire'
+        input_traces.append((trace['instance'], trace['pin'], source))
 
     def finish(trace):
         trace_keys.add((trace['instance'], trace['pin'], trace['direction']))
         boundaries.extend(trace['sinks'].values())
         if trace['direction'] == 'driver':
-            confirm_l1_input(trace)
+            confirm_input_boundary(trace)
         if trace['direction'] == 'internal':
             owner, output = trace['instance'], trace['pin']
             results = trace.get('internal', [])
@@ -181,7 +206,9 @@ def build_graph(events, config, evidence_store=None):
         elif kind == 'trace_end':
             trace = active.pop(item['trace_id'])
             if not trace['count'] or trace['count'] != item['result_count']:
-                diagnostics.append({'code': 'trace_protocol', 'trace_id': item['trace_id'], 'message': 'Result count mismatch'})
+                diagnostics.append({'code': 'trace_protocol', 'trace_id': item['trace_id'],
+                                    'instance': trace['instance'], 'pin': trace['pin'], 'direction': trace['direction'],
+                                    'message': 'Result count mismatch'})
             else:
                 finish(trace)
             evidence_store.end_trace(item['trace_id'])
@@ -220,12 +247,15 @@ def build_graph(events, config, evidence_store=None):
             node['kind'], node['kind_source'] = kind, 'configured'
     for trace in active.values():
         boundaries.extend(trace['sinks'].values())
-        diagnostics.append({'code': 'trace_protocol', 'trace_id': trace['trace_id'], 'message': 'Missing trace_end'})
+        diagnostics.append({'code': 'trace_protocol', 'trace_id': trace['trace_id'],
+                            'instance': trace['instance'], 'pin': trace['pin'], 'direction': trace['direction'],
+                            'message': 'Missing trace_end'})
     # Resolve topology after enumeration, allowing legacy interleaved events.
     for key in list(edges):
         edge = edges[key]
         if edge['source'] not in nodes or edge['target'] not in nodes:
-            diagnostics.append({'code': 'unknown_target', 'source': edge['source'], 'target': edge['target']})
+            diagnostics.append({'code': 'unknown_target', 'source': edge['source'], 'source_pin': edge['source_pin'],
+                                'target': edge['target'], 'target_pin': edge['target_pin']})
             del edges[key]
             continue
         edge['layer_delta'] = nodes[edge['target']]['layer'] - nodes[edge['source']]['layer']
@@ -243,8 +273,8 @@ def build_graph(events, config, evidence_store=None):
     sources = {}
     source_loads = defaultdict(set)
     for boundary in boundaries:
-        is_source_boundary = boundary["status"] == "input_boundary" or (
-            boundary["status"] == "unselected_port_boundary" and boundary.get("pin_direction") == "npiNlOutput") or boundary['status'] == 'scope_boundary'
+        is_source_boundary = boundary["status"] == "input_boundary" or boundary['status'] in SCOPE_BOUNDARIES or (
+            boundary["status"] == "unselected_port_boundary" and boundary.get("pin_direction") == "npiNlOutput")
         if boundary["direction"] == "driver" and is_source_boundary:
             name = boundary.get("endpoint", "")
             if not name:
@@ -262,12 +292,12 @@ def build_graph(events, config, evidence_store=None):
         outgoing[edge["source"]].add(edge["target"])
         incoming[edge["target"]].add(edge["source"])
         pin_drivers[(edge["target"], edge["target_pin"])].add((edge["source"], edge["source_pin"]))
-    # Full verification can return a load-only edge even when the driver walk
-    # stopped at a boundary. Do not display that pin as a proven L1 root as well.
-    for instance, pin, entry in l1_traces:
+    # A load-only edge with no matching driver evidence remains a diagnostic.
+    for instance, pin, entry in input_traces:
         if instance in nodes and (instance, pin) not in pin_drivers:
-            nodes[instance].setdefault('l1_inputs', {})[pin] = entry
-    del l1_traces
+            field = 'input_boundaries' if 'layer' in entry else 'l1_inputs'
+            nodes[instance].setdefault(field, {})[pin] = entry
+    del input_traces
     for (instance, pin), drivers in pin_drivers.items():
         if len(drivers) > 1:
             diagnostics.append({"code": "multiple_drivers", "instance": instance, "pin": pin, "drivers": sorted(drivers)})
@@ -314,19 +344,28 @@ def build_graph(events, config, evidence_store=None):
     unresolved_count = sum(b['status'] in UNRESOLVED for b in boundaries)
     undriven_count = len({(b['instance'], b['pin']) for b in boundaries
                           if b['status'] == 'undriven' and b['direction'] == 'driver'})
-    unresolved_outputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'load'}
+    unresolved_load_pins = {(b['instance'], b['pin']) for b in boundaries
+                            if b['status'] in UNRESOLVED and b['direction'] == 'load'}
+    unresolved_outputs = {instance for instance, _ in unresolved_load_pins}
+    unknown_load_targets = {(d.get('source'), d.get('source_pin')) for d in diagnostics if d['code'] == 'unknown_target'}
     scope_output_pins = {(b['instance'], b['pin']) for b in boundaries
-                         if b['status'] == 'scope_boundary' and b['direction'] == 'load'}
+                         if b['status'] in SCOPE_BOUNDARIES and b['direction'] == 'load'}
     scope_outputs = {instance for instance, _ in scope_output_pins}
-    scope_inputs = {b['instance'] for b in boundaries if b['status'] == 'scope_boundary' and b['direction'] == 'driver'}
+    scope_inputs = {b['instance'] for b in boundaries if b['status'] in SCOPE_BOUNDARIES and b['direction'] == 'driver'}
     uncertain_inputs = {b['instance'] for b in boundaries if b['status'] in UNRESOLVED and b['direction'] == 'driver'}
     uncertain_inputs.update(node for node, pin, direction in missing if direction == 'driver')
     timeout_pins = {(b['instance'], b['pin']): b['status'] for b in boundaries
                     if b['status'] in ('trace_timeout', 'trace_skipped_timeout')}
+
+    def verified_load(instance, pin):
+        key = (instance, pin)
+        return ((instance, pin, 'load') in trace_keys and key not in unresolved_load_pins and
+                key not in scope_output_pins and key not in unknown_load_targets)
+
     for node in nodes.values():
         timed_out = node['id'] in timeout_instances
         node["root"] = node.get('kind') != 'subsystem' and not timed_out and not incoming.get(node['id']) and not (target_mode and node['id'] in uncertain_inputs)
-        node["terminal"] = not timed_out and not outgoing.get(node['id']) and node['id'] not in unresolved_outputs and node['id'] not in scope_outputs and (node["id"], node["output"], "load") in trace_keys
+        node["terminal"] = not timed_out and not outgoing.get(node['id']) and verified_load(node['id'], node['output'])
         if timed_out:
             node['trace_timeout'] = timeout_instances[node['id']]
             node['port_trace_status'] = {pin: timeout_pins.get((node['id'], pin),
@@ -334,7 +373,7 @@ def build_graph(events, config, evidence_store=None):
                 ('not_requested' if target_mode and direction == 'load' else 'not_traced'))
                 for pin, direction in [(p, 'driver') for p in node['inputs']] + [(p, 'internal' if node.get('kind') == 'wire' else 'load') for p in output_ports(node)]}
         if node.get('kind') == 'subsystem':
-            node['terminal'] = not timed_out
+            node['terminal'] = not timed_out or has_traced_subsystem_input(node)
             node['terminal_semantics'] = 'subsystem_input'
         node['scope_input_boundary'] = node['id'] in scope_inputs
         node['scope_output_boundary'] = node['id'] in scope_outputs
@@ -347,7 +386,9 @@ def build_graph(events, config, evidence_store=None):
         # An unresolved input elsewhere could be a downstream branch of any
         # apparent terminal. Do not claim proven terminals on an incomplete graph.
         for node in nodes.values():
-            node['terminal'] = (not node.get('trace_timeout')) if node.get('kind') == 'subsystem' else bool(coverage_ok and not outgoing.get(node['id']) and output_ports(node) and all(output_checks.get((node['id'], p)) == 'ok' for p in output_ports(node)))
+            if node.get('kind') != 'subsystem':
+                node['terminal'] = bool(coverage_ok and not outgoing.get(node['id']) and output_ports(node) and
+                                        all(output_checks.get((node['id'], p)) == 'ok' for p in output_ports(node)))
             node['physical_loads_checked'] = False
             node['terminal_semantics'] = 'subsystem_input' if node.get('kind') == 'subsystem' else 'selected_structure'
     used_outputs={(e['source'],e['source_pin']) for e in edges.values() if nodes[e['source']].get('kind')=='wire'}
@@ -356,7 +397,8 @@ def build_graph(events, config, evidence_store=None):
         pairs = internal_pairs(node)
         node['internal_trace_status'] = {p:('verified' if any(b == p for a,b in pairs) else timeout_pins.get((node['id'],p), 'unresolved')) for p in output_ports(node)}
         terminal_pairs = [(a, b) for a, b in pairs if (node['id'], b) not in used_outputs and
-                          (node['id'], b) not in scope_output_pins] if coverage_ok else []
+                          (node['id'], b) not in scope_output_pins and
+                          (coverage_ok if target_mode else completed and verified_load(node['id'], b))]
         node['terminal_outputs'] = sorted({b for _, b in terminal_pairs})
         node['terminal_inputs'] = sorted({a for a, _ in terminal_pairs})
         node['terminal'] = bool(node['terminal_inputs'])
@@ -378,6 +420,7 @@ def build_graph(events, config, evidence_store=None):
                         "expected_pin_traces": expected_count, "observed_pin_traces": len(trace_keys),
                         "unresolved": unresolved_count, "diagnostics": len(diagnostics), 'undriven_inputs': undriven_count,
                         'l1_input_connections': sum(len(n.get('l1_inputs', {})) for n in nodes.values()),
+                        'input_boundary_connections': sum(len(n.get('input_boundaries', {})) for n in nodes.values()),
                         'trace_timeout_instances': len(timeout_instances),
                         'trace_timeout_ports': sum(s == 'trace_timeout' for s in timeout_pins.values()),
                         'trace_skipped_ports': sum(s == 'trace_skipped_timeout' for s in timeout_pins.values()),

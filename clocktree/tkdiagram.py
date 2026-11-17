@@ -7,6 +7,7 @@ from collections import OrderedDict
 from .viewmodel import GraphView
 from .devices import symbol_parts
 from .profiles import tree_type
+from .l1_inputs import INPUT_SOURCE_KINDS
 from .navigation_target import display_node, location_target
 
 
@@ -352,8 +353,9 @@ class ClockDiagram(tk.Frame):
             self.oy=self.canvas.winfo_height()/2-(y+h/2)*self.scale
             self.select(chosen,target=target);self.notify()
             if edge is not None:
-                if edge.get('l1_boundary'):
-                    self.on_hover('沿 L1 输入连接定位：{} → {}.{}'.format(self.model.l1_nodes[edge['source']]['l1_entry']['signal'],edge['target'],edge['target_pin']))
+                if edge.get('input_boundary'):
+                    signal = self.model.l1_nodes[edge['source']]['input_entry']['signal']
+                    self.on_hover('沿层次边界连接定位：{} → {}.{}'.format(signal,edge['target'],edge['target_pin']))
                 else:self.on_hover('沿实际连接定位：{}.{} → {}.{}'.format(edge['source'],edge['source_pin'],edge['target'],edge['target_pin']))
         # If a projected neighbourhood omitted the actual navigation edge,
         # rebuild it with that edge pinned instead of highlighting another path.
@@ -410,7 +412,7 @@ class ClockDiagram(tk.Frame):
         if not self._branch_highlight:
             self.highlights = set()
             actual=node.get('reference_of',node['id'])
-            if node.get('kind')=='l1_input':
+            if node.get('kind') in INPUT_SOURCE_KINDS:
                 self.highlights={e['id'] for e in self.model.edges if e['source']==node['id']}
             elif self.selection_target.get('edge'):
                 self.highlights={self.selection_target['edge']}

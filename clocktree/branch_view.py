@@ -8,6 +8,7 @@ import uuid
 from .branch import BranchJob, close_branch
 from .devices import connection_details, connection_label, kind_label, auxiliary_details, wire_details
 from .profiles import output_ports
+from .l1_inputs import INPUT_SOURCE_KINDS
 from .tkdiagram import ClockDiagram
 
 
@@ -198,7 +199,7 @@ class BranchDialog(tk.Toplevel):
         self.details.insert('end', text); self.details.configure(state='disabled')
 
     def inspect_node(self, node):
-        if node.get('kind')=='l1_input':
+        if node.get('kind') in INPUT_SOURCE_KINDS:
             from .l1_inputs import describe
             self.selected_object=node
             for button in (self.upstream,self.expand_button):button.configure(state='disabled')

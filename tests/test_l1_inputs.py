@@ -1,6 +1,8 @@
 import copy
 import json
+import tkinter
 import pytest
+from clocktree.config import configured_input_boundaries, validate_config, write_tcl_config
 from clocktree.graph import build_graph
 from clocktree.storage import ResultStore,index_graph
 from clocktree.viewmodel import GraphView
@@ -99,6 +101,93 @@ def test_old_unmarked_boundaries_do_not_gain_new_proofs():
         for r in e.get('results',[]):r.pop('l1_verified',None)
     graph=build_graph(events,cfg)
     assert not any(n.get('l1_inputs') for n in graph['nodes'])
+
+
+def configured_fixture():
+    events, config = fixture()
+    config['layers'][1]['input_boundary'] = True
+    for event in events:
+        for result in event.get('results', []):
+            if result.pop('l1_verified', False):
+                result.update(status='layer_input_boundary', scope=result.pop('l1_scope'),
+                              boundary_port=result.pop('l1_port'), boundary_layer=2)
+    return events, config
+
+
+def test_selected_scopes_use_physical_paths_and_floor_to_the_trace_root(tmp_path):
+    _, config = fixture()
+    config['trace_scope'] = 'top.domain'
+    config['layers'][1]['hierarchy'] = 'top.domain.gen[3].u'
+    config['layers'][1]['input_boundary'] = True
+    config['layers'].append({'index':3, 'hierarchy':'', 'input_boundary':True, 'modules':[]})
+    config['layers'].append({'index':4, 'hierarchy':'top.domain.gen[3].u', 'input_boundary':True, 'modules':[]})
+    validate_config(config)
+    assert configured_input_boundaries(config) == {'top.domain.gen[3].u':2, 'top.domain':3}
+    path = tmp_path/'rules.tcl'
+    write_tcl_config(config, path, 'raw.jsonl')
+    tcl = tkinter.Tcl()
+    tcl.eval(path.read_text(encoding='utf-8'))
+    assert tcl.eval('set ct_l1_scope') == ''
+    assert int(tcl.call('dict', 'get', tcl.getvar('ct_input_boundaries'), 'top.domain.gen[3].u')) == 2
+    config['layers'][3]['hierarchy'] = 'top.other'
+    with pytest.raises(ValueError, match='L4 的输入边界'):
+        validate_config(config)
+
+
+@pytest.mark.parametrize('indexed', [False, True])
+@pytest.mark.parametrize('wire', [False, True])
+def test_configured_boundary_draws_actual_layer_and_uses_existing_branch_rules(tmp_path, indexed, wire):
+    events, config = configured_fixture()
+    signal = 'top.domain.mid[5]' if wire else 'top.domain.clk[3]'
+    if wire:
+        event = next(e for e in events if e.get('instance') == 'top.domain.g0')
+        boundary = event['results'][0]
+        boundary.pop('boundary_port')
+        boundary.update(status='layer_wire_boundary', endpoint=signal, boundary_wire='mid[5]')
+    graph = build_graph(events, config)
+    assert graph['summary']['instances'] == 4 and graph['summary']['edges'] == 2
+    assert graph['summary']['input_boundary_connections'] == 3
+    assert graph['summary']['l1_input_connections'] == 0
+    gate = next(n for n in graph['nodes'] if n['id'] == 'top.domain.g0')
+    assert gate['input_boundaries']['i']['signal'] == signal
+    assert gate['input_boundaries']['i'].get('source_kind', 'port') == ('wire' if wire else 'port')
+    store = ResultStore(tmp_path/'graph.sqlite', True) if indexed else None
+    try:
+        if indexed:
+            index_graph(graph, store)
+            graph = store.graph()
+        view = IndexedGraphView(graph) if indexed else GraphView(graph)
+        for mode in ('instances', 'hierarchy'):
+            view.project(mode, depth=1)
+            assert view.actual_count == 4
+            assert {n['layer'] for n in view.l1_nodes.values()} == {2}
+            assert {n['kind'] for n in view.l1_nodes.values()} == {'boundary_input'}
+            assert all(view.actual_edges(edge) == [edge] for edge in view.l1_edges.values())
+            assert 'L2 · 输入边界' in view.svg()
+            if wire:
+                assert 'L2 · wire 边界' in view.svg()
+        plan = prepare(graph, None, tmp_path/'plan', False)
+        row = next(row for row in plan.branches()[1] if row['instance'] == 'top.domain.g1')
+        resolved = plan.resolve(row, {'without_mux':'$var_pll0 $var_clkip $var_rst'})
+        assert resolved['ready'] and resolved['values'] == {
+            'var_pll0':signal, 'var_clkip':'top.domain.g1_o', 'var_rst':'top.domain.rst2_n'}
+        assert resolved['input_boundary']['signals'] == [signal]
+        mux = next(row for row in plan.branches()[1] if row['instance'] == 'top.domain.s' and row['pin'] == 'b')
+        resolved = plan.resolve(mux, {'with_mux':'$var_pll0 $var_clkip'})
+        assert resolved['ready'] and resolved['values']['var_pll0'] == 'top.domain.clk[7]'
+    finally:
+        if store:
+            store.close()
+
+
+def test_configured_boundary_declines_competing_sources():
+    events, config = configured_fixture()
+    event = next(e for e in events if e.get('instance') == 'top.domain.g0')
+    event['results'].append(dict(event['results'][0], endpoint='top.domain.clk[4]', boundary_port='clk[4]'))
+    graph = build_graph(events, config)
+    assert not next(n for n in graph['nodes'] if n['id'] == 'top.domain.g0').get('input_boundaries')
+    assert any(d['code'] == 'multiple_layer_inputs' for d in graph['diagnostics'])
+    assert not graph['summary']['topology_valid']
 
 
 @pytest.mark.parametrize('upstream_status, bypass, expected', [

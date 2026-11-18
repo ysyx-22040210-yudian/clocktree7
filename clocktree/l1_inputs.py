@@ -86,8 +86,8 @@ def source_basis(node):
     if node['kind'] == 'l1_input':
         return '输入反查确认信号经此端口进入 L1。'
     if node['input_entry'].get('source_kind') == 'wire':
-        return '输入反查到达该层直接声明的 wire 信号并停止。'
-    return '输入反查到达配置的 RTL 输入口并停止。'
+        return '输入反查确认该输入连接到此层直接声明的 wire。'
+    return '输入反查确认该输入连接到此层的 RTL 输入口。'
 
 
 def describe(node):

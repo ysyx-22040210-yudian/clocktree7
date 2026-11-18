@@ -84,6 +84,20 @@ def test_input_selection_is_explicit_and_subsystem_has_no_output():
     assert len(port_offsets(dict(node,expand_bus=True),382,200)[0])==3
 
 
+def test_inspector_pages_thousands_of_edges_on_one_indexed_trunk(tmp_path):
+    from clocktree.indexed_view import QuerySequence
+    graph=fixture()
+    graph['edges']=[dict(graph['edges'][0],id='e'+str(i)) for i in range(1400)]
+    view=IndexedGraphView(index_graph(graph,new_store(tmp_path)))
+    edges=view.inspector_edges(graph['edges'])
+    assert len(edges)==1400 and [e['id'] for e in edges[1398:1400]]==['e1398','e1399']
+    bundle={'members':QuerySequence(view.store,"SELECT id FROM edges WHERE id IN ('e0','e1')")}
+    edges=view.inspector_edges([bundle,graph['edges'][0],graph['edges'][4]])
+    assert len(edges)==3 and {e['id'] for e in edges}=={'e0','e1','e4'}
+    assert len(view.inspector_edges([graph['edges'][3]]))==1
+    assert len(view.inspector_edges([]))==0
+
+
 def test_searches_persist_per_design_and_type_without_graph_writes(tmp_path):
     path=tmp_path/'ui.json';state=UIState(path);config=fixture()['config']
     for i in range(110):state.search(config,'query{}'.format(i))
@@ -139,7 +153,9 @@ def test_evidence_excerpt_is_bounded_and_keeps_raw_path(tmp_path):
     from clocktree.evidence import mapping_excerpt
     store=new_store(tmp_path)
     path=store.add_path([dict(type='npiNet',name='wire{}'.format(i)) for i in range(400)])
-    statements=[];store.connection().set_trace_callback(statements.append)
+    statements=[]
+    # Python 3.6 sqlite3 requires a hashable trace callback.
+    store.connection().set_trace_callback(lambda sql: statements.append(sql))
     excerpt=mapping_excerpt({'evidence':{'driver':path}})
     assert 'wire399' in excerpt and 'wire391' not in excerpt and '8 / 400' in excerpt
     assert len(statements)<=11

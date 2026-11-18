@@ -1,5 +1,6 @@
 """Searchable neighbour chooser with bounded pages and exact port connections."""
 import tkinter as tk
+from .ui_layout import fit_window
 from tkinter import ttk
 from .devices import connection_label
 from .connectivity import focused_pins
@@ -76,18 +77,27 @@ def jump_neighbour(app,node,direction):
 class NeighbourDialog(tk.Toplevel):
     def __init__(self,app,instance,direction):
         super().__init__(app)
+        self.transient(app)
         self.model=app.diagram.model
         self.node=dict(instance) if isinstance(instance,dict) else self.model.original[instance]
         self.app,self.instance,self.direction=app,self.node.get('reference_of',self.node['id']),direction
-        self.offset=0;self.title('选择上游器件' if direction=='upstream' else '选择下游器件');self.geometry('1040x570')
+        self.offset=0;self.title('选择上游器件' if direction=='upstream' else '选择下游器件')
+        fit_window(self,app,(1040,570),(650,380))
         row=ttk.Frame(self,padding=12);row.pack(fill='x')
         self.search=tk.StringVar();entry=ttk.Entry(row,textvariable=self.search);entry.pack(side='left',fill='x',expand=True)
         entry.bind('<Return>',lambda e:self.show(0,True));ttk.Button(row,text='搜索实例 / 端口 / 信号',command=lambda:self.show(0,True)).pack(side='left',padx=8)
-        self.table=ttk.Treeview(self,columns=('instance','port','signal','local'),show='headings')
+        body=ttk.Frame(self)
+        body.pack(fill='both',expand=True,padx=12)
+        self.table=ttk.Treeview(body,columns=('instance','port','signal','local'),show='headings')
         for key,label,width in [('instance','对端真实实例',400),('port','对端端口',130),('signal','实际信号',260),('local','当前端口',140)]:
-            self.table.heading(key,text=label);self.table.column(key,width=width)
-        self.table.pack(fill='both',expand=True,padx=12);self.table.bind('<Double-1>',self.locate)
-        buttons=ttk.Frame(self,padding=12);buttons.pack(fill='x')
+            self.table.heading(key,text=label);self.table.column(key,width=width,minwidth=min(width,180))
+        scrollbar=ttk.Scrollbar(body,orient='horizontal',command=self.table.xview)
+        scrollbar.pack(side='bottom',fill='x')
+        vertical=ttk.Scrollbar(body,command=self.table.yview)
+        vertical.pack(side='right',fill='y')
+        self.table.configure(xscrollcommand=scrollbar.set,yscrollcommand=vertical.set)
+        self.table.pack(fill='both',expand=True);self.table.bind('<Double-1>',self.locate)
+        buttons=ttk.Frame(self,padding=12);buttons.pack(side='bottom',before=body,fill='x')
         ttk.Button(buttons,text='上一页',command=lambda:self.show(-1)).pack(side='left');ttk.Button(buttons,text='下一页',command=lambda:self.show(1)).pack(side='left',padx=6)
         ttk.Button(buttons,text='跳转到所选器件',command=self.locate).pack(side='right')
         self.status=tk.StringVar();ttk.Label(buttons,textvariable=self.status).pack(side='left',padx=12)
@@ -127,3 +137,4 @@ class NeighbourDialog(tk.Toplevel):
                 self.app.diagram.locate_edge(self.rows[keys[0]],self.direction)
             else:self.app.set_status('结果图已切换，请重新选择上下游连接。')
             self.destroy()
+            self.app.diagram.canvas.focus_set()

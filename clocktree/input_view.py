@@ -11,6 +11,7 @@ import uuid
 import tkinter as tk
 from tkinter import ttk
 from .input_ports import DIRECTION_LABELS, filter_ports, confirmed_ports
+from .ui_layout import dialog_heading, fit_window, wrapped_label
 
 
 class InputPortDialog(tk.Toplevel):
@@ -26,11 +27,13 @@ class InputPortDialog(tk.Toplevel):
         self.single = single
         self.process=None;self.stream=None;self.closed=False;self.cancelled=False;self.poll_id=None
         self.title('从 elab 筛选{}端口'.format(self.direction_label))
-        self.geometry('950x620');self.minsize(760,460);self.transient(parent)
-        frame=ttk.Frame(self,padding=18);frame.pack(fill='both',expand=True)
-        ttk.Label(frame,text='{}  ·  直接父层 {}'.format(module,hierarchy or config['design'].get('top','')),font=(parent.app.family,12,'bold')).pack(anchor='w')
+        self.transient(parent)
+        fit_window(self,parent,(950,620),(720,450))
+        dialog_heading(self,'从 elab 筛选{}端口'.format(self.direction_label),'sliders')
+        frame=ttk.Frame(self,padding=(16,6,16,8));frame.pack(fill='both',expand=True)
+        wrapped_label(frame,text='{}  ·  直接父层 {}'.format(module,hierarchy or config['design'].get('top',''))).pack(fill='x')
         instruction = '选一个{}端口写入文本框。'.format(self.direction_label) if single else '勾选{}端口，确认后加入文本框。'.format(self.direction_label)
-        ttk.Label(frame,text=instruction).pack(anchor='w',pady=8)
+        ttk.Label(frame,text=instruction).pack(anchor='w',pady=3)
         actions=ttk.Frame(frame);actions.pack(fill='x',pady=6)
         self.read_button=ttk.Button(actions,text='读取 elab 端口',command=self.start);self.read_button.pack(side='left')
         ttk.Button(actions,text='取消读取',command=self.cancel).pack(side='left',padx=8)
@@ -55,7 +58,7 @@ class InputPortDialog(tk.Toplevel):
         if not single:
             ttk.Button(row,text='勾选全部匹配口',command=lambda:self.toggle_all(True)).pack(side='left')
         ttk.Button(row,text='清空勾选',command=lambda:self.toggle_all(False)).pack(side='left',padx=8)
-        self.confirm_button=ttk.Button(row,text='确认勾选端口',command=self.confirm,state='disabled');self.confirm_button.pack(side='right')
+        self.confirm_button=ttk.Button(row,text='确认勾选端口',command=self.confirm,state='disabled',style='Accent.TButton');self.confirm_button.pack(side='right')
         self.status=tk.StringVar(value='点击“读取 elab 端口”，然后输入正则并勾选端口。')
         ttk.Label(footer,textvariable=self.status,wraplength=700).pack(fill='x',pady=6)
         self.expression.trace('w',self.invalidate)

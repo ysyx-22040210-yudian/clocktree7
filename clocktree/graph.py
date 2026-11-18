@@ -12,6 +12,7 @@ UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "tra
               "trace_timeout", "trace_skipped_timeout", "wire_connection_unresolved", "unselected_wire_input"}
 LAYER_BOUNDARY_FIELDS = {'layer_input_boundary': 'boundary_port', 'layer_wire_boundary': 'boundary_wire'}
 SCOPE_BOUNDARIES = {'scope_boundary'}.union(LAYER_BOUNDARY_FIELDS)
+HIERARCHY_INPUTS = SCOPE_BOUNDARIES | {'input_boundary'}
 TOPOLOGY_ERRORS = {"reverse_layer", "cycle_or_cycle_downstream", "multiple_drivers", "multiple_l1_inputs",
                    "multiple_layer_inputs", "layer_conflict"}
 
@@ -74,7 +75,7 @@ def build_graph(events, config, evidence_store=None):
                     'source': edge_key[0], 'source_pin': edge_key[1], 'target': edge_key[2], 'target_pin': edge_key[3],
                     'evidence': {}}
             edges[edge_key]['evidence'][trace['direction']] = result.get('path', [])
-        else:
+        elif trace['direction'] != 'driver':
             boundaries.append(dict(result, instance=trace['instance'], pin=trace['pin'], direction=trace['direction']))
 
     def begin(item):
@@ -86,8 +87,21 @@ def build_graph(events, config, evidence_store=None):
         trace_index += 1
         return trace
 
-    def confirm_input_boundary(trace):
+    def finish_driver(trace, complete=True):
         results = trace.get('driver_results', ())
+        # Decide per input bit, after all its driver results have arrived. Keep
+        # intermediary boundary evidence in raw.jsonl, outside the source graph.
+        if complete:
+            if any(r['status'] == 'target' for r in results):
+                results = [r for r in results if r['status'] not in HIERARCHY_INPUTS]
+            else:
+                results = [r for r in results if not r.get('past_input_boundary')]
+        boundaries.extend(dict(r, instance=trace['instance'], pin=trace['pin'], direction='driver')
+                          for r in results if r['status'] != 'target')
+        if complete:
+            confirm_input_boundary(trace, results)
+
+    def confirm_input_boundary(trace, results):
         if not results:
             return
         entries, targets, known_sources = {}, set(), set()
@@ -144,7 +158,7 @@ def build_graph(events, config, evidence_store=None):
         trace_keys.add((trace['instance'], trace['pin'], trace['direction']))
         boundaries.extend(trace['sinks'].values())
         if trace['direction'] == 'driver':
-            confirm_input_boundary(trace)
+            finish_driver(trace)
         if trace['direction'] == 'internal':
             owner, output = trace['instance'], trace['pin']
             results = trace.get('internal', [])
@@ -206,6 +220,8 @@ def build_graph(events, config, evidence_store=None):
         elif kind == 'trace_end':
             trace = active.pop(item['trace_id'])
             if not trace['count'] or trace['count'] != item['result_count']:
+                if trace['direction'] == 'driver':
+                    finish_driver(trace, complete=False)
                 diagnostics.append({'code': 'trace_protocol', 'trace_id': item['trace_id'],
                                     'instance': trace['instance'], 'pin': trace['pin'], 'direction': trace['direction'],
                                     'message': 'Result count mismatch'})
@@ -247,6 +263,8 @@ def build_graph(events, config, evidence_store=None):
             node['kind'], node['kind_source'] = kind, 'configured'
     for trace in active.values():
         boundaries.extend(trace['sinks'].values())
+        if trace['direction'] == 'driver':
+            finish_driver(trace, complete=False)
         diagnostics.append({'code': 'trace_protocol', 'trace_id': trace['trace_id'],
                             'instance': trace['instance'], 'pin': trace['pin'], 'direction': trace['direction'],
                             'message': 'Missing trace_end'})

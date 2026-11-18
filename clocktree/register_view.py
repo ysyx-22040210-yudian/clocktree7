@@ -18,6 +18,7 @@ from .runtime import tail_text
 from .storage import write_graph
 from .register_progress import read_progress
 from .ui_state import design_key
+from .ui_layout import dialog_heading, fit_window, wrapped_label
 
 
 RELATIONS={'direct':'精确位映射','inverted':'反相位映射','logic':'组合逻辑依赖','conditional':'条件未固定'}
@@ -38,32 +39,35 @@ class RegisterDialog(tk.Toplevel):
         self.div_scopes = scopes
         self.result_div_scopes = self.div_scopes
         self.directory=None;self.index=None;self.offset=0;self.total=0
-        self.title('辅助端口 → 寄存器信号路径');self.geometry('1360x860');self.minsize(980,650);self.transient(app)
-        frame=ttk.Frame(self,padding=16);frame.pack(fill='both',expand=True)
-        ttk.Label(frame,text='辅助端口寄存器追踪',font=(app.family,15,'bold')).pack(anchor='w')
-        ttk.Label(frame,text='pll_sel / div / gt 反查至时序输出；sw_done 确认时序数据输入，并保留接收寄存器位。逐 bit 保存；不修改树连线。').pack(anchor='w',pady=7)
+        self.title('辅助端口 → 寄存器信号路径');self.transient(app)
+        fit_window(self,app,(1280,800),(810,540))
+        dialog_heading(self,'辅助端口寄存器追踪','register')
+        frame=ttk.Frame(self,padding=(14,5,14,8));frame.pack(fill='both',expand=True)
+        ttk.Label(frame,text='pll_sel、div 和 gt 反查至寄存器输出。sw_done 顺查至寄存器输入，结果保留位选。').pack(anchor='w',pady=4)
         settings=ttk.Frame(frame);settings.pack(fill='x',pady=4)
         self.root_var=tk.StringVar(value=self.graph['config'].get('trace_scope') or self.graph['config']['design']['top'])
         self.dft_var=tk.StringVar(value='dft_mode')
         self.memory_var=tk.StringVar(value=str(self.graph['config'].get('memory_limit_gib',60)))
         self.timeout_var=tk.StringVar(value=str(self.graph['config'].get('port_trace_timeout_s',0)))
-        for label,var,width in [('追踪根层次',self.root_var,28),('置 0 的 DFT 信号（逗号分隔）',self.dft_var,23),
-                                 ('内存 GiB',self.memory_var,7),('每端口超时秒',self.timeout_var,7)]:
-            ttk.Label(settings,text=label).pack(side='left',padx=(0,5));ttk.Entry(settings,textvariable=var,width=width).pack(side='left',padx=(0,12))
-        ttk.Label(frame,text='DFT 名称精确匹配：短名称匹配同名信号，完整层次路径限定一个信号；0 超时表示不限时。Q/D 由时序语句证明，reg 声明不足以作为依据。').pack(anchor='w',pady=5)
+        for col,(label,var,width) in enumerate([('追踪根层次',self.root_var,22),('置 0 的 DFT 信号（逗号分隔）',self.dft_var,18),
+                                                ('内存阈值（GiB）',self.memory_var,8),('端口超时（秒）',self.timeout_var,8)]):
+            settings.columnconfigure(col,weight=2 if col<2 else 1)
+            ttk.Label(settings,text=label).grid(row=0,column=col,sticky='w')
+            ttk.Entry(settings,textvariable=var,width=width).grid(row=1,column=col,sticky='ew',padx=(0,8))
+        ttk.Label(frame,text='DFT 短名匹配同名信号，完整路径限定单个信号。超时填 0 表示不限时。').pack(anchor='w',pady=3)
         self.div_source_text = tk.StringVar()
         if graph['config'].get('tree_type', 'clock') == 'clock':
-            ttk.Label(frame, textvariable=self.div_source_text, wraplength=1280).pack(anchor='w', pady=(0, 4))
+            wrapped_label(frame, textvariable=self.div_source_text).pack(fill='x', pady=(0, 4))
         self.show_div_scopes(scopes)
         actions=ttk.Frame(frame);actions.pack(fill='x',pady=6)
-        self.start_button=ttk.Button(actions,text='开始新的寄存器追踪',command=self.start);self.start_button.pack(side='left')
+        self.start_button=ttk.Button(actions,text='开始寄存器追踪',command=self.start,style='Accent.TButton');self.start_button.pack(side='left')
         self.resume_button=ttk.Button(actions,text='从已提交端口继续',command=lambda:self.start(True),state='disabled');self.resume_button.pack(side='left',padx=8)
         ttk.Button(actions,text='取消当前追踪',command=self.cancel).pack(side='left')
         ttk.Button(actions,text='打开历史结果',command=self.open_result).pack(side='left',padx=8)
         ttk.Button(actions,text='导出全部 CSV',command=self.export_csv).pack(side='right')
-        ttk.Button(actions,text='导出映射与证据 JSON',command=self.export_json).pack(side='right',padx=8)
+        ttk.Button(actions,text='导出证据 JSON',command=self.export_json).pack(side='right',padx=5)
         self.status=tk.StringVar(value='使用当前架构结果中保存的辅助端口配置；修改规则后请先重新提取架构。')
-        ttk.Label(frame,textvariable=self.status,wraplength=1280).pack(fill='x',pady=5)
+        wrapped_label(frame,textvariable=self.status).pack(fill='x',pady=5)
         searchbar=ttk.Frame(frame);searchbar.pack(fill='x',pady=4)
         self.search=tk.StringVar()
         ttk.Label(searchbar,text='搜索实例 / 端口 / 寄存器 / 状态').pack(side='left')
@@ -86,7 +90,7 @@ class RegisterDialog(tk.Toplevel):
         self.table.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set);self.table.pack(fill='both',expand=True)
         self.table.bind('<<TreeviewSelect>>',self.show_detail)
         self.table.bind('<Double-Button-1>',lambda e:self.locate())
-        page=ttk.Frame(table_pane);page.pack(fill='x',pady=6)
+        page=ttk.Frame(table_pane);page.pack(side='bottom',before=container,fill='x',pady=6)
         ttk.Button(page,text='上一页',command=lambda:self.page(-1)).pack(side='left')
         ttk.Button(page,text='下一页',command=lambda:self.page(1)).pack(side='left',padx=8)
         self.page_status=tk.StringVar();ttk.Label(page,textvariable=self.page_status).pack(side='right')

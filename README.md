@@ -8,11 +8,13 @@
 
 **[产品介绍 PPT（38 页，含 module 配置与 SV 模板演示）](presentations/clocktree7-product-20261113/README.md)** · [直接下载 PowerPoint](https://github.com/ysyx-22040210-yudian/clocktree7/raw/refs/heads/main/presentations/clocktree7-product-20261113/ClockTree7_Product_Introduction_20261113.pptx) · [上一版](presentations/clocktree7-product-20261110/README.md)
 
-![原生 Tk 分支紧凑工作台与输入型子系统](docs/images/workbench-compact.png)
+![原生 Tk 工作台中查看 DIV 的时钟端口、控制信号与上下游实例](docs/images/desktop-workspace.png)
+
+工作台支持在整树概览和端口明细之间缩放。选中器件可在检查器中查看实际信号，点击干线可查看经过该段的连接。[GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md#workspace) · [高扇出画布实测](docs/DESKTOP_STUDIO_VALIDATION_20261119.zh-CN.md)
 
 ## 功能
 
-- 原生 Python Tkinter / ttk 工作台，层级配置、历史记录、实例导航、属性与连接依据。
+- 原生 Tk 工作台可同时显示设计配置、架构图和检查器。窄屏选中器件会切到检查器，F11 可展开画布，Ctrl+F 可定位实例。提取时底部自动显示运行阶段和日志。
 - 默认 L1、L2，支持添加层级、删除当前层并自动重新编号；兼容原有七级配置。
 - 独立的 **时钟树 / 复位树** 分析模式，切换时保留各自配置草稿与结果，历史记录按模式显示。
 - 启动自动恢复上次模式、配置、选中层级和结果图；支持未导出草稿和本地结果快照，关闭时完成最后一次保存。

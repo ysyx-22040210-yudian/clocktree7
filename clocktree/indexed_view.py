@@ -317,6 +317,28 @@ class IndexedGraphView(GraphView):
         return QuerySequence(self.store, 'SELECT data FROM edges WHERE id IN (' + members.sql + ')', members.params,
                              decode=True, count=len(members))
 
+    def inspector_edges(self, displayed):
+        """Paginate the active inspector selection, including very wide shared clock trunks."""
+        if len(displayed)==1:
+            return self.actual_edges(next(iter(displayed)))
+        conn=self.store.connection()
+        conn.execute('SAVEPOINT ct7_inspect')
+        try:
+            conn.execute('CREATE TEMP TABLE IF NOT EXISTS ct7_inspector_edges(id TEXT PRIMARY KEY)')
+            conn.execute('DELETE FROM ct7_inspector_edges')
+            conn.executemany('INSERT OR IGNORE INTO ct7_inspector_edges VALUES (?)',
+                             ((edge['id'],) for edge in displayed if 'members' not in edge))
+            for edge in displayed:
+                members=edge.get('members')
+                if members is not None:
+                    conn.execute('INSERT OR IGNORE INTO ct7_inspector_edges '+members.sql,members.params)
+        except Exception:
+            conn.execute('ROLLBACK TO ct7_inspect')
+            raise
+        finally:
+            conn.execute('RELEASE ct7_inspect')
+        return QuerySequence(self.store,'SELECT e.data FROM ct7_inspector_edges i JOIN edges e ON e.id=i.id ORDER BY i.rowid',decode=True)
+
     def project_focus(self, node, required_edge=None):
         # Exact location loads a bounded neighbourhood. All other instances
         # remain searchable in the index and accessible via the full overview.

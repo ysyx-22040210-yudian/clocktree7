@@ -10,6 +10,7 @@ from .devices import connection_details, connection_label, kind_label, auxiliary
 from .profiles import output_ports
 from .l1_inputs import INPUT_SOURCE_KINDS
 from .tkdiagram import ClockDiagram
+from .ui_layout import dialog_heading, fit_window, wrapped_label
 
 
 class BranchDialog(tk.Toplevel):
@@ -31,16 +32,14 @@ class BranchDialog(tk.Toplevel):
         instance = node.get('reference_of', node['id'])
         mode = '复位' if source_model.tree_type == 'reset' else '时钟'
         self.title('{}分支 · {}'.format(mode, instance))
-        self.geometry('1320x820'); self.minsize(960, 580)
+        fit_window(self,app,(1280,800),(840,505))
         self.configure(bg='#eef2f8')
-        head = ttk.Frame(self, padding=(14, 12))
+        dialog_heading(self,'独立{}分支画布'.format(mode),'branch')
+        head = ttk.Frame(self, padding=(14, 3))
         head.pack(fill='x')
-        ttk.Label(head, text='独立{}分支画布'.format(mode), font=(self.family, 14, 'bold')).pack(anchor='w')
-        ttk.Label(head, text=instance, wraplength=1200).pack(anchor='w', pady=(5, 0))
-        caption = '全部上游 + 全部下游 · 不包含上游其他旁支 · 仅使用已提取的真实连接'
-        if node.get('reference_of'):
-            caption += ' · 子系统引用只沿当前输入'
-        ttk.Label(head, text=caption).pack(anchor='w', pady=(4, 0))
+        scope=ttk.Label(head,text=instance+('  ·  当前子系统输入' if node.get('reference_of') else ''),wraplength=1000)
+        scope.pack(anchor='w')
+        head.bind('<Configure>',lambda e:scope.configure(wraplength=max(160,e.width-30)))
         toolbar = ttk.Frame(self, padding=(12, 3))
         toolbar.pack(fill='x')
         ttk.Button(toolbar, text='后退', command=lambda:self.diagram.navigate_history()).pack(side='left')
@@ -68,7 +67,7 @@ class BranchDialog(tk.Toplevel):
         bottom = ttk.Frame(self, padding=(12, 7)); bottom.pack(side='bottom', fill='x')
         self.status = tk.StringVar(value='正在读取此器件的全部上游和下游连接…')
         ttk.Button(bottom, text='关闭分支窗口', command=self.close).pack(side='right')
-        ttk.Label(bottom, textvariable=self.status, wraplength=1000).pack(side='left', fill='x', expand=True)
+        wrapped_label(bottom,textvariable=self.status).pack(side='left', fill='x', expand=True)
         body = ttk.Panedwindow(self, orient='horizontal'); body.pack(fill='both', expand=True, padx=12, pady=5)
         canvas_area = ttk.Frame(body); inspector = ttk.Frame(body, width=290, padding=10)
         body.add(canvas_area, weight=5); body.add(inspector, weight=1)

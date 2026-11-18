@@ -12,13 +12,17 @@ from .register_view import RegisterDialog,RELATIONS
 from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates,sv_output_path
 from .runtime import tail_text
 from .sv_editor import SVCodeEditor
+from .sv_macro_view import MacroEditor
+from .sv_macros import template_macros
+from .ui_layout import dialog_heading, fit_window, wrapped_label
 from .register_results import latest_register_result,register_result_stamp,result_directory
 from .div_sources import div_source_label
 
 
 class CandidateDialog(tk.Toplevel):
     def __init__(self,parent,branch,var,callback):
-        super().__init__(parent);self.title('$'+var+' · 选择已追到的寄存器映射');self.geometry('1160x520');self.transient(parent)
+        super().__init__(parent);self.title('$'+var+' · 选择已追到的寄存器映射');self.transient(parent)
+        fit_window(self,parent,(1160,520),(700,360))
         self.parent=parent;self.branch=branch;self.var=var;self.callback=callback;self.offset=0;self.items={}
         self.search=tk.StringVar();bar=ttk.Frame(self,padding=10);bar.pack(fill='x')
         ttk.Entry(bar,textvariable=self.search).pack(side='left',fill='x',expand=True)
@@ -31,7 +35,7 @@ class CandidateDialog(tk.Toplevel):
         scroll=ttk.Scrollbar(table_frame,command=self.table.yview);scroll.grid(row=0,column=1,sticky='ns')
         horizontal=ttk.Scrollbar(table_frame,orient='horizontal',command=self.table.xview);horizontal.grid(row=1,column=0,sticky='ew')
         self.table.configure(yscrollcommand=scroll.set,xscrollcommand=horizontal.set);self.table.grid(row=0,column=0,sticky='nsew')
-        bar=ttk.Frame(self,padding=10);bar.pack(fill='x')
+        bar=ttk.Frame(self,padding=10);bar.pack(side='bottom',before=table_frame,fill='x')
         ttk.Button(bar,text='上一页',command=lambda:self.page(-1)).pack(side='left')
         ttk.Button(bar,text='下一页',command=lambda:self.page(1)).pack(side='left',padx=8)
         ttk.Button(bar,text='确认所选映射',command=self.choose).pack(side='right')
@@ -58,10 +62,11 @@ class SVDialog(tk.Toplevel):
         super().__init__(app);self.app=app;self.graph=graph;self.plan=None;self.directory=None;self.process=None;self.stream=None;self.offset=0;self.closed=False;self.rows={}
         saved=app.ui_state.get(self.graph['config']);self.selections=dict(saved.get('sv_branch_selections',{}));self.export_result=None
         self.export_plan_path=saved.get('sv_export_plan_path','')
-        self.title('时钟树分支 · 用户模板生成 SV');self.geometry('1400x900');self.minsize(1050,700);self.transient(app)
-        frame=ttk.Frame(self,padding=14);frame.pack(fill='both',expand=True)
-        ttk.Label(frame,text='每个分支末端生成一段模板代码，全部写入一个 SV 文件',font=(app.family,14,'bold')).pack(anchor='w')
-        ttk.Label(frame,text='$var_pllsel · $var_div · $var_swdone · $var_gt0～2 · $var_pll0～3 · $var_clkip · $var_rst  |  $var_rst 取最初器件所属层复位；门控/PLL 缺位补 1\'b1',wraplength=1330).pack(anchor='w',pady=6)
+        self.export_macros=saved.get('sv_export_macros',[])
+        self.title('时钟树分支 · 用户模板生成 SV');self.transient(app)
+        fit_window(self,app,(1320,830),(820,540))
+        dialog_heading(self,'分支 SV 模板','code')
+        frame=ttk.Frame(self,padding=(14,5,14,8));frame.pack(fill='both',expand=True)
         bar=ttk.Frame(frame);bar.pack(fill='x',pady=5)
         self.registers=tk.StringVar();self.auto_registers=tk.BooleanVar(value=True);self._setting_registers=False
         ttk.Label(bar,text='寄存器结果目录（无控制映射时可留空）').pack(side='left');ttk.Entry(bar,textvariable=self.registers).pack(side='left',fill='x',expand=True,padx=8)
@@ -70,9 +75,9 @@ class SVDialog(tk.Toplevel):
         ttk.Button(bar,text='打开寄存器追踪',command=self.open_register_trace).pack(side='left',padx=8)
         self.analyze_button=ttk.Button(bar,text='分析全部分支',command=self.analyze);self.analyze_button.pack(side='right')
         self.register_notice=tk.StringVar()
-        ttk.Label(frame,textvariable=self.register_notice,wraplength=1330).pack(fill='x')
-        self.status=tk.StringVar(value='填写两套模板，然后分析分支。多寄存器或未解析分支跳过，其余先生成；选定映射后重新生成同一个文件，不重复追加。')
-        ttk.Label(frame,textvariable=self.status,wraplength=1330).pack(fill='x',pady=5)
+        wrapped_label(frame,textvariable=self.register_notice).pack(fill='x')
+        self.status=tk.StringVar(value='填写两套模板后分析分支。每个就绪末端生成一段，所有代码写入同一个 SV 文件。')
+        wrapped_label(frame,textvariable=self.status).pack(fill='x',pady=5)
         # Reserve actions before allocating the expanding notebook on Tk 8.5.
         footer=ttk.Frame(frame);footer.pack(side='bottom',fill='x',pady=(9,0))
         self.tabs=ttk.Notebook(frame);self.tabs.pack(fill='both',expand=True);self.editors={};self.code_editors={}
@@ -81,6 +86,8 @@ class SVDialog(tk.Toplevel):
             pane=ttk.Frame(self.tabs);self.tabs.add(pane,text=label)
             editor=SVCodeEditor(pane,filename=key+'.sv',initial=templates.get(key,''));editor.pack(fill='both',expand=True)
             self.code_editors[key]=editor;self.editors[key]=editor.text
+        self.macro_editor=MacroEditor(self.tabs,templates.get('macros',[]),self.macros_changed)
+        self.tabs.add(self.macro_editor,text='宏定义与替换')
         review=ttk.Frame(self.tabs,padding=5);self.tabs.add(review,text='分支映射与代码预览');self.review=review
         toolbar=ttk.Frame(review);toolbar.pack(fill='x',pady=4);self.search=tk.StringVar()
         ttk.Entry(toolbar,textvariable=self.search).pack(side='left',fill='x',expand=True)
@@ -96,8 +103,12 @@ class SVDialog(tk.Toplevel):
         self.table.bind('<<TreeviewSelect>>',self.detail)
         bottom=ttk.Frame(panes);panes.add(bottom,weight=3)
         choose=ttk.Frame(bottom);choose.pack(fill='x',pady=6)
+        mapping_button=ttk.Menubutton(choose,text='选择寄存器映射')
+        mapping_button.pack(side='left',padx=3)
+        mapping_menu=tk.Menu(mapping_button,tearoff=False)
+        mapping_button.configure(menu=mapping_menu)
         for var in ROLES:
-            if var!='var_gt':ttk.Button(choose,text='选择 $'+var,command=lambda v=var:self.pick(v)).pack(side='left',padx=3)
+            if var!='var_gt':mapping_menu.add_command(label='$'+var,command=lambda v=var:self.pick(v))
         ttk.Button(choose,text='清除该分支选择',command=self.clear).pack(side='left',padx=6)
         self.mode=tk.StringVar();modes=ttk.Combobox(choose,textvariable=self.mode,values=('自动','with_mux','without_mux'),state='readonly',width=13);modes.pack(side='right');modes.bind('<<ComboboxSelected>>',self.set_mode)
         self.preview=tk.Text(bottom,wrap='none',font=('Consolas',10),height=15);scroll=ttk.Scrollbar(bottom,command=self.preview.yview);scroll.pack(side='right',fill='y')
@@ -107,7 +118,7 @@ class SVDialog(tk.Toplevel):
         self.output_name=tk.StringVar();self.output_notice=tk.StringVar(value='生成后在此直接查看实际 .sv 文件中的代码。')
         ttk.Label(output,text='SV 代码文件',font=(app.family,11,'bold')).pack(anchor='w')
         ttk.Entry(output,textvariable=self.output_name,state='readonly').pack(fill='x',pady=6)
-        ttk.Label(output,textvariable=self.output_notice,wraplength=1300).pack(fill='x',pady=5)
+        wrapped_label(output,textvariable=self.output_notice).pack(fill='x',pady=5)
         code_frame=ttk.Frame(output);code_frame.pack(fill='both',expand=True)
         code_frame.rowconfigure(0,weight=1);code_frame.columnconfigure(0,weight=1)
         self.output_code=tk.Text(code_frame,wrap='none',font=('TkFixedFont',11),background='#1e1e1e',foreground='#d4d4d4',
@@ -119,7 +130,7 @@ class SVDialog(tk.Toplevel):
         self.save_templates_button=ttk.Button(footer,text='备份模板配置（非代码）',command=self.save_templates)
         self.save_templates_button.pack(side='left',padx=8)
         ttk.Button(footer,text='取消当前任务',command=self.cancel).pack(side='left')
-        self.export_button=ttk.Button(footer,text='生成 SV 代码…',command=self.export,state='disabled');self.export_button.pack(side='right')
+        self.export_button=ttk.Button(footer,text='生成 SV 代码…',command=self.export,state='disabled',style='Accent.TButton');self.export_button.pack(side='right')
         self.protocol('WM_DELETE_WINDOW',self.close);self.grab_set()
         self.registers.trace('w',self.registers_edited)
         self.refresh_registers()
@@ -133,11 +144,21 @@ class SVDialog(tk.Toplevel):
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
         if self.plan and self.export_plan_path==str(self.plan.path) and saved.get('sv_export_signature')==architecture_signature(self.graph) and saved.get('sv_export_result'):
             self.show_export_result(saved['sv_export_result'],select=False)
-    def templates(self):return {k:e.get('1.0','end-1c') for k,e in self.editors.items()}
+    def templates(self):
+        settings={k:e.get('1.0','end-1c') for k,e in self.editors.items()}
+        if self.macro_editor.rows:
+            settings['macros']=list(self.macro_editor.rows)
+        return settings
+    def macros_changed(self):
+        self.remember()
+        self.refresh()
+        self.detail()
+        if self.export_result and self.export_result.get('sv_written'):
+            self.update_output_notice()
     def remember(self):
         fields=dict(sv_templates=self.templates(),sv_branch_selections=self.selections,
                     sv_register_trace_directory=self.registers.get().strip(),sv_plan_path=str(self.plan.path) if self.plan else '')
-        if self.export_result:fields.update(sv_export_result=self.export_result,sv_export_signature=architecture_signature(self.graph),sv_export_plan_path=self.export_plan_path)
+        if self.export_result:fields.update(sv_export_result=self.export_result,sv_export_signature=architecture_signature(self.graph),sv_export_plan_path=self.export_plan_path,sv_export_macros=self.export_macros)
         self.app.ui_state.update(self.graph['config'],**fields)
     def plan_matches_registers(self,plan):
         source=plan.source();value=self.registers.get().strip()
@@ -218,10 +239,11 @@ class SVDialog(tk.Toplevel):
                 truncated=len(content)>262144;content=content[:262144]
                 self.output_name.set(str(path))
                 message='已生成 SV 代码：{} 段，跳过 {} 个分支。{}'.format(result['blocks'],result['skipped'],path)
-                self.output_notice.set(('以下显示文件前 256 Ki 字符，完整代码已写入上述 .sv 文件。' if truncated else '以下内容直接读取自已生成的 .sv 文件。')+
+                self.file_notice=(('以下显示文件前 256 Ki 字符，完整代码已写入上述 .sv 文件。' if truncated else '以下内容直接读取自已生成的 .sv 文件。')+
                     (' 有跳过分支，请在“分支映射与代码预览”处理后重新生成。' if result['skipped'] else ''))
+                self.update_output_notice()
             except (OSError,UnicodeError) as error:
-                message='SV 文件无法读取：'+str(error);content=message;self.output_notice.set(message)
+                message='SV 文件无法读取：'+str(error);content=message;self.file_notice=message;self.output_notice.set(message)
         else:
             message='未生成 SV：{} 个分支全部未就绪。请先处理下列问题，再生成代码；已有 SV 文件未改动。'.format(result.get('skipped',0))
             content=message+'\n\n'+'\n\n'.join(result.get('issues',[]))
@@ -229,13 +251,20 @@ class SVDialog(tk.Toplevel):
         self.status.set(message)
         self.output_code.configure(state='normal');self.output_code.delete('1.0','end');self.output_code.insert('1.0',content);self.output_code.configure(state='disabled')
         if select:self.tabs.select(self.output_tab)
+    def update_output_notice(self):
+        notice = self.file_notice
+        if self.export_macros != self.macro_editor.rows:
+            notice += ' 当前宏定义有修改，重新生成后生效。'
+        self.output_notice.set(notice)
     def refresh(self,reset=False):
         if not self.plan:return
         if reset:self.offset=0
         selected=self.table.selection();self.table.delete(*self.table.get_children());total,rows=self.plan.branches(self.search.get(),self.offset)
         self.rows={r['id']:r for r in rows};ready=0
+        settings=self.templates()
+        macros=template_macros(settings)
         for row in rows:
-            result=self.plan.resolve(row,self.templates(),self.selections.get(row['id']));ready+=int(result['ready'])
+            result=self.plan.resolve(row,settings,self.selections.get(row['id']),_macros=macros);ready+=int(result['ready'])
             self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['clkip'],result['mode'],'已就绪' if result['ready'] else '需处理'))
         if selected and selected[0] in self.rows:self.table.selection_set(selected)
         self.status.set('第 {}–{} / {} 个分支末端 · 本页 {} 个已就绪。导出前会重新检查全部分支。'.format(self.offset+1 if rows else 0,self.offset+len(rows),total,ready))
@@ -248,7 +277,8 @@ class SVDialog(tk.Toplevel):
     def detail(self,event=None):
         row=self.current()
         if not row:return
-        result=self.plan.resolve(row,self.templates(),self.selections.get(row['id']));self.mode.set(self.selections.get(row['id'],{}).get('mode','自动'))
+        settings=self.templates();macros=template_macros(settings)
+        result=self.plan.resolve(row,settings,self.selections.get(row['id']),_macros=macros);self.mode.set(self.selections.get(row['id'],{}).get('mode','自动'))
         text='\n'.join('$'+k+' = '+v for k,v in result['values'].items())
         info=result.get('branch') or {}
         if info.get('origins'):
@@ -266,7 +296,7 @@ class SVDialog(tk.Toplevel):
             for origin in reset.get('origins',[reset]):
                 text+='\n复位来源：起始器件 {} · L{}（用户配置：{}）'.format(origin.get('instance','?'),origin.get('layer','?'),origin.get('configured',''))
         if result['issues']:text+='\n\n需要处理：\n'+'\n'.join(result['issues'])
-        else:text+='\n\n该分支生成预览：\n'+result['code']
+        else:text+='\n\n该分支生成预览：\n'+macros.header()+result['code']
         self.preview.delete('1.0','end');self.preview.insert('1.0',text)
     def pick(self,var):
         row=self.current()
@@ -293,6 +323,7 @@ class SVDialog(tk.Toplevel):
         except ValueError as error:self.status.set(str(error));return
         self.remember();request=self.directory/'templates.json';write_graph(request,dict(self.templates(),selections=self.selections))
         self.export_plan_path=str(self.plan.path)
+        self.export_macros=list(self.macro_editor.rows)
         self.export_result=None;self.output_name.set('');self.output_notice.set('正在生成，请等待本次任务完成。')
         self.output_code.configure(state='normal');self.output_code.delete('1.0','end');self.output_code.configure(state='disabled')
         self.output_path=str(path);self.status.set('正在检查并生成全部分支…')
@@ -304,8 +335,9 @@ class SVDialog(tk.Toplevel):
             try:
                 data=json.loads(Path(path).read_text(encoding='utf-8-sig'))
                 if not isinstance(data,dict) or any(not isinstance(data.get(k),str) for k in self.editors):raise ValueError('需要 with_mux 和 without_mux 两个文本模板')
+                self.macro_editor.load(data.get('macros',[]))
                 for key,editor in self.editors.items():editor.delete('1.0','end');editor.insert('1.0',data[key])
-                self.remember();self.refresh()
+                self.macros_changed()
             except (OSError,ValueError) as error:self.status.set(str(error))
     def save_templates(self):
         path=filedialog.asksaveasfilename(parent=self,title='备份模板配置（不生成 SV 代码）',filetypes=[('模板配置 JSON','*.json')],defaultextension='.json',initialfile='clock-sv-templates.json')

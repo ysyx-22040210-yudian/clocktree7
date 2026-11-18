@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
+from .ui_layout import fit_window, wrapped_label
 
 
 class RecoveryDialog(tk.Toplevel):
@@ -39,22 +40,24 @@ class RecoveryDialog(tk.Toplevel):
                 lines.append('最后模块：L{} · {} · {}'.format(last.get('layer'), last.get('scope'), last.get('module')))
             lines.append('继续方式：' + info.get('next_step', info.get('blocked', '查看日志')))
             lines.append('阶段日志：' + str(report.get('logs', {}).get('run', '')))
-        content=ttk.Frame(frame,style='White.TFrame');content.pack(fill='both',expand=True,pady=(14,12))
+        content=ttk.Frame(frame,style='White.TFrame')
         self.detail = tk.Text(content, height=15, width=86, wrap='word', bg='#f4f7fc', fg='#263852',
                               relief='flat', padx=13, pady=12, font=(app.family, 10))
         scroll=ttk.Scrollbar(content,command=self.detail.yview)
         scroll.pack(side='right',fill='y');self.detail.configure(yscrollcommand=scroll.set)
         self.detail.pack(fill='both', expand=True)
         self.detail.insert('1.0', '\n\n'.join(lines)); self.detail.configure(state='disabled')
-        row = ttk.Frame(frame, style='White.TFrame'); row.pack(fill='x', pady=(0,12))
+        row = ttk.Frame(frame, style='White.TFrame')
         ttk.Label(row, text='续跑内存阈值（GiB）', style='White.TLabel').pack(side='left')
         self.limit = tk.StringVar(value=str(info.get('manifest', {}).get('config', {}).get('memory_limit_gib', 60)))
         self.limit_entry = ttk.Entry(row, textvariable=self.limit, width=10)
         self.limit_entry.pack(side='left', padx=12)
         if not info.get('resumable'):self.limit_entry.configure(state='disabled')
-        ttk.Label(frame, text='继续使用原任务的规则与输入；未提交尾部会撤回，已提交的实例和追踪不会重复计入。',
-                  style='Muted.TLabel', wraplength=730).pack(anchor='w')
-        actions = ttk.Frame(frame, style='White.TFrame'); actions.pack(fill='x', pady=(18,0))
+        actions = ttk.Frame(frame, style='White.TFrame'); actions.pack(side='bottom',fill='x',pady=(12,0))
+        wrapped_label(frame,text='继续使用原任务的规则与输入。恢复时撤回未提交的数据，保留已提交的实例和追踪。',
+                      style='Muted.TLabel').pack(side='bottom',fill='x')
+        row.pack(side='bottom',fill='x',pady=(0,8))
+        content.pack(fill='both',expand=True,pady=(12,8))
         ttk.Button(actions, text='稍后处理', command=self.destroy).pack(side='right')
         ttk.Button(actions, text='查看日志', command=self.logs).pack(side='left')
         self.resume_button = ttk.Button(actions, text='从断点继续', style='Accent.TButton', command=self.continue_run,
@@ -66,7 +69,7 @@ class RecoveryDialog(tk.Toplevel):
         if report.get('state') in ('finished', 'attention') or (gui_issue and not report.get('available')):
             self.title_label.configure(text='上次界面未正常关闭')
             ttk.Button(actions, text='打开已保存结果', command=self.open_result).pack(side='left', padx=8)
-        self.geometry('820x650+{}+{}'.format(app.winfo_rootx()+100, app.winfo_rooty()+60))
+        fit_window(self,app,(820,650),(640,430))
         self.bind('<Escape>', lambda event:self.destroy())
 
     def logs(self):

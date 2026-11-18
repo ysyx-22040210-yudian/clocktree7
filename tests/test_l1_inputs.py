@@ -190,6 +190,77 @@ def test_configured_boundary_declines_competing_sources():
     assert not graph['summary']['topology_valid']
 
 
+@pytest.mark.parametrize('indexed', [True, False])
+@pytest.mark.parametrize('boundary_first', [True, False])
+def test_driver_prefers_module_to_boundary_per_pin(tmp_path, indexed, boundary_first):
+    from clocktree.navigation import neighbour_edges
+    events, config = configured_fixture()
+    mux, gate, sink = ('top.domain.' + name for name in ('m', 'g0', 's'))
+    trace = next(e for e in events if e.get('instance') == gate)
+    boundary = dict(status='layer_wire_boundary', scope='top.domain', boundary_layer=2,
+                    boundary_wire='mid[3]', endpoint='top.domain.mid[3]')
+    output = dict(status='target', instance=mux, pin='o', path=[{'name':mux+'.o'}])
+    trace['results'] = [boundary, output] if boundary_first else [output, boundary]
+    # Another input bit really is supplied by the very same boundary.
+    next(e for e in events if e.get('instance') == sink and e['pin'] == 'a')['results'] = [boundary]
+    graph = build_graph(events, config)
+    assert graph['summary']['topology_valid'] and graph['summary']['connectivity_complete']
+    assert graph['summary']['input_boundary_connections'] == 2
+    source = next(s for s in graph['clock_sources'] if s['id'] == boundary['endpoint'])
+    assert source['loads'] == [{'instance':sink, 'pin':'a'}]
+    assert not any(b['instance'] == gate and b['direction'] == 'driver' for b in graph['boundaries'])
+    store = ResultStore(tmp_path/'index.sqlite', True) if indexed else None
+    try:
+        if indexed:
+            index_graph(graph, store)
+            graph = store.graph()
+        view = IndexedGraphView(graph) if indexed else GraphView(graph)
+        view.project('instances')
+        edge, = neighbour_edges(view, view.original[gate], 'upstream')
+        assert (edge['source'], edge['source_pin'], edge['target_pin']) == (mux, 'o', 'i')
+        assert not any(e['target'] == gate for e in view.l1_edges.values())
+        assert not view.original[gate]['scope_input_boundary']
+        assert view.original[gate]['component'] != view.original[sink]['input_components']['a']
+        plan = prepare(graph, None, tmp_path/'plan', False)
+        row = next(r for r in plan.branches()[1] if r['instance'] == 'top.domain.g1')
+        templates = {'with_mux':'// via mux $var_pll0 $var_clkip', 'without_mux':'// direct $var_pll0 $var_clkip'}
+        resolved = plan.resolve(row, templates)
+        assert resolved['ready'] and resolved['mode'] == 'with_mux'
+        assert resolved['values']['var_pll0'] == 'top.domain.clk[7]'
+        path = tmp_path/'branches.sv'
+        assert plan.export(templates, path)['skipped'] == 0
+        assert resolved['code'] in path.read_text(encoding='utf-8')
+    finally:
+        if store:
+            store.close()
+
+
+@pytest.mark.parametrize('other', [
+    {'status':'target', 'instance':'top.domain.g1', 'pin':'o'},
+    {'status':'constant', 'endpoint':"1'b0", 'past_input_boundary':True},
+    {'status':'unselected_port_boundary', 'endpoint':'top.domain.m.aux',
+     'pin_direction':'npiNlOutput', 'past_input_boundary':True},
+])
+def test_competing_physical_driver_preserved_alongside_module_and_boundary(other):
+    events, config = configured_fixture()
+    trace = next(e for e in events if e.get('instance') == 'top.domain.s' and e['pin'] == 'a')
+    trace['results'].extend([dict(status='target', instance='top.domain.m', pin='o'), other])
+    graph = build_graph(events, config)
+    issue, = [d for d in graph['diagnostics'] if d['code'] == 'multiple_drivers']
+    assert (issue['instance'], issue['pin'], len(issue['drivers'])) == ('top.domain.s', 'a', 2)
+    assert 'top.domain.clk[2]' not in issue['drivers']
+    assert not graph['summary']['topology_valid']
+
+
+def test_logic_beyond_only_boundary_keeps_nearest_input():
+    events, config = configured_fixture()
+    trace = next(e for e in events if e.get('instance') == 'top.domain.g0')
+    trace['results'].append(dict(status='unknown_cell', past_input_boundary=True, endpoint='top.other'))
+    graph = build_graph(events, config)
+    node = next(n for n in graph['nodes'] if n['id'] == trace['instance'])
+    assert graph['summary']['connectivity_complete'] and node['input_boundaries']['i']['signal'] == 'top.domain.clk[3]'
+
+
 @pytest.mark.parametrize('upstream_status, bypass, expected', [
     ('input_boundary', False, True),
     ('unknown_cell', False, True),
@@ -241,8 +312,11 @@ def test_l1_interface_proof_survives_only_problems_beyond_the_port(tmp_path, ups
             assert entry is None
         if upstream_status in ('target', 'mixed_drivers'):
             assert any(e['source'] == 'top.domain.m' and e['target'] == gate['path'] for e in graph['edges'])
-        if upstream_status in ('multiple', 'mixed_drivers'):
+        if upstream_status == 'multiple':
             assert any(d['code'] == 'multiple_drivers' and d['instance'] == gate['path'] for d in graph['diagnostics'])
+        if upstream_status == 'mixed_drivers':
+            assert not any(d['code'] == 'multiple_drivers' for d in graph['diagnostics'])
+            assert not any(b['instance'] == gate['path'] and b['direction'] == 'driver' for b in graph['boundaries'])
         if upstream_status == 'input_boundary':
             plan = prepare(graph, None, tmp_path/'plan', False)
             row = next(r for r in plan.branches()[1] if r['instance'] == 'top.domain.g1')

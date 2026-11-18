@@ -12,10 +12,10 @@ class StageView(ttk.Frame):
         self.steps={};self.context={};self.current=''
         self.caption=tk.StringVar(value='运行定位 · 等待任务')
         self.item=tk.StringVar(value='各阶段会在执行前记录；异常退出后可查看阶段日志。')
-        ttk.Label(self,textvariable=self.caption,style='Small.TLabel').pack(anchor='w')
         self.canvas=tk.Canvas(self,height=47,bg='white',highlightthickness=0)
         self.canvas.pack(fill='x')
         self.canvas.bind('<Configure>',lambda event:self.draw())
+        self.canvas.bind('<Map>',lambda event:self.draw())
         ttk.Label(self,textvariable=self.item,style='Muted.TLabel',anchor='w').pack(fill='x')
 
     def update_state(self,backend=None,gui=None):
@@ -32,7 +32,7 @@ class StageView(ttk.Frame):
         stage=LABELS.get(active.get('stage'),active.get('stage','等待任务'))
         attempt=backend.get('attempt')
         self.caption.set('运行定位 · {} · {}{}'.format(stage,words.get(state,state),
-            ' · Verdi 第 {} 次'.format(attempt) if attempt else ''))
+            ' · Verdi 第 {} 次'.format(attempt) if attempt else '') if active else '等待提取任务')
         context=active.get('context') or {}
         if context.get('module') and isinstance(context['module'],dict):context=context['module']
         parts=[]
@@ -55,7 +55,7 @@ class StageView(ttk.Frame):
         checkpoint=backend.get('checkpoint') or {}
         if checkpoint:parts.append('已提交 {} module / {} 追踪'.format(checkpoint.get('completed_modules',0),checkpoint.get('completed_traces',0)))
         self.item.set((' · '.join(parts) or active.get('detail') or '点击阶段节点查看对应日志')[-175:])
-        self.draw()
+        if self.winfo_ismapped():self.draw()
 
     def draw(self):
         canvas=self.canvas;canvas.delete('all')

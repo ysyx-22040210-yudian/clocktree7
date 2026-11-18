@@ -243,17 +243,28 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
     def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None, tooltip=None):
         add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width, tooltip=tooltip)
     add('rect', x=0, y=0, w=width, h=total_height, radius=8,
-        fill='#1b3350' if selected else '#17283e', stroke='#78bdff' if selected else ('#f5a46b' if node.get('trace_timeout') else '#2e445f'),
+        fill='#1d3552' if selected else '#19283b',stroke='#81c9ff' if selected else ('#f5a46b' if node.get('trace_timeout') else '#3b506b'),
         width=2 if selected else 1, dash=aggregate)
     path = node.get('path', node['id'])
     title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
-    title_reserve = 150 if len(info['short']) >= 8 else 112
-    text(11, 16, title, size=12, fill='#e5edf9', bold=True, max_width=width-title_reserve)
-    text(11, 34, node['module'], size=10, fill='#91a9c8', max_width=width-(115 if node.get('trace_timeout') else 20))
+    if aggregate:
+        badge='RTL'
+    elif kind in INPUT_SOURCE_KINDS:
+        badge=source_title(node) if kind=='boundary_input' else info['short']
+    else:
+        badge=('穿线' if kind=='wire' else info['short'])+(' · L{}'.format(node['layer']) if 'layer' in node else '')
+    badge_width=min(width*.48,max(46,20+sum(12 if unicodedata.east_asian_width(c) in ('W','F') else 7 for c in badge)))
+    add('rect',x=9,y=10,w=3,h=14,radius=1,fill=color,stroke='',width=0)
+    text(18,17,title,size=14,fill='#edf4ff',bold=True,max_width=width-badge_width-36,tooltip=path)
+    parts[-1]['overview']='name'
+    add('rect',x=width-badge_width-9,y=6,w=badge_width,h=20,radius=7,fill=info['fill'],stroke='',width=0)
+    parts[-1]['overview']='badge'
+    text(width-9-badge_width/2,16,badge,size=10,fill=color,bold=True,anchor='center',max_width=badge_width-5,tooltip=badge)
+    parts[-1]['overview']='badge'
+    text(18,35,node['module'],size=11,fill='#b0bfd1',max_width=width-(128 if node.get('trace_timeout') else 30))
     if node.get('trace_timeout'):
         text(width-11, 34, 'trace 超时', size=10, fill='#ffb27b', bold=True, anchor='e')
     if aggregate:
-        text(width-11, 16, 'RTL', size=9, fill='#9eb5d4', anchor='e')
         counts = node.get('kind_counts', {})
         slot = 0
         for device in list(DEVICE_TYPES) + ['unclassified']:
@@ -270,17 +281,15 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         text(width-22, output[1], '输出', size=9, anchor='e')
     elif kind in INPUT_SOURCE_KINDS:
         entry = node['input_entry']
-        label = source_title(node) if kind == 'boundary_input' else info['short']
-        text(width-11,16,label,size=10,fill=color,bold=True,anchor='e')
         cy=output[1]
         add('polygon',points=[(22,cy-24),(width-72,cy-24),(width-48,cy),(width-72,cy+24),(22,cy+24)],
             fill=info['fill'],stroke=color,width=1.5)
         text(34,cy,node['output'],size=13,fill=color,bold=True,max_width=width-110,tooltip=entry['signal'])
+        parts[-1]['overview']='symbol'
         line([(width-48,cy),output],fill=color)
         text(12,height-16,'展开目标层次查看各口' if entry.get('aggregate_count') else entry['signal'],
             size=10,fill='#9fcfc3',max_width=width-24,tooltip=entry['signal'])
     elif kind == 'wire':
-        text(width-11, 16, '穿线 · L{}'.format(node.get('layer','?')), size=10, fill=color, bold=True, anchor='e')
         left, right = width*.35, width*.65
         add('rect', x=left, y=49, w=right-left, h=height-77, radius=6, fill=info['fill'], stroke=color, width=1)
         palette=['#f2d788','#80ceea','#c4abff','#76d8b3','#f4a5bc']
@@ -306,10 +315,10 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             px,py=output_offset(node,width,height,pin)
             add('circle',x=px,y=py,r=3,fill='#14253a',stroke=color,width=1.3)
     elif kind == 'subsystem':
-        text(width-11, 16, 'SUBSYS · L{}'.format(node.get('layer', '?')), size=9, fill=color, bold=True, anchor='e')
         add('rect', x=width*.57, y=50, w=width*.38, h=height-70, radius=7,
             fill=info['fill'], stroke=color, width=1.6)
         text(width*.76, height/2+14, '子系统', size=13, fill=color, bold=True, anchor='center')
+        parts[-1]['overview']='symbol'
         text(width*.76, height-33, '器件引用' if node.get('reference_of') else '输入终点', size=9, fill='#9bc6db', anchor='center')
         for pin, (px, py) in zip(display_inputs(node), inputs):
             line([(px, py), (width*.57, py)])
@@ -320,13 +329,13 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             text(7, py-11, label, size=11, max_width=width*.55, tooltip=detail+'\n'+', '.join(members))
             text(7, py+11, connection_label(node,pin), size=10, fill='#9fcfc3', max_width=width*.55, tooltip=detail)
     elif kind in DEVICE_TYPES:
-        text(width-11, 16, info['short']+(' · L{}'.format(node['layer']) if 'layer' in node else ''), size=9, fill=color, bold=True, anchor='e')
         symbol_begin = len(parts)
         cy = output[1]
         if kind == 'mux':
             add('polygon', points=[(78, 50), (166, 63), (166, height-31), (78, height-18)],
                 fill=info['fill'], stroke=color, width=1.8)
             text(120, cy-6, 'MUX', size=15, fill=color, bold=True, anchor='center')
+            parts[-1]['overview']='symbol'
             text(120, cy+13, '{}:1'.format(len(inputs)), size=10, fill='#a4c9e8', anchor='center')
             input_end, output_start = 78, 166
         elif kind in GATE_KINDS:
@@ -351,6 +360,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             title = 'DIV {}'.format(div_level) if div_level in DIV_SOURCE_STYLES else 'DIV'
             text(118, cy-10, title, size=15, fill=color, bold=True, anchor='center')
             text(118, cy+12, '÷N', size=17, fill=color, anchor='center')
+            parts[-1]['overview']='symbol'
             input_end, output_start = left, right
         elif kind == 'rsy_sync':
             left, right = 66, 178
@@ -391,7 +401,6 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         text(width-7, cy-11, trace_pin_label(node,node['output']), size=11, fill='#ffb27b' if node.get('trace_timeout') else '#b5cbe5', anchor='e', max_width=width-output_start-10, tooltip=detail)
         text(width-7, cy+11, connection_label(node,node['output']), size=11, fill='#9fcfc3', anchor='e', max_width=width-output_start-10, tooltip=detail)
     else:
-        text(width-10,16,'待分类',size=9,fill='#8097b6',anchor='e')
         for pin, (px,py) in zip(node['inputs'],inputs):
             text(10,py-7,trace_pin_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
             text(10,py+7,connection_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
@@ -413,8 +422,9 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             status_x -= 11
     if aux_height(node):
         add('rect', x=7, y=height+4, w=width-14, h=total_height-height-8, radius=5,
-            fill='#122237', stroke='', width=0)
-        text(13, height+12, '辅助端口 · 仅显示', size=8, fill='#7e98b9')
+            fill='#132136',stroke='',width=0)
+        text(15,height+13,'辅助端口 · 仅显示',size=9,fill='#a1b3cc',max_width=width-30)
+        parts[-1].update(overview='aux',compact_text=' · '.join(role for role,_,_ in aux_entries(node)))
         for index, (role, pin, direction) in enumerate(aux_entries(node)):
             y = height + 26 + index*36
             problem = aux_problem(node, role, pin, direction)
@@ -423,9 +433,9 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             value = connection_label(node, pin)
             if problem and problem[0] == 'aux_port_missing':value = '端口不存在'
             elif problem and problem[0] == 'aux_port_direction':value += ' · 方向不符'
-            text(13, y, '{} · {}  {}'.format(role, DIRECTIONS[direction], pin), size=10,
+            text(15, y, '{} · {}  {}'.format(role, DIRECTIONS[direction], pin), size=11,
                  fill=color, max_width=width-26, tooltip=detail)
-            text(13, y+16, value, size=11, fill='#ffb27b' if problem and 'port_connections' in node else '#9fcfc3',
+            text(15, y+16, value, size=13, fill='#ffb27b' if problem and 'port_connections' in node else '#a8e2d3',
                  max_width=width-26, tooltip=detail)
     return parts
 
@@ -455,7 +465,7 @@ def symbol_svg(parts):
                 p['x'],p['y'],quoteattr(p['fill']),p['size'],'bold' if p['bold'] else 'normal',anchor,escape(display_text(p)),tooltip))
         elif op == 'rect':
             lines.append('<rect x="{}" y="{}" width="{}" height="{}" rx="{}" fill={} stroke={} stroke-width="{}"{}/>'.format(
-                p['x'],p['y'],p['w'],p['h'],p['radius'],quoteattr(p['fill']),quoteattr(p['stroke']),p['width'],
+                p['x'],p['y'],p['w'],p['h'],p['radius'],quoteattr(p['fill']),quoteattr(p['stroke'] or 'none'),p['width'],
                 ' stroke-dasharray="5 3"' if p.get('dash') else ''))
         elif op == 'circle':
             lines.append('<circle cx="{}" cy="{}" r="{}" fill={} stroke={} stroke-width="{}"/>'.format(

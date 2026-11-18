@@ -42,10 +42,11 @@ from .runtime import RunJournal, read_json as runtime_json, diagnose, diagnose_g
 from .stageview import StageView
 from .recovery import inspect_recovery
 from .recoveryview import RecoveryDialog
+from .ui_layout import ACCENT as BLUE, BAR, BOARD, INK, LINE, MUTED, SURFACE, dialog_heading, fit_window, panel_heading, scroll_body, style_desktop, wrapped_label
+from .desktop_art import artwork, draw_grid, glyph
 
 
 ROOT = Path(__file__).resolve().parents[1]
-INK, MUTED, BLUE, LINE = '#263852', '#7e8da3', '#2868df', '#dee5ef'
 
 
 def read_json(path):
@@ -72,19 +73,27 @@ class RuleDialog(tk.Toplevel):
         self.input_key, self.output_key = self.info['inputs'], self.info['output']
         self.title('L{} · 模块与关注端口'.format(layer))
         self.configure(bg='white')
-        self.resizable(False, False)
         self.transient(app)
-        frame = ttk.Frame(self, padding=24, style='White.TFrame')
-        frame.pack(fill='both', expand=True)
-        ttk.Label(frame, text='模块规则', style='Title.TLabel').pack(anchor='w')
-        ttk.Label(frame, text='选择器件类型，填写 module 和关注端口。连接由 elab 确定。', style='Muted.TLabel').pack(anchor='w', pady=(6,14))
+        fit_window(self, app, (860, 560), (680, 430))
+        dialog_heading(self,'模块规则','chip','L{}  /  {}'.format(layer,self.hierarchy or '设计顶层'))
+        actions = ttk.Frame(self, padding=(12,8))
+        actions.pack(side='bottom',fill='x')
+        body = ttk.Frame(self, style='White.TFrame')
+        body.pack(fill='both',expand=True)
+        body.columnconfigure(0,weight=3,uniform='rule')
+        body.columnconfigure(1,weight=2,uniform='rule')
+        body.rowconfigure(0,weight=1)
+        form = ttk.Frame(body,style='White.TFrame')
+        form.grid(row=0,column=0,sticky='nsew')
+        frame = scroll_body(form, (14,6))
+        side = ttk.Frame(body,padding=(12,8),style='White.TFrame')
+        side.grid(row=0,column=1,sticky='nsew')
         ttk.Label(frame,text='器件类型',style='Small.TLabel').pack(anchor='w',pady=(0,4))
         self.kind_var=tk.StringVar(value=kind_label(rule.get('kind'),self.tree_type) if rule.get('kind') in self.info['kinds'] else '请选择器件类型')
         self.kind_combo=ttk.Combobox(frame,textvariable=self.kind_var,
                                     values=type_labels({'tree_type':self.tree_type}, rule.get('kind')),state='readonly')
         self.kind_combo.pack(fill='x')
         self.type_hint=tk.StringVar()
-        ttk.Label(frame,textvariable=self.type_hint,style='Muted.TLabel',wraplength=430).pack(anchor='w',pady=(6,5))
         self.fields = {}
         self.entries={}
         self.port_buttons = {}
@@ -119,26 +128,26 @@ class RuleDialog(tk.Toplevel):
             self.aux_rows[role]=row;self.aux_fields[role]=variable
         self.selection_status=tk.StringVar(value='直接编辑端口名，或从 elab 正则筛选后加入。')
         ttk.Label(frame,textvariable=self.selection_status,style='Muted.TLabel',wraplength=440).pack(anchor='w',pady=(8,0))
-        ttk.Label(frame,text='器件外观预览',style='Small.TLabel').pack(anchor='w',pady=(12,6))
-        self.preview=tk.Canvas(frame,width=440,height=158,bg='#101b2e',highlightthickness=0)
+        ttk.Label(side,text='器件预览',style='Section.TLabel').pack(anchor='w',pady=(0,8))
+        self.preview=tk.Canvas(side,width=1,height=256,bg=BOARD,highlightthickness=0)
         self.preview.pack(fill='x')
+        hint=ttk.Label(side,textvariable=self.type_hint,style='Muted.TLabel',wraplength=245,justify='left')
+        hint.pack(anchor='w',pady=8)
+        side.bind('<Configure>',lambda e:hint.configure(wraplength=max(100,e.width-28)))
         self.preview_fonts={}
         self.error = tk.StringVar()
-        ttk.Label(frame, textvariable=self.error, foreground='#b74c4c', background='white', wraplength=380).pack(anchor='w', pady=10)
-        actions = ttk.Frame(frame, style='White.TFrame')
-        actions.pack(fill='x')
         ttk.Button(actions, text='取消', command=self.destroy).pack(side='right')
-        ttk.Button(actions, text='保存规则', style='Accent.TButton', command=self.save).pack(side='right', padx=8)
+        self.save_button=ttk.Button(actions,text='保存规则',image=glyph(self,'save','light'),compound='left',style='Accent.TButton',command=self.save)
+        self.save_button.pack(side='right', padx=8)
+        ttk.Label(actions, textvariable=self.error, foreground='#a43232', wraplength=430).pack(side='left',fill='x',expand=True)
         self.kind_var.trace('w',self.update_preview)
         for variable in self.fields.values():variable.trace('w',self.update_preview)
         for variable in self.aux_fields.values():variable.trace('w',self.update_preview)
         self.fields['module'].trace('w',self.invalidate_ports)
+        self.preview.bind('<Configure>',self.draw_preview)
         self.update_preview()
         self.bind('<Return>', lambda e:self.save())
         self.bind('<Escape>', lambda e:self.destroy())
-        self.update_idletasks()
-        self.geometry('+{}+{}'.format(app.winfo_rootx()+(app.winfo_width()-self.winfo_width())//2,
-                                     app.winfo_rooty()+max(40,(app.winfo_height()-self.winfo_height())//2)))
         self.grab_set()
         self.first.focus_set()
 
@@ -218,8 +227,6 @@ class RuleDialog(tk.Toplevel):
         self.selection_status.set('请核对文本框中的端口名与当前 module。')
 
     def update_preview(self,*args):
-        c=self.preview
-        c.delete('all')
         kind=LABEL_TO_KIND.get(self.kind_var.get())
         roles=dict(AUX_ROLES.get(kind,()))
         self.aux_hint.pack_forget()
@@ -235,8 +242,18 @@ class RuleDialog(tk.Toplevel):
         elif kind=='wire':self.type_hint.set('穿线支持多个输入和输出。内部逐位对应关系由 elab 证明；未知连接不补画。')
         elif kind=='mux':self.type_hint.set('选择器可填写多个输入和一个输出。输入顺序用于 SV 模板。')
         else:self.type_hint.set('填写一个关注输入和一个关注输出。')
+        self.draw_preview()
+
+    def draw_preview(self,event=None):
+        c=self.preview
+        c.delete('all')
+        w,h=c.winfo_width(),c.winfo_height()
+        if min(w,h)<2:return
+        draw_grid(c,w,h)
+        kind=LABEL_TO_KIND.get(self.kind_var.get())
+        subsystem=kind=='subsystem'
         if kind not in self.info['kinds']:
-            c.create_text(220,78,text='选择器件类型后预览外观',fill='#8da7ca',font=(self.app.family,11))
+            c.create_text(w/2,h/2,text='选择类型后预览器件',fill='#b8ccdb',font=(self.app.family,10))
             return
         pins=port_names(self.fields[self.input_key].get())
         pins=pins or (['输入 1','输入 2'] if kind=='mux' else ['输入'])
@@ -244,10 +261,11 @@ class RuleDialog(tk.Toplevel):
               'kind':kind,'inputs':pins,'output':None if subsystem else self.fields[self.output_key].get().strip() or '输出','preview':True}
         if kind=='wire':
             node.update(output=None,outputs=port_names(self.fields[self.output_key].get()) or ['输出 1','输出 2'])
-        node['aux_ports']={role:self.aux_fields[role].get().strip() for role in roles if self.aux_fields[role].get().strip()}
-        h=node_height(node)
-        scale=min(1.,142/h)
-        draw_device(c,node,(440-242*scale)/2,8,242,h,scale,self.app.family,font_cache=self.preview_fonts)
+        node['aux_ports']={role:self.aux_fields[role].get().strip() for role,_ in AUX_ROLES.get(kind,()) if self.aux_fields[role].get().strip()}
+        height=node_height(node)
+        scale=min(1.,(w-16)/242,(h-16)/height)
+        width=min(340,(w-16)/scale)
+        draw_device(c,node,(w-width*scale)/2,(h-height*scale)/2,width,height,scale,self.app.family,font_cache=self.preview_fonts)
 
 
 class ClockTreeApp(tk.Tk):
@@ -269,19 +287,14 @@ class ClockTreeApp(tk.Tk):
             self.gui_journal.fail(error)
             raise
         self.title('ClockTree7  |  RTL 时钟树 / 复位树架构分析')
-        icon=ROOT/'docs/clocktree7.gif'
-        if icon.is_file():
-            self._icon_image=tk.PhotoImage(master=self,file=str(icon))
-            self.iconphoto(True,self._icon_image)
-        self.configure(bg='#edf1f7')
-        self.minsize(1280, 760)
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
-        width, height = min(1840, sw-60), min(1000, sh-72)
-        self.geometry('{}x{}+{}+{}'.format(max(1280,width),max(760,height),max(0,(sw-width)//2),max(0,(sh-height)//2)))
+        self.iconphoto(True,artwork(self).photo('brand'))
+        self.configure(bg=SURFACE)
+        fit_window(self, None, (1760, 980), (940, 600))
         families = set(tkfont.families(self))
-        self.family = next((x for x in ['Microsoft YaHei UI','Microsoft YaHei','WenQuanYi Micro Hei','Noto Sans CJK SC','DejaVu Sans'] if x in families),'sans-serif')
+        self.family = next((x for x in ['Microsoft YaHei UI','Microsoft YaHei','Noto Sans CJK SC','WenQuanYi Micro Hei','DejaVu Sans'] if x in families),'sans-serif')
+        self.latin = next((x for x in ['Inter','Segoe UI','DejaVu Sans'] if x in families),self.family)
         self.mono = 'Consolas' if 'Consolas' in families else 'DejaVu Sans Mono'
-        self._style()
+        style_desktop(self)
         self.runs = Path(runs or default_runs_dir()).resolve()
         self.runs.mkdir(parents=True, exist_ok=True)
         self.events = queue.Queue()
@@ -327,6 +340,10 @@ class ClockTreeApp(tk.Tk):
         self.last_job = None
         self.error_messages = []
         self.focused_view = False
+        self._compact = None
+        self._compact_side = 'left'
+        self._side_widths = {'left': 280, 'right': 280}
+        self._pane_job = None
         self.status = tk.StringVar(value='就绪 · 默认两级，可添加层级或导入已有配置')
         self.state = tk.StringVar(value='等待设计')
         self.project = tk.StringVar(value='未打开设计')
@@ -345,8 +362,10 @@ class ClockTreeApp(tk.Tk):
         self.bind('<Control-plus>', lambda e:self.diagram.zoom(1.2))
         self.bind('<Control-minus>', lambda e:self.diagram.zoom(1/1.2))
         self.bind('<F5>', lambda e:self.diagram.fit())
+        self.bind('<Control-f>', self.focus_search)
+        self.bind('<F11>', self.toggle_focus)
+        self.bind('<Escape>', lambda e:self.toggle_focus() if self.focused_view else None)
         self.after(100, self._poll)
-        self.after(120, self._set_sashes)
         self.set_config({'design':{},'layers':self.layers})
         self.refresh_runs()
         if remember:
@@ -359,90 +378,59 @@ class ClockTreeApp(tk.Tk):
         elif result:
             self.after(180,lambda:self.load_result(Path(result)))
 
-    def _style(self):
-        self.option_add('*Font',(self.family,10))
-        self.option_add('*Menu.Font',(self.family,10))
-        self.option_add('*TCombobox*Listbox.font',(self.family,10))
-        style=ttk.Style(self)
-        style.theme_use('clam')
-        style.configure('.',font=(self.family,10),foreground=INK,background='#f4f6fa',bordercolor=LINE)
-        style.configure('TFrame',background='#f4f6fa')
-        style.configure('White.TFrame',background='white')
-        style.configure('TLabel',background='#f4f6fa',foreground=INK)
-        style.configure('White.TLabel',background='white')
-        style.configure('Title.TLabel',background='white',font=(self.family,14,'bold'))
-        style.configure('Muted.TLabel',background='white',foreground=MUTED,font=(self.family,9))
-        style.configure('Small.TLabel',background='white',foreground='#64758e',font=(self.family,9))
-        style.configure('TButton',padding=(10,7),background='white',foreground=INK,borderwidth=1,relief='flat',focuscolor='')
-        style.map('TButton',background=[('active','#edf3fe')],bordercolor=[('active','#8eb0ed')],foreground=[('disabled','#a4afbf')])
-        style.configure('Accent.TButton',background=BLUE,foreground='white',bordercolor=BLUE,font=(self.family,10,'bold'),padding=(13,9))
-        style.map('Accent.TButton',background=[('disabled','#aebcce'),('active','#205bc6')],foreground=[('disabled','#e8edf5'),('active','white')])
-        style.configure('Layer.TButton',padding=(4,7),font=(self.family,9,'bold'))
-        style.configure('LayerActive.TButton',padding=(4,7),background='#e5efff',foreground='#225fc8',bordercolor='#93b6f1',font=(self.family,9,'bold'))
-        style.configure('TEntry',fieldbackground='white',padding=6,borderwidth=1,lightcolor=LINE,darkcolor=LINE)
-        style.map('TEntry',bordercolor=[('focus','#5c91e8')])
-        style.configure('TCombobox',fieldbackground='white',background='white',padding=5,arrowsize=12)
-        style.map('TCombobox',fieldbackground=[('readonly','white')],selectbackground=[('readonly','white')],selectforeground=[('readonly',INK)])
-        style.configure('Treeview',background='white',fieldbackground='white',foreground=INK,rowheight=29,borderwidth=0,font=(self.family,9))
-        style.configure('Treeview.Heading',background='#f1f4f9',foreground='#6f7f96',padding=(7,8),font=(self.family,9),relief='flat')
-        style.map('Treeview',background=[('selected','#e5efff')],foreground=[('selected','#205fc4')])
-        style.configure('TNotebook',background='white',borderwidth=0,tabmargins=(0,0,0,0))
-        style.configure('TNotebook.Tab',padding=(13,9),background='#f3f5f9',foreground='#7b8ba2',borderwidth=0)
-        style.map('TNotebook.Tab',background=[('selected','white')],foreground=[('selected',BLUE)])
-        style.configure('Horizontal.TProgressbar',background=BLUE,troughcolor='#e7edf5',borderwidth=0,thickness=3)
-        style.configure('TPanedwindow',background=LINE)
-        style.configure('Vertical.TScrollbar',background='#d8e0ec',troughcolor='#f5f7fa',borderwidth=0,arrowsize=10)
-
     def _build(self):
-        header=tk.Frame(self,bg='#111e34',height=72)
+        header = tk.Frame(self,bg=BAR,padx=14,pady=7)
         header.pack(fill='x')
-        header.pack_propagate(False)
-        logo=tk.Canvas(header,width=44,height=44,bg='#111e34',highlightthickness=0)
-        logo.pack(side='left',padx=(20,10))
-        logo.create_line(12,10,22,10,22,32,34,32,fill='#74b8ff',width=2)
-        logo.create_line(22,21,34,21,fill='#74b8ff',width=2)
-        for x,y in [(10,10),(35,21),(35,32)]:
-            logo.create_rectangle(x-3,y-3,x+3,y+3,fill='#74b8ff',outline='')
-        brand=tk.Frame(header,bg='#111e34')
-        brand.pack(side='left')
-        tk.Label(brand,text='ClockTree7',font=(self.family,21,'bold'),fg='white',bg='#111e34').pack(anchor='w')
-        tk.Label(brand,text='RTL  时钟 / 复位树架构分析',font=(self.family,8),fg='#8ca6ca',bg='#111e34').pack(anchor='w')
-        tk.Label(header,text='DESIGN  /  CONNECTIVITY  /  INSIGHT',font=(self.family,8),fg='#6682a9',bg='#111e34').pack(side='left',padx=30)
-        for text,command in [('导出…',self.export_menu),('打开结果',self.open_result),('保存配置',self.save_config),('导入配置',self.open_config),('查看示例',self.open_example),('新建配置',self.new_config)]:
-            button=tk.Button(header,text=text,command=command,bg='#233a5a',fg='#e3edfc',activebackground='#31517c',activeforeground='white',relief='flat',borderwidth=0,padx=15,pady=8,cursor='hand2',font=(self.family,9))
-            button.pack(side='right',padx=(0,9))
-            if text=='打开结果':self.open_result_button=button
-        project_bar=ttk.Frame(self,padding=(19,9),style='White.TFrame')
-        project_bar.pack(fill='x')
-        ttk.Label(project_bar,text='WORKSPACE  /',style='Muted.TLabel').pack(side='left')
-        self.analysis_combo=ttk.Combobox(project_bar,textvariable=self.analysis_var,values=[p['label'] for p in TREE_PROFILES.values()],width=9,state='readonly')
-        self.analysis_combo.pack(side='left',padx=(10,0))
-        self.analysis_combo.bind('<<ComboboxSelected>>',self.switch_tree_type)
-        ttk.Label(project_bar,textvariable=self.project,style='White.TLabel',font=(self.family,10,'bold')).pack(side='left',padx=10)
-        self.state_badge=tk.Label(project_bar,textvariable=self.state,bg='#edf2fa',fg='#70819a',font=(self.family,9),padx=10,pady=4)
-        self.state_badge.pack(side='right')
-        self.panes=ttk.Panedwindow(self,orient='horizontal')
-        self.panes.pack(fill='both',expand=True,pady=(1,0))
-        self.left=ttk.Frame(self.panes,width=310,style='White.TFrame')
-        self.center=ttk.Frame(self.panes,style='White.TFrame')
-        self.right=ttk.Frame(self.panes,width=300,style='White.TFrame')
-        self.panes.add(self.left,weight=0)
-        self.panes.add(self.center,weight=1)
-        self.panes.add(self.right,weight=0)
+        header.columnconfigure(3, weight=1)
+        tk.Label(header,image=artwork(self).photo('brand'),bg=BAR,bd=0).grid(row=0,column=0,padx=(0,9))
+        tk.Label(header,text='ClockTree7',font=(self.latin,16,'bold'),bg=BAR,fg='#f3f6ff').grid(row=0,column=1,padx=(0,20))
+        self.analysis_combo = ttk.Combobox(header, textvariable=self.analysis_var, values=[p['label'] for p in TREE_PROFILES.values()],
+                                           width=7,state='readonly',style='Header.TCombobox')
+        self.analysis_combo.grid(row=0, column=2)
+        self.analysis_combo.bind('<<ComboboxSelected>>', self.switch_tree_type)
+        project=tk.Frame(header,bg=BAR)
+        project.grid(row=0,column=3,sticky='ew',padx=14)
+        tk.Frame(project,bg='#43516a',width=1,height=20).pack(side='left',padx=(0,12))
+        tk.Label(project,textvariable=self.project,width=1,anchor='w',bg=BAR,fg='#ccd7ec',font=(self.family,10)).pack(side='left',fill='x',expand=True)
+        self.state_badge = ttk.Label(header,textvariable=self.state,style='idle.Status.TLabel')
+        self.state_badge.grid(row=0, column=4, padx=(0, 13))
+        file_button = tk.Menubutton(header, text='文件 ▾', bg=BAR, fg='white', activebackground='#294855',
+                                    activeforeground='white', padx=9, pady=3, takefocus=True)
+        file_button.grid(row=0, column=5, padx=(0, 8))
+        self.file_menu = tk.Menu(file_button, tearoff=False)
+        file_button.configure(menu=self.file_menu)
+        for label, command, shortcut in [('新建配置', self.new_config, ''), ('导入配置…', self.open_config, 'Ctrl+O'),
+                                          ('保存配置…', self.save_config, 'Ctrl+S'), ('打开结果…', self.open_result, 'Ctrl+L'),
+                                          ('查看示例', self.open_example, '')]:
+            self.file_menu.add_command(label=label, command=command, accelerator=shortcut)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label='导出全量 JSON…', command=self.export_result)
+        self.file_menu.add_command(label='导出当前视图 SVG…', command=self.export_svg)
+        self.open_result_button=ttk.Button(header,text='打开结果',image=glyph(header,'folder','light'),compound='left',command=self.open_result,style='Header.TButton')
+        self.open_result_button.grid(row=0, column=6)
+
+        bottom = tk.Frame(self,bg='#eaf0f7',padx=12,pady=2)
+        bottom.pack(side='bottom', fill='x')
+        tk.Label(bottom, textvariable=self.status, width=1, fg='#465c77', bg='#eaf0f7', font=(self.family, 9),
+                 anchor='w').pack(side='left', expand=True, fill='x')
+        self.panes = ttk.Panedwindow(self, orient='horizontal')
+        self.panes.pack(fill='both', expand=True)
+        self.left = ttk.Frame(self.panes, width=280, style='White.TFrame')
+        self.center = ttk.Frame(self.panes, style='White.TFrame')
+        self.right = ttk.Frame(self.panes, width=280, style='White.TFrame')
+        self.panes.add(self.left, weight=0)
+        self.panes.add(self.center, weight=1)
+        self.panes.add(self.right, weight=0)
         self._build_left()
         self._build_center()
         self._build_inspector()
-        bottom=tk.Frame(self,bg='#e9eef6',height=29)
-        bottom.pack(fill='x')
-        bottom.pack_propagate(False)
-        tk.Label(bottom,textvariable=self.status,fg='#657894',bg='#e9eef6',font=(self.family,8),anchor='w').pack(side='left',fill='x',expand=True,padx=15)
-        tk.Label(bottom,text='TK {}  ·  NATIVE CANVAS'.format(self.tk.call('info','patchlevel')),fg='#8798b0',bg='#e9eef6',font=(self.family,8)).pack(side='right',padx=14)
+        self._analysis_state()
+        self._fill_connections([],None)
+        self.panes.bind('<Configure>', self._resize_workspace)
+        self.panes.bind('<ButtonRelease-1>', self._remember_sashes, add='+')
 
     def _build_left(self):
-        head=ttk.Frame(self.left,padding=(17,18,17,14),style='White.TFrame')
-        head.pack(fill='x')
-        ttk.Label(head,text='设计工作台',style='Title.TLabel').pack(anchor='w')
-        ttk.Label(head,text='从 elab 自动解析全部关注结构',style='Muted.TLabel').pack(anchor='w',pady=(5,0))
+        panel_heading(self.left,'设计面板','sliders')
         self.left_tabs=ttk.Notebook(self.left)
         self.left_tabs.pack(fill='both',expand=True)
         settings_outer=ttk.Frame(self.left_tabs,style='White.TFrame')
@@ -450,7 +438,7 @@ class ClockTreeApp(tk.Tk):
         footer.pack(side='bottom',fill='x')
         scroll_area=ttk.Frame(settings_outer,style='White.TFrame')
         scroll_area.pack(fill='both',expand=True)
-        self.settings_canvas=tk.Canvas(scroll_area,bg='white',highlightthickness=0,width=280)
+        self.settings_canvas=tk.Canvas(scroll_area,bg='white',highlightthickness=0,width=238)
         scroll=ttk.Scrollbar(scroll_area,command=self.settings_canvas.yview)
         self.settings_canvas.configure(yscrollcommand=scroll.set)
         scroll.pack(side='right',fill='y')
@@ -490,35 +478,39 @@ class ClockTreeApp(tk.Tk):
         ttk.Label(settings,text='端口追踪根层次',style='Small.TLabel').pack(anchor='w',pady=(12,0))
         self.trace_scope_entry=ttk.Entry(settings,textvariable=self.trace_scope_var)
         self.trace_scope_entry.pack(fill='x',pady=(5,4))
-        ttk.Label(settings,text='填写后仅追踪该层次及其子层次\n留空保留原有顶层追踪方式',style='Muted.TLabel').pack(anchor='w')
-        ttk.Label(settings,text='连接提取方式',style='Small.TLabel').pack(anchor='w',pady=(12,0))
-        self.extraction_mode_box=ttk.Combobox(settings,textvariable=self.extraction_mode_var,
+        ttk.Label(settings,text='留空时从设计顶层追踪。',style='Muted.TLabel').pack(anchor='w')
+        self.options_open = False
+        self.options_button=ttk.Button(settings,text='▸ 提取选项',image=glyph(settings,'sliders'),compound='left',command=self.toggle_options)
+        self.options_button.pack(fill='x',pady=(8,1))
+        self.options_frame = advanced = ttk.Frame(settings,style='White.TFrame')
+        ttk.Label(advanced,text='连接提取方式',style='Small.TLabel').pack(anchor='w',pady=(7,0))
+        self.extraction_mode_box=ttk.Combobox(advanced,textvariable=self.extraction_mode_var,
             values=[EXTRACTION_MODES[k] for k in ('target','full')],state='readonly')
         self.extraction_mode_box.pack(fill='x',pady=(5,4))
-        ttk.Label(settings,text='目标结构：全部关注输入反查，不展开输出负载\n全负载核验：另行提取驱动与全部负载',style='Muted.TLabel').pack(anchor='w')
-        memory_row=ttk.Frame(settings,style='White.TFrame')
+        ttk.Label(advanced,text='目标结构反查关注输入。全负载模式另行核验输出负载。',style='Muted.TLabel',wraplength=218).pack(anchor='w')
+        memory_row=ttk.Frame(advanced,style='White.TFrame')
         memory_row.pack(fill='x',pady=(12,4))
         ttk.Label(memory_row,text='内存重启阈值（GiB）',style='Small.TLabel').pack(side='left')
         self.memory_limit_entry=ttk.Entry(memory_row,textvariable=self.memory_limit_var,width=7)
         self.memory_limit_entry.pack(side='right')
-        ttk.Label(settings,text='默认60；0关闭。接近阈值提交断点并重启\n监测 Verdi 与提取控制进程的合计 RSS',style='Muted.TLabel').pack(anchor='w')
-        ttk.Label(settings,textvariable=self.memory_status,style='Muted.TLabel',wraplength=260).pack(anchor='w',pady=(4,0))
-        timeout_row=ttk.Frame(settings,style='White.TFrame')
+        ttk.Label(advanced,text='接近阈值时提交断点并重启 Verdi。填 0 关闭监测。',style='Muted.TLabel',wraplength=218).pack(anchor='w')
+        ttk.Label(advanced,textvariable=self.memory_status,style='Muted.TLabel',wraplength=218).pack(anchor='w',pady=(4,0))
+        timeout_row=ttk.Frame(advanced,style='White.TFrame')
         timeout_row.pack(fill='x',pady=(12,4))
         ttk.Label(timeout_row,text='端口 trace 超时（秒）',style='Small.TLabel').pack(side='left')
         self.port_timeout_entry=ttk.Entry(timeout_row,textvariable=self.port_timeout_var,width=7)
         self.port_timeout_entry.pack(side='right')
-        ttk.Label(settings,text='默认0：不限时。超时后重启并跳过当前\n例化的剩余端口，同名其他例化继续',style='Muted.TLabel').pack(anchor='w')
-        self.div_sources_frame = ttk.Frame(settings, style='White.TFrame')
+        ttk.Label(advanced,text='0 表示不限时。超时后跳过当前实例的剩余端口。',style='Muted.TLabel',wraplength=218).pack(anchor='w')
+        self.div_sources_frame = ttk.Frame(advanced, style='White.TFrame')
         self.div_sources_frame.pack(fill='x', pady=(12, 0))
         ttk.Label(self.div_sources_frame, text='DIV 寄存器来源', style='Small.TLabel').pack(anchor='w')
         for index, variable in enumerate(self.div_source_vars, 1):
             ttk.Label(self.div_sources_frame, text='来源层次 {} · RTL 路径'.format(index), style='Muted.TLabel').pack(anchor='w', pady=(5, 0))
             ttk.Entry(self.div_sources_frame, textvariable=variable).pack(fill='x', pady=(3, 0))
-        ttk.Label(self.div_sources_frame, text='两条路径成对填写，用于归类 div 端口的源寄存器。',
-                  style='Muted.TLabel', wraplength=260).pack(anchor='w', pady=(5, 0))
+        wrapped_label(self.div_sources_frame, text='两条路径成对填写，用于归类 div 端口的源寄存器。',
+                      style='Muted.TLabel').pack(fill='x', pady=(5, 0))
         self.rules_separator = ttk.Separator(settings)
-        self.rules_separator.pack(fill='x',pady=15)
+        self.rules_separator.pack(fill='x',pady=8)
         rule_heading=ttk.Frame(settings,style='White.TFrame')
         rule_heading.pack(fill='x')
         self.layer_count_var=tk.StringVar(value='传播规则 · 2 级')
@@ -538,10 +530,11 @@ class ClockTreeApp(tk.Tk):
         ttk.Entry(settings,textvariable=self.hierarchy_var).pack(fill='x',pady=(5,10))
         ttk.Label(settings,text='填写父层路径，仅查本层直接例化\n不递归查找子层次中的 module',style='Muted.TLabel').pack(anchor='w',pady=(0,8))
         self.layer_input_boundary_check = ttk.Checkbutton(
-            settings, text='将此层的输入口和 wire 设为边界',
+            settings, text='将本层输入口和 wire 设为边界',
             variable=self.layer_input_boundary_var, command=self.change_input_boundary)
         self.layer_input_boundary_check.pack(anchor='w')
-        ttk.Label(settings, text='反查到达此层的输入口或本层 wire 时停止。\n已勾选的层标有 *。', style='Muted.TLabel', wraplength=255).pack(anchor='w', pady=(3, 10))
+        wrapped_label(settings,text='输入优先连接已选器件的输出。未找到时，使用先遇到的边界。已勾选的层标有 *。',
+                      style='Muted.TLabel').pack(fill='x',pady=(3,10))
         ttk.Label(settings,text='该层复位信号 · $var_rst',style='Small.TLabel').pack(anchor='w')
         self.layer_reset_entry=ttk.Entry(settings,textvariable=self.layer_reset_var)
         self.layer_reset_entry.pack(fill='x',pady=(5,4))
@@ -563,12 +556,13 @@ class ClockTreeApp(tk.Tk):
             ttk.Button(actions,text=text,command=command,width=6).pack(side='left',padx=(0,4))
         self.layer_hint = ttk.Label(settings, style='Muted.TLabel', justify='left')
         self.layer_hint.pack(anchor='w',pady=(3,4))
-        self.run_button=ttk.Button(footer,text='开始提取全部时钟树',style='Accent.TButton',command=self.start_extraction)
-        self.run_button.pack(fill='x',pady=(10,5))
-        self.cancel_button=ttk.Button(footer,text='取消当前提取',command=self.cancel_job,state='disabled')
-        self.cancel_button.pack(fill='x')
+        self.run_button=ttk.Button(footer,text='开始提取全部时钟树',image=glyph(footer,'play','light'),compound='left',style='Accent.TButton',command=self.start_extraction)
+        footer.columnconfigure(0,weight=1)
+        self.run_button.grid(row=0,column=0,sticky='ew',pady=(3,0))
+        self.cancel_button=ttk.Button(footer,text='取消',width=4,command=self.cancel_job,state='disabled')
+        self.cancel_button.grid(row=0,column=1,sticky='ns',padx=(5,0),pady=(3,0))
         self.progress=ttk.Progressbar(footer,mode='indeterminate')
-        self.progress.pack(fill='x',pady=(8,0))
+        self.progress.grid(row=1,column=0,columnspan=2,sticky='ew',pady=(5,0))
         self.progress.configure(mode='determinate',value=0)
         self.bind('<MouseWheel>',self._config_wheel,add='+')
         self.bind('<Button-4>',self._config_wheel,add='+')
@@ -608,95 +602,154 @@ class ClockTreeApp(tk.Tk):
         self.nav_caption.pack(anchor='w',pady=9)
         ttk.Button(browser,text='定位所选实例',command=self.locate_nav).pack(fill='x')
 
+    def toggle_options(self):
+        self.options_open = not self.options_open
+        self.options_button.configure(text='▾ 收起提取选项' if self.options_open else '▸ 提取选项')
+        if self.options_open:
+            self.options_frame.pack(fill='x',before=self.rules_separator)
+        else:
+            self.options_frame.pack_forget()
+
     def _build_center(self):
-        title=ttk.Frame(self.center,padding=(18,16,18,9),style='White.TFrame')
-        self.diagram_title=title
+        self.diagram_title = title = ttk.Frame(self.center,padding=(12,6),style='White.TFrame')
         title.pack(fill='x')
-        ttk.Label(title,textvariable=self.diagram_name,style='Title.TLabel').pack(side='left')
-        ttk.Label(title,textvariable=self.view_label,style='Muted.TLabel').pack(side='right')
-        self.stage_view=StageView(self.center,self.family,self.show_stage_log)
-        self.stage_view.pack(fill='x')
-        stats=ttk.Frame(self.center,padding=(10,4,10,12),style='White.TFrame')
-        self.stats_frame=stats
-        stats.pack(fill='x')
-        self.stats={}
-        for key,label in [('instances','目标实例'),('edges','端口连线'),('roots','根结构'),('terminals','分支末端'),('components','独立网络'),('unresolved','未解析')]:
-            frame=tk.Frame(stats,bg='#f5f7fb',highlightbackground='#e7edf5',highlightthickness=1)
-            frame.pack(side='left',fill='x',expand=True,padx=4)
-            value=tk.StringVar(value='—')
-            tk.Label(frame,textvariable=value,font=(self.family,20,'bold'),fg=INK,bg='#f5f7fb',anchor='w').pack(fill='x',padx=11,pady=(8,0))
-            tk.Label(frame,text=label,font=(self.family,8),fg=MUTED,bg='#f5f7fb',anchor='w').pack(fill='x',padx=12,pady=(0,9))
-            self.stats[key]=value
-        toolbar=ttk.Frame(self.center,padding=(14,5,14,8),style='White.TFrame')
-        self.diagram_toolbar=toolbar
+        title.columnconfigure(1, weight=1)
+        self.diagram_heading=ttk.Label(title,textvariable=self.diagram_name,style='Title.TLabel')
+        self.diagram_heading.grid(row=0,column=0,sticky='w')
+        self.summary_font=tkfont.Font(root=self,font=(self.family,9))
+        ttk.Label(title, textvariable=self.view_label, style='Muted.TLabel', width=1, anchor='w').grid(
+            row=0, column=1, sticky='ew', padx=12)
+        self.tools_button = ttk.Menubutton(title, text='分析工具')
+        self.tools_menu = tk.Menu(self.tools_button, tearoff=False)
+        self.tools_button.configure(menu=self.tools_menu)
+        self.tools_menu.add_command(label='辅助口寄存器追踪…', command=self.open_register_trace, state='disabled')
+        self.tools_menu.add_command(label='分支 SV 模板…', command=self.open_sv_templates, state='disabled')
+        self.tools_menu.add_separator()
+        self.tools_menu.add_command(label='问题表 / CSV…', command=self.open_issues)
+        self.tools_button.grid(row=0, column=2, padx=(0, 4))
+        self.quick_tools=ttk.Frame(title,style='White.TFrame')
+        self.quick_tools.grid(row=0,column=2,sticky='e')
+        self.register_button=ttk.Button(self.quick_tools,text='寄存器追踪',image=glyph(title,'register'),compound='left',command=self.open_register_trace,state='disabled')
+        self.sv_button=ttk.Button(self.quick_tools,text='分支 SV 模板',image=glyph(title,'code'),compound='left',command=self.open_sv_templates,state='disabled')
+        self.issue_button=ttk.Button(self.quick_tools,text='问题表',image=glyph(title,'issue'),compound='left',command=self.open_issues)
+        for button in (self.register_button,self.sv_button,self.issue_button):
+            button.pack(side='left',padx=(0,4))
+        self.quick_tools.grid_remove()
+        title.bind('<Configure>',self._size_analysis_tools)
+        self.panel_switch = ttk.Button(title, text='检查器', command=self.switch_panel)
+        self.panel_switch.grid(row=0, column=3, padx=(0, 4))
+        self.focus_button=ttk.Button(title,text='专注画布',image=glyph(title,'focus','blue'),compound='left',command=self.toggle_focus)
+        self.focus_button.grid(row=0, column=4)
+
+        self.stats_frame = stats = tk.Frame(self.center,bg='white',bd=0)
+        stats.pack(fill='x', padx=12, pady=(0, 5))
+        self.stats = {}
+        for col,(key,label,icon,tone) in enumerate([
+                ('instances','目标实例','chip','blue'),('edges','端口连线','link','teal'),
+                ('roots','根结构','root','ink'),('terminals','分支末端','terminal','ink'),
+                ('components','独立网络','network','ink'),('unresolved','未解析','issue','slate')]):
+            stats.columnconfigure(col, weight=1, uniform='metrics')
+            bg='#eef2ff' if col==0 else '#f6f8fc'
+            cell=ttk.Frame(stats,style='First.Metric.TFrame' if col==0 else 'Metric.TFrame',padding=(8,3))
+            cell.grid(row=0,column=col,sticky='nsew',padx=(0 if col==0 else 4,0))
+            value = self.stats[key] = tk.StringVar(value='—')
+            caption=tk.Label(cell,text=label,image=glyph(cell,icon,tone),compound='left',font=(self.family,8),
+                             fg=MUTED,bg=bg,bd=0,padx=1,pady=0,anchor='w')
+            caption.pack(fill='x')
+            number=tk.Label(cell,textvariable=value,font=(self.latin,15,'bold'),fg=BLUE if col==0 else INK,
+                            bg=bg,bd=0,padx=1,pady=0,anchor='w')
+            number.pack(fill='x')
+            if key == 'unresolved':
+                self.unresolved_number = number
+                self.unresolved_caption=caption
+
+        self.diagram_toolbar = toolbar = ttk.Frame(self.center, padding=(12, 2, 12, 4), style='White.TFrame')
         toolbar.pack(fill='x')
-        self.component_var=tk.StringVar(value='全部时钟网络')
-        self.component_combo=ttk.Combobox(toolbar,textvariable=self.component_var,values=['全部时钟网络'],width=17,state='readonly')
-        self.component_combo.pack(side='left',padx=(0,6))
-        self.component_combo.bind('<<ComboboxSelected>>',self.change_component)
-        self.view_mode=tk.StringVar(value='实例明细')
-        self.mode_combo=ttk.Combobox(toolbar,textvariable=self.view_mode,values=['实例明细','RTL 层次概览'],width=12,state='readonly')
-        self.mode_combo.pack(side='left',padx=(0,6))
-        self.mode_combo.bind('<<ComboboxSelected>>',self.change_mode)
-        ttk.Button(toolbar,text='返回全网',command=lambda:self.diagram.reset_scope()).pack(side='left',padx=(0,6))
-        self.focus_button=ttk.Button(toolbar,text='专注画布',command=self.toggle_focus)
-        self.focus_button.pack(side='left')
-        ttk.Button(toolbar,text='全图',command=lambda:self.diagram.fit()).pack(side='right')
-        ttk.Button(toolbar,text='+',width=3,command=lambda:self.diagram.zoom(1.25)).pack(side='right',padx=4)
-        self.zoom_label=ttk.Label(toolbar,text='100%',style='Muted.TLabel',width=6,anchor='center')
-        self.zoom_label.pack(side='right')
-        ttk.Button(toolbar,text='−',width=3,command=lambda:self.diagram.zoom(.8)).pack(side='right',padx=4)
-        searchrow=ttk.Frame(self.center,padding=(14,0,14,9),style='White.TFrame')
+        self.component_var = tk.StringVar(value='全部时钟网络')
+        self.component_combo = ttk.Combobox(toolbar, textvariable=self.component_var, values=['全部时钟网络'], width=15, state='readonly')
+        self.component_combo.pack(side='left', padx=(0, 4))
+        self.component_combo.bind('<<ComboboxSelected>>', self.change_component)
+        self.view_mode = tk.StringVar(value='实例明细')
+        self.mode_combo = ttk.Combobox(toolbar, textvariable=self.view_mode, values=['实例明细','RTL 层次概览'], width=11, state='readonly')
+        self.mode_combo.pack(side='left', padx=(0, 4))
+        self.mode_combo.bind('<<ComboboxSelected>>', self.change_mode)
+        self.layout_var = tk.StringVar(value='分支紧凑布局')
+        self.references_var = tk.BooleanVar(value=True)
+        self.legend_var = tk.BooleanVar(value=False)
+        self.view_button = ttk.Menubutton(toolbar, text='视图')
+        self.view_menu = menu = tk.Menu(self.view_button, tearoff=False)
+        self.view_button.configure(menu=menu)
+        self.view_button.pack(side='left')
+        for layout in ('分支紧凑布局','按层排列'):
+            menu.add_radiobutton(label=layout, variable=self.layout_var, value=layout, command=self.change_layout)
+        menu.add_checkbutton(label='子系统分支引用', variable=self.references_var, command=self.change_layout)
+        menu.add_checkbutton(label='显示器件图例', variable=self.legend_var, command=self.toggle_legend)
+        menu.add_separator()
+        menu.add_command(label='导航后退', command=lambda:self.diagram.navigate_history())
+        menu.add_command(label='导航前进', command=lambda:self.diagram.navigate_history(True))
+        menu.add_command(label='返回全网', command=lambda:self.diagram.reset_scope())
+        menu.add_command(label='取消布局计算', command=lambda:self.diagram.cancel_layout())
+        menu.add_separator()
+        menu.add_command(label='清空搜索历史', command=self.clear_search_history)
+        self.fit_button = ttk.Button(toolbar, text='全图', width=5, command=lambda:self.diagram.fit())
+        self.fit_button.pack(side='right')
+        ttk.Button(toolbar, text='+', width=2, command=lambda:self.diagram.zoom(1.25)).pack(side='right', padx=(0, 4))
+        self.zoom_label = ttk.Label(toolbar, text='100%', style='Muted.TLabel', width=5, anchor='center')
+        self.zoom_label.pack(side='right', padx=2)
+        ttk.Button(toolbar, text='−', width=2, command=lambda:self.diagram.zoom(.8)).pack(side='right')
+
+        searchrow = ttk.Frame(self.center, padding=(12, 1, 12, 5), style='White.TFrame')
         searchrow.pack(fill='x')
-        ttk.Label(searchrow,text='定位',style='Small.TLabel').pack(side='left',padx=(0,8))
-        self.search_var=tk.StringVar()
-        self.search_entry=ttk.Combobox(searchrow,textvariable=self.search_var)
-        self.search_entry.pack(side='left',fill='x',expand=True)
-        self.search_entry.bind('<Return>',lambda e:self.locate_query())
-        self.search_entry.bind('<<ComboboxSelected>>',lambda e:self.locate_query())
-        ttk.Button(searchrow,text='清空历史',command=self.clear_search_history).pack(side='right',padx=4)
-        self.locate_button=ttk.Button(searchrow,text='查找实例',command=self.locate_query)
-        self.locate_button.pack(side='left',padx=6)
-        ttk.Button(searchrow,text='下一个',command=lambda:self.locate_query(True)).pack(side='left')
-        self.match_label=ttk.Label(searchrow,text='路径 / module',style='Muted.TLabel',width=15,anchor='e')
-        self.match_label.pack(side='left',padx=(6,0))
-        navigation=ttk.Frame(self.center,padding=(14,0,14,7),style='White.TFrame');navigation.pack(fill='x')
-        ttk.Button(navigation,text='← 后退',command=lambda:self.diagram.navigate_history()).pack(side='left')
-        ttk.Button(navigation,text='前进 →',command=lambda:self.diagram.navigate_history(True)).pack(side='left',padx=4)
-        self.layout_var=tk.StringVar(value='分支紧凑布局')
-        layout_combo=ttk.Combobox(navigation,textvariable=self.layout_var,values=['分支紧凑布局','按层排列'],state='readonly',width=13)
-        layout_combo.pack(side='left',padx=6);layout_combo.bind('<<ComboboxSelected>>',self.change_layout)
-        ttk.Button(navigation,text='取消布局',command=lambda:self.diagram.cancel_layout()).pack(side='left')
-        self.references_var=tk.BooleanVar(value=True)
-        ttk.Checkbutton(navigation,text='子系统分支引用',variable=self.references_var,command=self.change_layout).pack(side='left',padx=7)
-        ttk.Button(navigation,text='问题表 / CSV',command=self.open_issues).pack(side='right')
-        ttk.Button(navigation,text='辅助口 → 寄存器',command=self.open_register_trace).pack(side='right',padx=8)
-        ttk.Button(navigation,text='分支 SV 模板',command=self.open_sv_templates).pack(side='right',padx=3)
-        scopebar=tk.Frame(self.center,bg='#edf2fa',height=31)
+        ttk.Label(searchrow,text='实例定位',image=glyph(searchrow,'search'),compound='left',style='Small.TLabel').pack(side='left',padx=(0,6))
+        self.search_var = tk.StringVar()
+        self.search_entry = ttk.Combobox(searchrow, textvariable=self.search_var, width=6)
+        self.search_entry.pack(side='left', fill='x', expand=True)
+        self.search_entry.bind('<Return>', lambda e:self.locate_query())
+        self.search_entry.bind('<<ComboboxSelected>>', lambda e:self.locate_query())
+        self.locate_button = ttk.Button(searchrow, text='查找', width=5, command=self.locate_query)
+        self.locate_button.pack(side='left', padx=(4, 2))
+        ttk.Button(searchrow, text='下一个', width=6, command=lambda:self.locate_query(True)).pack(side='left')
+        self.match_label = ttk.Label(searchrow, text='路径 / module', style='Muted.TLabel', width=12, anchor='e')
+        self.match_label.pack(side='left', padx=(4, 0))
+
+        scopebar=tk.Frame(self.center,bg='#1d2e47',padx=10,pady=2)
         scopebar.pack(fill='x')
-        scopebar.pack_propagate(False)
-        self.view_prev=ttk.Button(scopebar,text='上一组',width=6,command=lambda:self.diagram.page_view(-1))
-        self.view_next=ttk.Button(scopebar,text='下一组',width=6,command=lambda:self.diagram.page_view(1))
-        tk.Label(scopebar,textvariable=self.scope_label,font=(self.family,8),fg='#6680a4',bg='#edf2fa',anchor='w',width=1).pack(side='left',fill='x',expand=True,padx=14)
-        legend=tk.Canvas(scopebar,width=158,height=31,bg='#edf2fa',highlightthickness=0)
-        legend.create_oval(6,12,12,18,fill='#29aa85',outline='')
-        legend.create_text(18,15,text='根',anchor='w',fill='#7e93b0',font=(self.family,8))
-        legend.create_oval(48,12,54,18,fill='#d39c3f',outline='')
-        legend.create_text(60,15,text='末端',anchor='w',fill='#7e93b0',font=(self.family,8))
-        legend.create_rectangle(100,10,110,20,outline='#698dbd',dash=(2,1))
-        legend.create_text(116,15,text='聚合',anchor='w',fill='#7e93b0',font=(self.family,8))
-        legend.pack(side='right',padx=12)
+        tk.Label(scopebar,image=glyph(scopebar,'branch','night'),bg='#1d2e47',bd=0).pack(side='left',padx=(0,5))
+        tk.Label(scopebar,textvariable=self.layout_var,font=(self.family,8,'bold'),fg='#dce8ff',bg='#1d2e47',bd=0).pack(side='left')
+        tk.Frame(scopebar,bg='#41536d',width=1,height=12).pack(side='left',padx=8)
+        self.scope_text=tk.Label(scopebar,textvariable=self.scope_label,font=(self.family,8),fg='#b9c9e0',
+                                 bg='#1d2e47',anchor='w',width=1)
+        self.scope_text.pack(side='left', expand=True, fill='x')
+        self.view_prev = ttk.Button(scopebar,text='上一组',width=5,command=lambda:self.diagram.page_view(-1))
+        self.view_next = ttk.Button(scopebar,text='下一组',width=5,command=lambda:self.diagram.page_view(1))
+        self.legend_button=tk.Checkbutton(scopebar,text='器件图例',variable=self.legend_var,command=self.toggle_legend,
+                                          font=(self.family,8),bg='#1d2e47',fg='#d3e0f2',activebackground='#2a3d59',
+                                          activeforeground='white',selectcolor='#344e70',highlightthickness=0,padx=2,pady=0)
+        self.legend_button.pack(side='right')
         self.devices_legend = tk.Canvas(self.center, width=1, height=24, bg='#edf2fa', highlightthickness=0)
         self._legend_font = tkfont.Font(root=self, font=(self.family, 8))
         self._legend_key = None
         self.devices_legend.bind('<Configure>', self._draw_device_legend)
-        self.devices_legend.pack(fill='x')
-        self.diagram=ClockDiagram(self.center,self.family,self.inspect_node,self.inspect_edges,self.view_changed,self.set_status,on_branch=self.open_branch)
-        self.diagram.pack(fill='both',expand=True)
-        self.log_toggle=ttk.Button(self.center,text='任务日志与诊断  ▴',command=self.toggle_log)
-        self.log_toggle.pack(fill='x')
-        self.log_frame=ttk.Frame(self.center,style='White.TFrame')
-        self.log_visible=False
+
+        dock = ttk.Frame(self.center, style='White.TFrame')
+        dock.pack(side='bottom', fill='x')
+        dockbar = ttk.Frame(dock, padding=(8, 2), style='White.TFrame')
+        dockbar.pack(fill='x')
+        self.log_toggle=ttk.Button(dockbar,text='运行阶段与日志 ▴',image=glyph(dockbar,'log'),compound='left',style='Quiet.TButton',command=self.toggle_log)
+        self.log_toggle.pack(side='left')
+        self.log_frame = ttk.Frame(dock, style='White.TFrame')
+        self.stage_view = StageView(self.log_frame, self.family, self.show_stage_log)
+        self.stage_view.pack(fill='x')
+        ttk.Label(dockbar, textvariable=self.stage_view.caption, width=1, anchor='e', style='Muted.TLabel').pack(
+            side='right', fill='x', expand=True, padx=7)
+        self.log_visible = False
+        self.diagram = ClockDiagram(self.center, self.family, self.inspect_node, self.inspect_edges, self.view_changed,
+                                    self.set_status, on_branch=self.open_branch)
+        self.diagram.pack(fill='both', expand=True)
+        self.empty_actions=tk.Frame(self.diagram,bg=BOARD)
+        ttk.Button(self.empty_actions,text='打开结果',image=glyph(self,'folder','light'),compound='left',command=self.open_result,style='Header.TButton').pack(side='left',padx=4)
+        ttk.Button(self.empty_actions,text='查看示例',command=self.open_example).pack(side='left',padx=4)
+        self.empty_actions.place(relx=.5,rely=.5,y=10,anchor='n')
         logbar=ttk.Frame(self.log_frame,style='White.TFrame',padding=(10,3))
         logbar.pack(fill='x')
         self.log_source=tk.StringVar(value='阶段日志')
@@ -704,8 +757,8 @@ class ClockTreeApp(tk.Tk):
         choices.pack(side='left')
         choices.bind('<<ComboboxSelected>>',lambda event:self.show_stage_log(None))
         ttk.Button(logbar,text='阶段诊断',command=self.show_run_diagnosis).pack(side='left',padx=7)
-        self.log_path_label=ttk.Label(logbar,text='',style='Muted.TLabel')
-        self.log_path_label.pack(side='left',fill='x',expand=True)
+        self.log_path=tk.StringVar()
+        ttk.Entry(logbar,textvariable=self.log_path,state='readonly',width=1).pack(side='left',fill='x',expand=True)
         self.log_text=tk.Text(self.log_frame,height=6,font=(self.mono,8),bg='#f6f8fc',fg='#647792',relief='flat',wrap='word',padx=13,pady=8,state='disabled')
         scrollbar=ttk.Scrollbar(self.log_frame,command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
@@ -713,10 +766,7 @@ class ClockTreeApp(tk.Tk):
         self.log_text.pack(fill='both',expand=True)
 
     def _build_inspector(self):
-        head=ttk.Frame(self.right,padding=(16,18,16,13),style='White.TFrame')
-        head.pack(fill='x')
-        ttk.Label(head,text='属性与连接依据',style='Title.TLabel').pack(anchor='w')
-        ttk.Label(head,text='实际实例 · 关注端口 · NPI 证据',style='Muted.TLabel').pack(anchor='w',pady=(5,0))
+        panel_heading(self.right,'检查器','inspector')
         self.inspector_tabs=ttk.Notebook(self.right)
         self.inspector_tabs.pack(fill='both',expand=True)
         prop=ttk.Frame(self.inspector_tabs,style='White.TFrame',padding=11)
@@ -724,44 +774,70 @@ class ClockTreeApp(tk.Tk):
         diag=ttk.Frame(self.inspector_tabs,style='White.TFrame')
         for f,t in [(prop,'属性'),(ev,'连线证据'),(diag,'诊断')]:
             self.inspector_tabs.add(f,text=t)
-        self.prop_text=self._scroll_text(prop,self.family,10)
-        self.prop_text.pack(fill='both',expand=True)
+        details=ttk.Panedwindow(prop,orient='vertical')
+        values=ttk.Frame(details,style='White.TFrame')
+        links=ttk.Frame(details,style='White.TFrame')
+        details.add(values,weight=3)
+        details.add(links,weight=2)
+        self.prop_text=self._scroll_text(values,self.family,10)
         for tag,opts in [('heading',{'font':(self.family,13,'bold'),'foreground':INK,'spacing3':9}),
                          ('label',{'font':(self.family,8),'foreground':MUTED,'spacing1':10}),
-                         ('value',{'font':(self.family,9),'foreground':INK,'spacing3':6}),
+                         ('value',{'font':(self.family,10),'foreground':INK,'spacing3':5}),
+                         ('inline-label',{'font':(self.family,9),'foreground':MUTED,'spacing1':3}),
+                         ('inline-value',{'font':(self.family,10),'foreground':INK,'spacing3':4}),
                          ('good',{'foreground':'#21886f'}),('accent',{'foreground':BLUE})]:
             self.prop_text.tag_configure(tag,**opts)
-        self.expand_button=ttk.Button(prop,text='展开此 RTL 层次',command=self.expand_selected,state='disabled')
-        self.expand_button.pack(fill='x',pady=(6,6))
-        paths=ttk.Frame(prop,style='White.TFrame')
+        self.node_actions=ttk.Frame(prop,style='White.TFrame')
+        self.property_font=tkfont.Font(root=self,family=self.family,size=10)
+        self.property_tab=self.property_font.measure('Module 定义  ')+14
+        self.prop_text.configure(tabs=(self.property_tab,))
+        identity=tk.Frame(self.node_actions,bg='#f0f4fb',bd=0)
+        identity.pack(fill='x',pady=(0,6))
+        self.identity_stripe=tk.Frame(identity,width=3)
+        self.identity_stripe.pack(side='left',fill='y',padx=(0,9))
+        self.identity_type=tk.Label(identity,anchor='w',bg='#f0f4fb',fg='#4d6484',font=(self.family,9))
+        self.identity_type.pack(fill='x',pady=(4,0))
+        self.identity_name=tk.Label(identity,anchor='w',width=1,bg='#f0f4fb',fg=INK,font=(self.family,12,'bold'))
+        self.identity_name.pack(fill='x',padx=(0,6),pady=(0,5))
+        self.property_panes, self.links_pane=details,links
+        self.expand_button=ttk.Button(self.node_actions,text='展开此 RTL 层次',command=self.expand_selected,state='disabled')
+        paths=ttk.Frame(self.node_actions,style='White.TFrame')
         paths.pack(fill='x')
-        self.upstream_button=ttk.Button(paths,text='上游 (0)',command=lambda:self.jump_neighbour('upstream'))
+        self.upstream_button=ttk.Button(paths,text='上游 (0)',image=glyph(paths,'upstream'),compound='left',command=lambda:self.jump_neighbour('upstream'))
         self.upstream_button.pack(side='left',fill='x',expand=True,padx=(0,4))
-        self.downstream_button=ttk.Button(paths,text='下游 (0)',command=lambda:self.jump_neighbour('downstream'))
+        self.downstream_button=ttk.Button(paths,text='下游 (0)',image=glyph(paths,'downstream'),compound='left',command=lambda:self.jump_neighbour('downstream'))
         self.downstream_button.pack(side='left',fill='x',expand=True)
-        ttk.Button(prop,text='高亮整个分支（全部上游 + 全部下游）',command=lambda:self.highlight_path('branch')).pack(fill='x',pady=5)
-        highlight_actions=ttk.Frame(prop);highlight_actions.pack(fill='x')
-        ttk.Button(highlight_actions,text='适配高亮范围',command=lambda:self.diagram.fit_highlight()).pack(side='left',expand=True,fill='x')
-        ttk.Button(highlight_actions,text='清除高亮',command=lambda:self.diagram.clear_highlight()).pack(side='left',expand=True,fill='x')
-        self.connection_title=ttk.Label(prop,text='相关端口连接',style='Small.TLabel')
-        self.connection_title.pack(anchor='w',pady=(16,5))
-        self.connections=ttk.Treeview(prop,columns=('direction','pin'),show='tree headings',height=5,selectmode='browse')
+        actions=ttk.Frame(self.node_actions,style='White.TFrame')
+        actions.pack(fill='x',pady=(4,2))
+        ttk.Button(actions,text='高亮整个分支',image=glyph(actions,'branch','blue'),compound='left',command=lambda:self.highlight_path('branch')).pack(side='left',expand=True,fill='x')
+        more=ttk.Menubutton(actions,text='高亮选项')
+        more.pack(side='left',padx=(4,0))
+        choices=tk.Menu(more,tearoff=False)
+        more.configure(menu=choices)
+        choices.add_command(label='适配高亮范围',command=lambda:self.diagram.fit_highlight())
+        choices.add_command(label='清除高亮',command=lambda:self.diagram.clear_highlight())
+        details.pack(fill='both',expand=True)
+        self.connection_title=ttk.Label(links,text='相关端口连接',style='Small.TLabel')
+        self.connection_title.pack(anchor='w',pady=(5,3))
+        self.connections=ttk.Treeview(links,columns=('direction','pin'),show='tree headings',height=4,selectmode='browse')
         self.connections.heading('#0',text='对端实例')
         self.connections.heading('direction',text='方向')
         self.connections.heading('pin',text='端口')
         self.connections.column('#0',width=138,minwidth=70)
         self.connections.column('direction',width=42,stretch=False)
         self.connections.column('pin',width=64,minwidth=35)
-        self.connections.pack(fill='x')
         self.connections.bind('<<TreeviewSelect>>',self.inspect_related)
         self.connections.bind('<Double-1>',self.locate_related)
-        connection_pager=ttk.Frame(prop,style='White.TFrame')
-        connection_pager.pack(fill='x',pady=(3,0))
+        connection_pager=ttk.Frame(links,style='White.TFrame')
+        connection_pager.pack(side='bottom',fill='x',pady=(3,0))
         self.connection_prev=ttk.Button(connection_pager,text='上一页',command=lambda:self.connection_page(-1),state='disabled')
         self.connection_prev.pack(side='left')
         self.connection_next=ttk.Button(connection_pager,text='下一页',command=lambda:self.connection_page(1),state='disabled')
         self.connection_next.pack(side='right')
-        ttk.Label(prop,text='单击连线查看证据 · 双击对端定位',style='Muted.TLabel').pack(anchor='w',pady=(6,0))
+        scroll=ttk.Scrollbar(links,command=self.connections.yview)
+        scroll.pack(side='right',fill='y')
+        self.connections.configure(yscrollcommand=scroll.set)
+        self.connections.pack(fill='both',expand=True)
         self.raw_evidence_var=tk.BooleanVar(value=False)
         ttk.Checkbutton(ev,text='展开原始证据（按需读取 NPI 路径）',variable=self.raw_evidence_var,command=self.toggle_raw_evidence).pack(anchor='w',padx=10,pady=7)
         self.evidence_text=self._scroll_text(ev,self.family,9)
@@ -782,32 +858,118 @@ class ClockTreeApp(tk.Tk):
         text.pack(fill='both',expand=True)
         return text
 
-    def _set_sashes(self):
-        if self.focused_view:return
-        self.update_idletasks()
-        self.panes.sashpos(0,310)
-        self.panes.sashpos(1,max(800,self.winfo_width()-302))
-
-    def toggle_focus(self):
-        self.focused_view=not self.focused_view
-        if self.focused_view:
-            self.panes.forget(self.left)
-            self.panes.forget(self.right)
-            self.diagram_title.pack_forget()
-            self.stats_frame.pack_forget()
-            self.focus_button.configure(text='恢复面板')
+    def _size_analysis_tools(self,event=None):
+        title=self.diagram_title
+        caption_width=max(140,self.summary_font.measure(self.view_label.get()))
+        needed=(self.quick_tools.winfo_reqwidth()+self.focus_button.winfo_reqwidth()
+                +self.diagram_heading.winfo_reqwidth()+caption_width+56)
+        if self._compact and not self.focused_view:
+            needed += self.panel_switch.winfo_reqwidth()
+        show_buttons=title.winfo_width() >= needed
+        if show_buttons==(self.quick_tools.winfo_manager()=='grid'):
+            return
+        if show_buttons:
+            self.tools_button.grid_remove()
+            self.quick_tools.grid()
         else:
-            self.panes.insert(0,self.left,weight=0)
-            self.panes.add(self.right,weight=0)
-            self.diagram_title.pack(fill='x',before=self.diagram_toolbar)
-            self.stats_frame.pack(fill='x',before=self.diagram_toolbar)
-            self.focus_button.configure(text='专注画布')
-            self.after(50,self._set_sashes)
-        self.after(80,self.diagram.fit)
+            self.quick_tools.grid_remove()
+            self.tools_button.grid()
+
+    def _analysis_state(self):
+        loaded = self.graph is not None
+        for index, (button, enabled) in enumerate(((self.register_button, loaded),
+                                                   (self.sv_button, loaded and self._active_tree_type == 'clock'))):
+            state = 'normal' if enabled else 'disabled'
+            button.configure(state=state)
+            self.tools_menu.entryconfigure(index, state=state)
+        for label in ('导出全量 JSON…','导出当前视图 SVG…'):
+            self.file_menu.entryconfigure(label,state='normal' if loaded else 'disabled')
+
+    def _resize_workspace(self, event):
+        if event.width > 1 and (event.width < 1200) != self._compact and self._pane_job is None:
+            self._pane_job = self.after_idle(self._arrange_panes)
+
+    def _remember_sashes(self, event=None):
+        if self.focused_view:
+            return
+        visible = tuple(map(str,self.panes.panes()))
+        for side in ('left', 'right'):
+            pane = getattr(self, side)
+            if str(pane) in visible:
+                self._side_widths[side] = max(220, min(500, pane.winfo_width()))
+        if self.center.winfo_width() < 500:
+            self.after_idle(self._arrange_panes)
+
+    def _arrange_panes(self):
+        if self._pane_job is not None:
+            self.after_cancel(self._pane_job)
+            self._pane_job = None
+        width = self.panes.winfo_width()
+        if width <= 1:
+            return
+        self._compact = width < 1200
+        wanted = [self.center]
+        if not self.focused_view:
+            if not self._compact or self._compact_side == 'left':
+                wanted.insert(0, self.left)
+            if not self._compact or self._compact_side == 'right':
+                wanted.append(self.right)
+        changed = tuple(map(str,self.panes.panes())) != tuple(map(str,wanted))
+        for pane in (self.left, self.right):
+            if pane not in wanted and str(pane) in tuple(map(str,self.panes.panes())):
+                self.panes.forget(pane)
+        for index, pane in enumerate(wanted):
+            if str(pane) not in tuple(map(str,self.panes.panes())):
+                self.panes.insert(index if index < len(self.panes.panes()) else 'end', pane, weight=0)
+        if changed:
+            # Tk applies pane insertion at idle. Set sash positions after the new
+            # pane has received geometry, including when swapping compact panels.
+            self.panes.update_idletasks()
+        limit = max(220, (width - 550) // (len(wanted)-1)) if len(wanted)>1 else 0
+        if self.left in wanted:
+            self.panes.sashpos(0, min(limit, self._side_widths['left']))
+        if self.right in wanted:
+            self.panes.sashpos(len(wanted)-2, width - min(limit, self._side_widths['right']))
+        if self._compact and not self.focused_view:
+            self.panel_switch.configure(text='检查器' if self._compact_side == 'left' else '设计面板')
+            self.panel_switch.grid()
+        else:
+            self.panel_switch.grid_remove()
+        self._size_analysis_tools()
+
+    def show_panel(self, side):
+        if self._compact and self._compact_side != side:
+            self._compact_side = side
+            if not self.focused_view:
+                self._arrange_panes()
+
+    def switch_panel(self):
+        self.show_panel('right' if self._compact_side == 'left' else 'left')
+
+    def toggle_focus(self, event=None):
+        self.focused_view = not self.focused_view
+        if self.focused_view:
+            self.stats_frame.pack_forget()
+        else:
+            self.stats_frame.pack(fill='x', padx=12, pady=(0, 5), before=self.diagram_toolbar)
+        self.focus_button.configure(text='恢复面板' if self.focused_view else '专注画布')
+        self._arrange_panes()
+        return 'break'
+
+    def focus_search(self, event=None):
+        self.search_entry.focus_set()
+        self.search_entry.selection_range(0, 'end')
+        return 'break'
+
+    def toggle_legend(self):
+        if self.legend_var.get():
+            self.devices_legend.pack(fill='x', before=self.diagram)
+        else:
+            self.devices_legend.pack_forget()
 
     def _config_wheel(self,event):
         if str(event.widget).startswith(str(self._settings_inner)) and event.widget is not self.rules_tree:
-            up=event.num==4 or (getattr(event,'delta',0)>0)
+            up=event.num==4 or (event.num!=5 and getattr(event,'delta',0)>0)
             self.settings_canvas.yview_scroll(-2 if up else 2,'units')
             return 'break'
 
@@ -888,10 +1050,8 @@ class ClockTreeApp(tk.Tk):
                 branch.diagram.schedule()
 
     def _badge(self,text,kind='idle'):
-        colors={'pass':('#e2f4ec','#217d5b'),'warn':('#fff0da','#a36a17'),'busy':('#e6efff','#2868df'),'idle':('#edf2fa','#70819a')}
-        bg,fg=colors[kind]
         self.state.set(text)
-        self.state_badge.configure(bg=bg,fg=fg)
+        self.state_badge.configure(style=kind+'.Status.TLabel')
 
     def _remember_workspace(self):
         if self._session_restoring:return
@@ -1028,7 +1188,11 @@ class ClockTreeApp(tk.Tk):
         self.scope_label.set('全部层次 / 全量关注结构')
         self.project.set('未打开'+info['signal']+'设计')
         for value in self.stats.values():value.set('—')
-        self.connections.delete(*self.connections.get_children())
+        self.unresolved_number.configure(fg=INK)
+        self.unresolved_caption.configure(image=glyph(self,'issue','slate'))
+        self._analysis_state()
+        self.node_actions.pack_forget()
+        self._fill_connections([],None)
         self.nav_tree.delete(*self.nav_tree.get_children())
         self.nav_caption.configure(text='尚未载入设计')
         self.expand_button.configure(state='disabled')
@@ -1039,6 +1203,7 @@ class ClockTreeApp(tk.Tk):
         for widget in (self.diag_text,self.evidence_text,self.log_text):self._replace_text(widget,'')
         self.show_log(False)
         self.diagram.clear(self._active_tree_type)
+        if not self.busy:self.empty_actions.place(relx=.5,rely=.5,y=10,anchor='n')
         self._badge('等待设计')
 
     def _apply_profile(self):
@@ -1050,7 +1215,7 @@ class ClockTreeApp(tk.Tk):
         self.layer_hint.configure(text='多输入 MUX · 同层串接 · 跨层跳接\n分支可在任意层开始或结束' if clock_mode
                                   else '多输入 MUX · 同层串接 · 跨层跳接\n分支允许在任意层结束')
         if clock_mode:
-            self.div_sources_frame.pack(fill='x', pady=(12, 0), before=self.rules_separator)
+            self.div_sources_frame.pack(fill='x', pady=(12, 0))
         else:
             self.div_sources_frame.pack_forget()
         self.rules_tree.heading('inputs',text='输入')
@@ -1115,6 +1280,16 @@ class ClockTreeApp(tk.Tk):
                 c.create_polygon(x+4,y-8,x+20,y-8,x+24,y-4,x+24,y+4,x+20,y+8,x+4,y+8,x,y+4,x,y-4,fill=fill,outline=color)
             c.create_text(x+28,y,text=label,anchor='w',fill='#586e8b',font=self._legend_font)
             x += step
+        for label,color in (('根','#29aa85'),('末端','#d39c3f'),('聚合','#698dbd')):
+            step=25+self._legend_font.measure(label)
+            if x>12 and x+step>width:
+                x,y=12,y+23
+            if label=='聚合':
+                c.create_rectangle(x,y-5,x+10,y+5,outline=color,dash=(2,1))
+            else:
+                c.create_oval(x+1,y-4,x+9,y+4,fill=color,outline='')
+            c.create_text(x+15,y,text=label,anchor='w',fill='#586e8b',font=self._legend_font)
+            x+=step
         c.configure(height=y+12)
 
     def switch_tree_type(self,event=None):
@@ -1177,6 +1352,7 @@ class ClockTreeApp(tk.Tk):
     def new_config(self):
         if self.busy:return
         self.set_config(empty_config(self._active_tree_type))
+        self.show_config_panel()
         self.mark_dirty()
         self.set_status('已新建两级配置。填写设计与规则，或点击“添加层级”。')
 
@@ -1378,6 +1554,7 @@ class ClockTreeApp(tk.Tk):
         ttk.Button(frame,text='重新检测',command=detect).pack(anchor='w',pady=(12,0))
         detect()
         ttk.Button(frame,text='完成',style='Accent.TButton',command=dialog.destroy).pack(anchor='e',pady=(18,0))
+        fit_window(dialog,self,(620,295),(440,230))
         dialog.grab_set()
         return dialog
 
@@ -1386,32 +1563,47 @@ class ClockTreeApp(tk.Tk):
         dialog.title('ClockTree7 · 器件模型库')
         dialog.configure(bg='white')
         dialog.transient(self)
-        frame=ttk.Frame(dialog,padding=24,style='White.TFrame')
+        fit_window(dialog,self,(945,645),(580,400))
+        frame=ttk.Frame(dialog,padding=12,style='White.TFrame')
         frame.pack(fill='both',expand=True)
         info=profile(self._base_config)
         ttk.Label(frame,text=info['label']+'器件模型',style='Title.TLabel').pack(anchor='w')
-        ttk.Label(frame,text='类型由用户选择；架构图与 SVG 使用相同模型和端口位置。',style='Muted.TLabel').pack(anchor='w',pady=(6,20))
-        row=ttk.Frame(frame,style='White.TFrame')
-        row.pack(fill='x')
+        footer=ttk.Frame(frame,style='White.TFrame')
+        footer.pack(side='bottom',fill='x',pady=(6,0))
+        ttk.Button(footer,text='关闭',command=dialog.destroy).pack(side='right')
+        ttk.Label(footer,text='图形和端口位置与 SVG 导出一致。',style='Muted.TLabel').pack(side='left')
+        row=scroll_body(frame,(0,6))
+        cards=[]
         for index,kind in enumerate(selectable_kinds(self._base_config)):
             card=ttk.Frame(row,style='White.TFrame',padding=(0,0,12,0))
-            card.grid(row=index//3,column=index%3,sticky='nsew',pady=(0,12))
+            cards.append(card)
             ttk.Label(card,text=kind_label(kind,self._active_tree_type),style='White.TLabel',font=(self.family,12,'bold')).pack(anchor='w',pady=(0,5))
             ttk.Label(card,text='多输入 · 多输出 · elab 对应关系' if kind=='wire' else '多个独立输入 · 无输出' if kind=='subsystem' else ('多路输入 · 单路输出' if kind=='mux' else '单路输入 · 单路输出'),style='Muted.TLabel').pack(anchor='w',pady=(0,9))
-            canvas=tk.Canvas(card,width=270,height=178,bg='#101b2e',highlightthickness=0)
-            canvas.pack()
+            canvas=tk.Canvas(card,width=1,height=125,bg='#101b2e',highlightthickness=0)
+            canvas.pack(fill='x')
             is_reset=self._active_tree_type=='reset'
             node={'id':'u_'+self._active_tree_type+'_'+kind,'module':self._active_tree_type+'_'+kind,'kind':kind,
                   'inputs':(['rst0_ni','rst1_ni'] if kind=='mux' else ['rst_ni']) if is_reset else (['clk0_i','clk1_i'] if kind=='mux' else ['clk_i']),
                   'output':None if kind=='subsystem' else 'rst_no' if is_reset else 'clk_o'}
             if kind=='wire':node.update(inputs=['in0','in1'],output=None,outputs=['out0','out1'],preview=True)
-            height=node_height(node);scale=min(1.,150/height)
-            draw_device(canvas,node,14,14,242,height,scale,self.family)
-        ttk.Label(frame,text=('RSY_SYNC 仅展示复位输入/输出；图内同步标记不增加外部时钟连线。' if self._active_tree_type=='reset' else '模型展示关注端口；DIV 的 ÷N 为类型标记，未推断实际分频比。'),style='Muted.TLabel').pack(anchor='w',pady=(18,0))
-        ttk.Button(frame,text='关闭',command=dialog.destroy).pack(anchor='e',pady=(18,0))
-        dialog.update_idletasks()
-        dialog.geometry('+{}+{}'.format(self.winfo_rootx()+max(20,(self.winfo_width()-dialog.winfo_width())//2),
-                                       self.winfo_rooty()+max(30,(self.winfo_height()-dialog.winfo_height())//2)))
+            def paint(event,model=node):
+                c=event.widget
+                c.delete('all')
+                height=node_height(model)
+                scale=max(.05,min(1.,(event.width-14)/242,(event.height-12)/height))
+                draw_device(c,model,(event.width-242*scale)/2,(event.height-height*scale)/2,242,height,scale,self.family)
+            canvas.bind('<Configure>',paint)
+        last_columns=[0]
+        def arrange(event):
+            columns=3 if event.width>=750 else 2
+            if columns==last_columns[0]:return
+            last_columns[0]=columns
+            for col in range(3):
+                row.columnconfigure(col,weight=int(col<columns),uniform='cards' if col<columns else '')
+            for i,card in enumerate(cards):
+                card.grid(row=i//columns,column=i%columns,sticky='nsew',pady=(3,9))
+        row.bind('<Configure>',arrange,add='+')
+        dialog.bind('<Escape>',lambda e:dialog.destroy())
         return dialog
 
     def open_config(self,path=None):
@@ -1423,8 +1615,14 @@ class ClockTreeApp(tk.Tk):
             self.set_config(config)
             self.mark_dirty()
             self.set_status('已导入规则：{}'.format(path))
-            self.left_tabs.select(0)
+            self.show_config_panel()
         except Exception as error:self.show_error('配置导入失败',error)
+
+    def show_config_panel(self):
+        if self.focused_view:
+            self.toggle_focus()
+        self.show_panel('left')
+        self.left_tabs.select(0)
 
     def save_config(self,path=None):
         try:
@@ -1446,6 +1644,8 @@ class ClockTreeApp(tk.Tk):
         self.run_button.configure(state='disabled' if self.busy else 'normal')
         self.cancel_button.configure(state='normal' if kind=='extract' else 'disabled')
         self.analysis_combo.configure(state='disabled' if self.busy else 'readonly')
+        if self.busy or self.graph:self.empty_actions.place_forget()
+        else:self.empty_actions.place(relx=.5,rely=.5,y=10,anchor='n')
         if self.busy:
             self.progress.configure(mode='indeterminate')
             self.progress.start(12)
@@ -1491,6 +1691,7 @@ class ClockTreeApp(tk.Tk):
         self.diagram.runtime_context={'result':str(path) if path else None,'backend_run_id':runtime.get('run_id')}
         self.set_config(graph['config'], refresh_colors=False)
         self.graph=graph
+        self.empty_actions.place_forget()
         self.graph_file=Path(path) if path else None
         memory=graph.get('metadata',{}).get('memory_protection',{})
         self.memory_status.set(('Verdi 阶段峰值 {} GiB · 重启 {} 次'.format(memory.get('peak_rss_gib','—'),memory.get('restart_count',0)) if memory.get('enabled') else '本次运行未启用 RSS 监测') if memory else '等待提取 · RSS 监测在 Linux 上启用')
@@ -1501,6 +1702,9 @@ class ClockTreeApp(tk.Tk):
         self._graph_token=graph_token or uuid.uuid4().hex
         self.project.set('{}  /  {}'.format(graph['config']['design'].get('top','DESIGN'),self.graph_file.parent.name if self.graph_file else '导入结果'))
         for key,value in self.stats.items():value.set('{:,}'.format(graph['summary'].get(key,0)))
+        self.unresolved_number.configure(fg='#a24a12' if graph['summary'].get('unresolved') else INK)
+        self.unresolved_caption.configure(image=glyph(self,'issue','amber' if graph['summary'].get('unresolved') else 'slate'))
+        self._analysis_state()
         summary=graph['summary']
         input_boundaries = configured_input_boundaries(graph['config'])
         undriven=summary.get('undriven_inputs',0)
@@ -1531,7 +1735,8 @@ class ClockTreeApp(tk.Tk):
         self.match_label.configure(text='路径 / module')
         self.selected_object=None
         self.related_edges={}
-        self.connections.delete(*self.connections.get_children())
+        self.node_actions.pack_forget()
+        self._fill_connections([],None)
         self.expand_button.configure(state='disabled')
         self.inspector_tabs.select(0)
         self._properties('全网提取概况', [('设计顶层',graph['config']['design'].get('top','')),
@@ -1740,7 +1945,7 @@ class ClockTreeApp(tk.Tk):
                     if item[3]==self._log_token:
                         self._replace_text(self.log_text,item[1])
                         self.log_text.see('end')
-                        self.log_path_label.configure(text=item[2])
+                        self.log_path.set(item[2])
         except queue.Empty:pass
         if self.job_kind in ('extract','monitor') and self.job_dir:
             memory_file=self.job_dir/'memory.json'
@@ -1778,7 +1983,7 @@ class ClockTreeApp(tk.Tk):
                     self._log_mtime=stamp
                     self._replace_text(self.log_text,tail_text(log))
                     self.log_text.see('end')
-                    self.log_path_label.configure(text=str(log))
+                    self.log_path.set(str(log))
             except OSError:pass
         if self._closing and (not self.busy or self.job_kind=='session_save'):
             self._finish_close()
@@ -1892,6 +2097,7 @@ class ClockTreeApp(tk.Tk):
         if row[5] and self.diagram.model and row[5] in self.diagram.model.original:self.locate_issue_object(row[5],row[6]);return
         detail=json.loads(row[-1]);layer=detail.get('layer')
         if layer and 1<=int(layer)<=len(self.layers):
+            self.show_config_panel()
             self.select_layer(int(layer));self.set_status('已定位 L{} 规则：{}'.format(layer,detail.get('module','')))
             for key in self.rules_tree.get_children():
                 if self.rules_tree.item(key,'text')==detail.get('module'):
@@ -1924,12 +2130,15 @@ class ClockTreeApp(tk.Tk):
                 self.component_combo.configure(values=values)
             self.component_combo.current(self.component_ids.index(info['component']))
         self.zoom_label.configure(text='{:.0f}%'.format(info['zoom']*100))
-        self.view_label.set('{:,} 图元 · 当前 {:,} / 全量 {:,} 实例'.format(info['boxes'],info['actual'],info['total']))
+        summary='{:,} 图元 · 当前 {:,} / 全量 {:,} 实例'.format(info['boxes'],info['actual'],info['total'])
+        if self.view_label.get()!=summary:
+            self.view_label.set(summary)
+            self._size_analysis_tools()
         scope=info['scope']
         label=('实例邻域 / '+info['focus'][-70:]) if info.get('focus') else (('局部范围 / '+scope[-70:]) if scope else '全部层次 / 全量关注结构')
         if info.get('pages',1)>1:
             label+=' · 第 {}/{} 组 · {} 条跨组连接可在属性中查看'.format(info['page']+1,info['pages'],info.get('external_edges',0))
-            self.view_prev.pack(side='left'); self.view_next.pack(side='left')
+            self.view_prev.pack(side='left',before=self.scope_text); self.view_next.pack(side='left',before=self.scope_text)
             self.view_prev.configure(state='normal' if info['page'] else 'disabled')
             self.view_next.configure(state='normal' if info['page']+1<info['pages'] else 'disabled')
         else:
@@ -1940,21 +2149,43 @@ class ClockTreeApp(tk.Tk):
         text=self.prop_text
         text.configure(state='normal')
         text.delete('1.0','end')
-        text.insert('end',title+'\n','heading')
+        if title:text.insert('end',title+'\n','heading')
+        width=text.winfo_width()-self.property_tab-18
         for label,value in fields:
+            value=str(value)
+            if ('\n' not in value and len(value)<48 and
+                    self.property_font.measure(label)<self.property_tab and self.property_font.measure(value)<width):
+                text.insert('end',label+'\t','inline-label')
+                text.insert('end',value+'\n','inline-value')
+                continue
             text.insert('end',label+'\n','label')
-            text.insert('end',str(value)+'\n','value')
+            text.insert('end',value+'\n','value')
         text.configure(state='disabled')
         text.yview_moveto(0)
 
     def inspect_node(self,node):
+        if not self.focused_view:self.show_panel('right')
+        self.node_actions.pack(fill='x',before=self.property_panes)
+        level=node.get('layer')
+        kind=node.get('kind')
+        from .div_sources import div_source_level
+        look=device_style(kind,div_source_level(node,self.diagram.model.div_source_levels))
+        category='RTL 层次聚合' if node.get('aggregate') else kind_label(kind,self._active_tree_type)
+        if kind=='div' and look.get('short')!='DIV':category=look['short']
+        self.identity_type.configure(text='  ·  '.join(filter(None,(category,'L{}'.format(level) if level is not None else ''))))
+        self.identity_stripe.configure(bg=look['color'])
+        real_path=node.get('reference_of') or node.get('path') or node['id']
+        self.identity_name.configure(text=real_path.rsplit('.',1)[-1])
+        if node.get('aggregate') or node.get('kind')=='subsystem':
+            self.expand_button.pack(fill='x',pady=(2,4))
+        else:self.expand_button.pack_forget()
         if node.get('kind') in INPUT_SOURCE_KINDS:
             from .l1_inputs import describe
             self.selected_object=node
             for button in (self.expand_button,self.upstream_button):button.configure(state='disabled')
             extra=[e for e in self.diagram.model.edges if e['source']==node['id']]
             self.downstream_button.configure(text='下游 ({})'.format(len(extra)),state='normal' if extra else 'disabled')
-            self._properties(source_title(node),describe(node))
+            self._properties(None,describe(node))
             self._fill_connections(extra,{node['id']})
             self.inspector_tabs.select(0)
             return
@@ -1969,7 +2200,6 @@ class ClockTreeApp(tk.Tk):
                     ('Module 分布','\n'.join('{} × {}'.format(k,v) for k,v in node['module_counts'].items())),
                     ('器件类型分布',' / '.join('{} {}'.format(kind_label(k,self._active_tree_type),v) for k,v in node.get('kind_counts',{}).items())),
                     ('内部真实连线',node['internal_edges']),('根 / 末端','{} / {}'.format(node['root_count'],node['terminal_count']))]
-            title='RTL 层次概览'
             if isinstance(self.graph,IndexedGraph):
                 members=node['members']
                 edges=self.diagram.model.connections_for(node)
@@ -1991,7 +2221,6 @@ class ClockTreeApp(tk.Tk):
                 timeout=node['trace_timeout']
                 fields.insert(4,('trace 超时断点','{} / {} · 阈值 {:g} 秒\n已用 {:g} 秒；仅跳过本例化剩余端口'.format(
                     timeout['pin'],timeout['direction'],timeout['limit_seconds'],timeout['elapsed_seconds'])))
-            title=node['module']
             if node.get('reference_of'):
                 from .navigation import neighbour_edges
                 edges=neighbour_edges(self.diagram.model,node,'upstream')
@@ -2013,7 +2242,7 @@ class ClockTreeApp(tk.Tk):
             else:count=len({e[endpoint] for e in (self.diagram.model.incoming[node['id']] if direction=='upstream' else self.diagram.model.outgoing[node['id']])})
             if direction=='upstream' and not (node.get('kind')=='wire' and node.get('_focus_pin')):count+=len({e['source'] for e in extra})
             button.configure(text='{} ({})'.format('上游' if direction=='upstream' else '下游',count),state='normal' if count else 'disabled')
-        self._properties(title,fields)
+        self._properties(None,fields)
         self._fill_connections(edges,members)
         self.inspector_tabs.select(0)
 
@@ -2025,6 +2254,9 @@ class ClockTreeApp(tk.Tk):
         edges=getattr(self,'_connection_rows',[])
         members=getattr(self,'_connection_members',None)
         total=len(edges)
+        visible=str(self.links_pane) in tuple(map(str,self.property_panes.panes()))
+        if total and not visible:self.property_panes.add(self.links_pane,weight=2)
+        elif not total and visible:self.property_panes.forget(self.links_pane)
         self._connection_offset=max(0,min(max(0,((total-1)//500)*500),getattr(self,'_connection_offset',0)+delta*500))
         self.connections.delete(*self.connections.get_children())
         self.related_edges={}
@@ -2046,23 +2278,15 @@ class ClockTreeApp(tk.Tk):
         if any(e.get('input_boundary') for e in display_edges):
             edges=list({e['id']:e for e in display_edges if e.get('input_boundary')}.values())
         elif isinstance(self.graph,IndexedGraph):
-            # A clipped line may represent several bundles. SQL UNION preserves
-            # exact unique edge counts and enables paging without materializing.
-            from .indexed_view import QuerySequence
-            clauses,params=[],[]
-            for edge in display_edges:
-                if 'members' in edge:
-                    clauses.append(edge['members'].sql); params.extend(edge['members'].params)
-                else:
-                    clauses.append('SELECT id FROM edges WHERE id=?'); params.append(edge['id'])
-            if not clauses:return
-            edges=QuerySequence(self.graph.store,'SELECT data FROM edges WHERE id IN ('+' UNION '.join(clauses)+')',params,decode=True)
+            edges=self.diagram.model.inspector_edges(display_edges)
         else:
             unique={}
             for edge in display_edges:
                 for item in self.diagram.model.actual_edges(edge):unique[item['id']]=item
             edges=list(unique.values())
         if not edges:return
+        if not self.focused_view:self.show_panel('right')
+        self.node_actions.pack_forget()
         self.selected_object=None
         self.expand_button.configure(state='disabled')
         self._fill_connections(edges)
@@ -2164,7 +2388,7 @@ class ClockTreeApp(tk.Tk):
         self.log_visible=visible
         if visible:self.log_frame.pack(fill='x')
         else:self.log_frame.pack_forget()
-        self.log_toggle.configure(text='任务日志与诊断  '+('▾' if visible else '▴'))
+        self.log_toggle.configure(text='运行阶段与日志 '+('▾' if visible else '▴'))
 
     def _update_runtime_view(self):
         directory=self._runtime_directory
@@ -2186,7 +2410,10 @@ class ClockTreeApp(tk.Tk):
                 if value=='running':state['steps'][key]='pending'
             state.setdefault('steps',{})[stage_node(state.get('stage'))]='interrupted'
         self._runtime_state=state
-        self.stage_view.update_state(state,self.gui_journal.state())
+        gui_state=self.gui_journal.state()
+        if self.graph is None and not state and not self.busy and gui_state.get('state')=='finished':
+            gui_state={}
+        self.stage_view.update_state(state,gui_state)
 
     def _selected_log(self):
         source=self.log_source.get()
@@ -2209,7 +2436,7 @@ class ClockTreeApp(tk.Tk):
         if not stage:
             self._replace_text(self.log_text,tail_text(log) or '尚无日志：'+str(log))
             self.log_text.see('end')
-            self.log_path_label.configure(text=str(log))
+            self.log_path.set(str(log))
             return
         self._replace_text(self.log_text,'正在读取 {} 阶段记录…'.format(LABELS.get(stage,stage)))
         def worker():
@@ -2247,7 +2474,7 @@ class ClockTreeApp(tk.Tk):
                '日志缺少正常结束标志可定位中断位置；SIGKILL 或闪退本身不能证明 OOM。','',
                json.dumps(report,ensure_ascii=False,indent=2)]
         self._replace_text(self.log_text,'\n'.join(lines))
-        self.log_path_label.configure(text=str(self._runtime_directory or self.gui_journal.directory))
+        self.log_path.set(str(self._runtime_directory or self.gui_journal.directory))
 
     def toggle_log(self):
         self.show_log(not self.log_visible)
@@ -2268,15 +2495,6 @@ class ClockTreeApp(tk.Tk):
         from .sv_view import SVDialog
         try:SVDialog(self)
         except ValueError as error:self.status.set(str(error))
-
-    def export_menu(self):
-        menu=tk.Menu(self,tearoff=False)
-        menu.add_command(label='保存传播规则配置 JSON',command=self.save_config)
-        menu.add_command(label='导出全部结构与连线 JSON',command=self.export_result)
-        menu.add_command(label='辅助口寄存器追踪 / 位映射 CSV',command=self.open_register_trace)
-        menu.add_command(label='时钟树分支 SV 模板生成',command=self.open_sv_templates)
-        menu.add_command(label='导出当前范围架构图 SVG',command=self.export_svg)
-        menu.tk_popup(self.winfo_pointerx(),self.winfo_pointery())
 
     def export_result(self,path=None):
         if not self.graph:return

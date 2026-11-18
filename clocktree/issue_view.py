@@ -2,6 +2,7 @@ import json
 import queue
 import threading
 import tkinter as tk
+from .ui_layout import dialog_heading, fit_window
 from tkinter import ttk,filedialog
 from .issues import IssueIndex,COLUMNS,HEADINGS
 
@@ -9,29 +10,40 @@ from .issues import IssueIndex,COLUMNS,HEADINGS
 class IssueDialog(tk.Toplevel):
     def __init__(self,app,extra=()):
         super().__init__(app)
-        self.app=app;self.title('完整问题表 · 未解析与诊断');self.geometry('1380x680')
+        self.app=app;self.title('完整问题表 · 未解析与诊断')
+        fit_window(self,app,(1280,680),(760,440))
         self.index=IssueIndex(app.graph or {'nodes':[],'edges':[]},extra);self.offset=0;self.ready=False;self.cancelled=threading.Event();self.queue=queue.Queue()
-        controls=ttk.Frame(self,padding=12);controls.pack(fill='x')
+        dialog_heading(self,'未解析与诊断','issue')
+        controls=ttk.Frame(self,padding=(12,7));controls.pack(fill='x')
         self.category=tk.StringVar(value='全部类别');self.search=tk.StringVar()
         self.combo=ttk.Combobox(controls,textvariable=self.category,values=['全部类别'],state='readonly',width=23);self.combo.pack(side='left')
-        entry=ttk.Entry(controls,textvariable=self.search,width=40);entry.pack(side='left',padx=10)
+        entry=ttk.Entry(controls,textvariable=self.search,width=12);entry.pack(side='left',padx=8,fill='x',expand=True)
         entry.bind('<Return>',lambda e:self.page(0,reset=True));self.combo.bind('<<ComboboxSelected>>',lambda e:self.page(0,reset=True))
         ttk.Button(controls,text='筛选',command=lambda:self.page(0,reset=True)).pack(side='left')
         ttk.Button(controls,text='导出筛选结果 CSV',command=self.export).pack(side='right')
-        body=ttk.Frame(self);body.pack(fill='both',expand=True)
+        body=ttk.Frame(self)
         self.table=ttk.Treeview(body,columns=COLUMNS,show='headings',selectmode='browse')
         widths=dict(zip(COLUMNS,(110,65,45,120,220,90,150,220,240)))
         for key,label in zip(COLUMNS,HEADINGS):self.table.heading(key,text=label);self.table.column(key,width=widths[key],minwidth=40)
         self.table.tag_configure('错误',foreground='#a13f40')
         self.table.tag_configure('警告',foreground='#865f20')
+        horizontal=ttk.Scrollbar(body,orient='horizontal',command=self.table.xview);horizontal.pack(side='bottom',fill='x')
         vertical=ttk.Scrollbar(body,command=self.table.yview);vertical.pack(side='right',fill='y')
-        horizontal=ttk.Scrollbar(self,orient='horizontal',command=self.table.xview);horizontal.pack(fill='x')
         self.table.configure(yscrollcommand=vertical.set,xscrollcommand=horizontal.set);self.table.pack(fill='both',expand=True)
         self.table.bind('<Double-1>',lambda e:self.locate())
         self.table.bind('<<TreeviewSelect>>',self.show_reason)
-        self.reason=tk.StringVar(value='选择问题可阅读完整原因和处理提示；双击定位。')
-        ttk.Label(self,textvariable=self.reason,wraplength=1320,padding=10).pack(fill='x')
-        actions=ttk.Frame(self,padding=10);actions.pack(fill='x')
+        actions=ttk.Frame(self,padding=10);actions.pack(side='bottom',fill='x')
+        reason=ttk.Frame(self)
+        reason.pack(side='bottom',fill='x')
+        self.reason=tk.Text(reason,height=3,width=1,padx=10,pady=5,wrap='word',relief='flat',
+                            font=(app.family,10),bg='#f1f5f6',fg='#192f3d')
+        reason_scroll=ttk.Scrollbar(reason,command=self.reason.yview)
+        reason_scroll.pack(side='right',fill='y')
+        self.reason.configure(yscrollcommand=reason_scroll.set)
+        self.reason.pack(fill='both',expand=True)
+        self.reason.insert('1.0','选择问题可阅读完整原因和处理提示，双击可定位。')
+        self.reason.configure(state='disabled')
+        body.pack(fill='both',expand=True)
         for label,command in [('上一页',lambda:self.page(-1)),('下一页',lambda:self.page(1)),('定位问题',self.locate),('关联对象 / 原因',self.details)]:ttk.Button(actions,text=label,command=command).pack(side='left',padx=4)
         self.status=tk.StringVar(value='正在建立完整问题索引…');ttk.Label(actions,textvariable=self.status).pack(side='right')
         self.protocol('WM_DELETE_WINDOW',self.close)
@@ -58,6 +70,7 @@ class IssueDialog(tk.Toplevel):
         self.table.delete(*self.table.get_children());self.rows={str(row[0]):row for row in rows}
         for row in rows:self.table.insert('','end',iid=str(row[0]),values=row[1:-1],tags=(row[2],))
         self.status.set('{} 个问题 · 涉及 {} 个实例 · {}–{}'.format(total,instances,self.offset+1 if total else 0,self.offset+len(rows)))
+        self.show_reason()
 
     def selected(self):
         selection=self.table.selection()
@@ -65,7 +78,12 @@ class IssueDialog(tk.Toplevel):
 
     def show_reason(self,event=None):
         row=self.selected()
-        if row:self.reason.set('原因：{}\n处理提示：{}'.format(row[8],row[9]))
+        message='原因：{}\n处理提示：{}'.format(row[8],row[9]) if row else '选择问题可阅读完整原因和处理提示，双击可定位。'
+        self.reason.configure(state='normal')
+        self.reason.delete('1.0','end')
+        self.reason.insert('1.0',message)
+        self.reason.configure(state='disabled')
+        self.reason.yview_moveto(0)
 
     def locate(self):
         row=self.selected()
@@ -74,7 +92,8 @@ class IssueDialog(tk.Toplevel):
     def details(self):
         row=self.selected()
         if not row:return
-        dialog=tk.Toplevel(self);dialog.title('问题 {} · 关联对象'.format(row[0]));dialog.geometry('920x560')
+        dialog=tk.Toplevel(self);dialog.title('问题 {} · 关联对象'.format(row[0]))
+        fit_window(dialog,self,(920,560),(620,360))
         info=json.loads(row[-1]);text=tk.Text(dialog,height=8,wrap='word');text.pack(fill='x')
         text.insert('end',json.dumps(info,ensure_ascii=False,indent=2));text.configure(state='disabled')
         table=ttk.Treeview(dialog,columns=('pin',),show='tree headings');table.heading('#0',text='真实实例路径');table.heading('pin',text='端口');table.pack(fill='both',expand=True)
@@ -88,7 +107,7 @@ class IssueDialog(tk.Toplevel):
             if keys:
                 key,pin=objects[keys[0]];self.app.locate_issue_object(key,pin)
         table.bind('<Double-1>',locate)
-        buttons=ttk.Frame(dialog);buttons.pack(fill='x')
+        buttons=ttk.Frame(dialog);buttons.pack(side='bottom',before=table,fill='x')
         ttk.Button(buttons,text='上一页',command=lambda:show(-1)).pack(side='left');ttk.Button(buttons,text='下一页',command=lambda:show(1)).pack(side='left')
         ttk.Button(buttons,text='定位所选对象',command=locate).pack(side='right');show(0)
 

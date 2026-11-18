@@ -9,6 +9,8 @@ from .devices import symbol_parts
 from .profiles import tree_type
 from .l1_inputs import INPUT_SOURCE_KINDS
 from .navigation_target import display_node, location_target
+from .desktop_art import artwork, draw_grid, glyph
+from .ui_layout import BOARD
 
 
 COLORS = ['#55a9ff', '#46c8bb', '#a492f4', '#edb55b', '#df88bb', '#5db7d6', '#91bd72']
@@ -22,24 +24,41 @@ def rounded(canvas, x, y, w, h, radius=8, **kwargs):
                                  smooth=True, splinesteps=12, **kwargs)
 
 
-def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cache=None,div_level=None):
+def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cache=None,div_level=None,overview=False):
     """Use exactly the same symbol primitives and port anchors as SVG export."""
-    font_cache = font_cache if font_cache is not None else {}
+    if font_cache is None:
+        if not hasattr(canvas,'_device_fonts'):canvas._device_fonts={}
+        font_cache=canvas._device_fonts
     tooltips = {}
     for p in symbol_parts(node,w,h,selected,div_level):
         op=p['op']
+        role=p.get('overview')
+        hide_badge=w*scale<115
+        if overview and ((op=='text' and role is None) or (role=='badge' and hide_badge)):
+            continue
         if op=='rect':
             options={'fill':p['fill'],'outline':p['stroke'],'width':p['width'],'tags':tags}
             if p.get('dash'):options['dash']=(4,3)
             rounded(canvas,x+p['x']*scale,y+p['y']*scale,p['w']*scale,p['h']*scale,radius=p['radius']*scale,**options)
         elif op=='text':
-            size=max(8 if p['bold'] else 7,int(p['size']*scale))
-            font=(family,-size,'bold') if p['bold'] else (family,-size)
-            text=p['text']
+            minimum=10 if overview and role=='name' else 8 if p['bold'] or role=='aux' else 7
+            size=max(minimum,int(p['size']*scale))
+            font=(family,-size,'bold' if p['bold'] else 'normal')
+            if font not in font_cache:
+                font_cache[font]=tkfont.Font(root=canvas,family=family,size=-size,weight=font[2])
+            metric=font_cache[font]
+            text=p.get('compact_text',p['text']) if overview else p['text']
+            ty=p['y']
+            if overview and role=='name' and not node.get('aggregate'):
+                text=text.rsplit('.',1)[-1]
+                if node.get('kind') in INPUT_SOURCE_KINDS:
+                    text=node.get('input_entry',{}).get('signal',text).rsplit('.',1)[-1]
+            elif overview and role=='badge':
+                text=text.rsplit(' · L',1)[0]
+            elif overview and role=='aux':
+                ty+=10
             if p.get('max_width'):
-                if font not in font_cache:font_cache[font]=tkfont.Font(root=canvas,font=font)
-                metric=font_cache[font]
-                maximum=max(8,p['max_width']*scale)
+                maximum=max(8,(w-28 if overview and role=='name' and hide_badge else p['max_width'])*scale)
                 cache=getattr(canvas,'_text_cache',None)
                 if cache is None:cache={};canvas._text_cache=cache
                 key=(font,text,round(maximum))
@@ -54,7 +73,7 @@ def draw_device(canvas,node,x,y,w,h,scale,family,selected=False,tags=(),font_cac
                         text=text[:lo]+'…'
                     if len(cache)>=8192:cache.clear()
                     cache[key]=text
-            item = canvas.create_text(x+p['x']*scale,y+p['y']*scale,text=text,fill=p['fill'],font=font,anchor=p['anchor'],tags=tuple(tags)+('detail',))
+            item = canvas.create_text(x+p['x']*scale,y+ty*scale,text=text,fill=p['fill'],font=metric,anchor=p['anchor'],tags=tuple(tags)+('detail',))
             if p.get('tooltip'):tooltips[item] = p['tooltip']
         elif op in ('polygon','polyline'):
             points=[v for xx,yy in p['points'] for v in (x+xx*scale,y+yy*scale)]
@@ -102,15 +121,16 @@ class ClockDiagram(tk.Frame):
         self._zoom_timer = None
         self._branch_highlight = False
         self._history, self._future = [], []
-        self.canvas = tk.Canvas(self, bg='#101b2e', highlightthickness=0, borderwidth=0, cursor='arrow')
+        self.canvas = tk.Canvas(self,bg=BOARD,highlightthickness=0,borderwidth=0,cursor='arrow')
         self.canvas.pack(fill='both', expand=True)
         self.map_frame = tk.Frame(self, bg='#273a55', bd=1)
-        self.map_label = tk.Label(self.map_frame, text='全图导航', font=(self.family, 8), bg='#1a2a42', fg='#94abc9', anchor='w', padx=9, pady=4)
+        self.map_label=tk.Label(self.map_frame,text='全图导航',image=glyph(self,'focus','night'),compound='left',
+                                font=(self.family,8),bg='#21324b',fg='#ccdaee',anchor='w',padx=6,pady=1)
         self.map_label.pack(fill='x')
         self.minimap = tk.Canvas(self.map_frame, width=176, height=98, bg='#132238', highlightthickness=0)
         self.minimap.pack()
-        self.map_frame.place(relx=1, rely=1, anchor='se', x=-18, y=-18)
-        self.canvas.bind('<Configure>', lambda e: self.schedule())
+        self._canvas_size = None
+        self.canvas.bind('<Configure>', self._resize_canvas)
         self.canvas.bind('<ButtonPress-1>', self._press)
         self.canvas.bind('<B1-Motion>', self._motion)
         self.canvas.bind('<ButtonRelease-1>', self._release)
@@ -203,6 +223,23 @@ class ClockDiagram(tk.Frame):
             finish(data)
         self._layout_poll=self.after(25,check)
 
+    def _resize_canvas(self, event):
+        size = (event.width, event.height)
+        if self.model and self._canvas_size and min(self._canvas_size + size) > 1:
+            # Keep the same world point centred when panes open or close.
+            self.ox += (size[0] - self._canvas_size[0]) / 2
+            self.oy += (size[1] - self._canvas_size[1]) / 2
+        self._canvas_size = size
+        self._show_minimap()
+        self.schedule()
+
+    def _show_minimap(self):
+        width, height = self._canvas_size or (0, 0)
+        if self.model is not None and width >= 440 and height >= 270:
+            self.map_frame.place(relx=1, rely=1, anchor='se', x=-10, y=-10)
+        else:
+            self.map_frame.place_forget()
+
     def load(self, graph):
         self.cancel_layout(restore=False)
         self.empty_message = None
@@ -223,6 +260,7 @@ class ClockDiagram(tk.Frame):
         self._history,self._future=[],[]
         self._branch_highlight=False
         self.model.defer_layout=True
+        self._show_minimap()
         self.rebuild(record=False)
         self._stage('end','layout','视图模型和初始布局已建立')
 
@@ -235,6 +273,7 @@ class ClockDiagram(tk.Frame):
         self.scene.reset()
         self.tree_type=mode
         self.model=None
+        self._show_minimap()
         self.selected,self.highlights=None,set()
         self.selection_target=None
         self.scale,self.ox,self.oy=1.,0.,0.
@@ -281,9 +320,9 @@ class ClockDiagram(tk.Frame):
         self.update_idletasks()
         width, height = max(300, self.canvas.winfo_width()), max(240, self.canvas.winfo_height())
         x1, y1, x2, y2 = self.model.bounds
-        self.scale = min((width-36)/(x2-x1), (height-74)/(y2-y1))
+        self.scale = min((width-36)/(x2-x1), (height-40)/(y2-y1))
         self.ox = (width-(x2-x1)*self.scale)/2 - x1*self.scale
-        self.oy = 58 - y1*self.scale
+        self.oy = (height-(y2-y1)*self.scale)/2 - y1*self.scale
         self.schedule()
         self.notify()
 
@@ -467,7 +506,7 @@ class ClockDiagram(tk.Frame):
         self._branch_highlight=False;self._l1_upstream=set();self.highlights=set();self.schedule()
 
     def fit_highlight(self, projected=False):
-        if self.layout_pending:return
+        if self.model is None or self.layout_pending:return
         if not projected and self.highlights and (getattr(self.model,'focus',None) or self.scope or getattr(self.model,'pages',1)>1):
             self.component,self.scope,self.depth=None,'',5
             self.mode='hierarchy' if len(self.model.original)>400 else 'instances'
@@ -523,10 +562,14 @@ class ClockDiagram(tk.Frame):
         self.rendered_nodes, self.rendered_wires = {}, {}
         self.port_tooltips = {}
         cw, ch = c.winfo_width(), c.winfo_height()
-        title,detail=self.empty_message or ('RTL RESET ARCHITECTURE' if self.tree_type=='reset' else 'RTL CLOCK ARCHITECTURE',
-                                            '默认两级 · 可添加层级 · 配置规则后开始提取')
-        c.create_text(cw/2, ch/2-24, text=title, fill='#8ea9ce', font=(self.family, 18, 'bold'))
-        c.create_text(cw/2, ch/2+14, text=detail, fill='#617d9f', font=(self.family, 11),width=max(100,cw-60))
+        draw_grid(c,cw,ch)
+        title,detail=self.empty_message or ('尚未打开'+('复位树' if self.tree_type=='reset' else '时钟树'),
+                                            '可打开已有提取结果，也可在设计面板中填写层级与器件。')
+        offset=0 if self.empty_message else -23
+        if not self.empty_message and ch>=270:
+            c.create_image(cw/2,ch/2-65+offset,image=artwork(self).photo('empty'))
+        c.create_text(cw/2,ch/2-19+offset,text=title,fill='#f1f5ff',font=(self.family,16,'bold'))
+        c.create_text(cw/2,ch/2+10+offset,text=detail,fill='#acbfd9',font=(self.family,10),width=max(100,cw-60))
     def _hit(self, x, y):
         candidates = self.canvas.find_overlapping(x-4, y-4, x+4, y+4)
         for item in reversed(candidates):

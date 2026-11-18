@@ -7,12 +7,42 @@ import time
 from pathlib import Path
 
 
+def verify_trunk(diagram):
+    from clocktree.canvas_wires import TrunkInterval
+    scene=diagram.scene
+    for key in scene.wires:
+        span=scene.segments[key]
+        if not isinstance(span['edges'],TrunkInterval) or len(span['edges'])<100:
+            continue
+        a,b=span['a'],span['b']
+        x,y=(a[0]+b[0])/2,(a[1]+b[1])/2
+        px,py=x*diagram.scale+diagram.ox,y*diagram.scale+diagram.oy
+        if not (6<px<diagram.canvas.winfo_width()-6 and 6<py<diagram.canvas.winfo_height()-6):
+            continue
+        hit=diagram._hit(px,py)
+        if not hit or hit[0]!='edge':continue
+        net=next(iter(span['edges']))
+        expected=set()
+        for edge in diagram.model.edges:
+            if (edge['source'],edge['source_pin'])!=(net['source'],net['source_pin']):continue
+            points=diagram.model.edge_points(edge)
+            for c,d in zip(points,points[1:]):
+                if (c[0]==d[0]==x and min(c[1],d[1])<y<max(c[1],d[1]) or
+                        c[1]==d[1]==y and min(c[0],d[0])<x<max(c[0],d[0])):
+                    expected.add(edge['id'])
+                    break
+        assert {e['id'] for e in hit[1]}==expected
+        return len(expected)
+    raise AssertionError('No visible high-fanout trunk was verified')
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', default=str(Path(__file__).resolve().parents[1]))
     parser.add_argument('--result', required=True)
     parser.add_argument('--out', required=True)
     parser.add_argument('--frames', type=int, default=80)
+    parser.add_argument('--verify-trunk',action='store_true',help='Compare a picked high-fanout interval with the original routed edges')
     args = parser.parse_args()
     sys.path.insert(0, args.source)
     import tkinter as tk
@@ -81,6 +111,7 @@ def main():
     output = {'source': args.source, 'result': args.result, 'instances': len(graph['nodes']),
               'window': [1840, 1000], 'tk': root.tk.call('info', 'patchlevel'),
               'load_seconds': load, 'rss': rss, 'measurements': reports}
+    if args.verify_trunk:output['verified_pick_edges']=verify_trunk(diagram)
     target = Path(args.out)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(output, indent=2), encoding='utf-8')

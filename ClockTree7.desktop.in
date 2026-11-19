@@ -1,11 +1,12 @@
 [Desktop Entry]
 Version=1.0
 Type=Application
-Name=ClockTree7
-Comment=RTL clock architecture analysis — native Tk desktop
+Name=观钟王
+Comment=RTL clock and reset tree analysis
+Comment[zh_CN]=RTL 时钟树与复位树架构分析
 Exec=bash "@CLOCKTREE_ROOT@/launch_gui.sh"
 Path=@CLOCKTREE_PATH@
 Icon=@CLOCKTREE_PATH@/clocktree/artwork/clocktree7.png
 Terminal=false
 Categories=Development;Engineering;
-StartupWMClass=ClockTree7
+StartupWMClass=Clocktree7

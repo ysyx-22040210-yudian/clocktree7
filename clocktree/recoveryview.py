@@ -2,6 +2,7 @@
 import tkinter as tk
 from tkinter import ttk
 from pathlib import Path
+from . import APP_NAME
 from .ui_layout import fit_window, wrapped_label
 
 
@@ -9,7 +10,7 @@ class RecoveryDialog(tk.Toplevel):
     def __init__(self, app, info, gui_issue=None):
         super().__init__(app)
         self.app, self.info = app, info
-        self.title('恢复上次运行 · ClockTree7')
+        self.title('恢复上次运行 · ' + APP_NAME)
         self.configure(bg='white'); self.transient(app)
         frame = ttk.Frame(self, padding=24, style='White.TFrame'); frame.pack(fill='both', expand=True)
         self.title_label = ttk.Label(frame, text='发现上次未完成的运行', style='Title.TLabel')

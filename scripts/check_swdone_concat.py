@@ -29,8 +29,8 @@ def main():
     expected=set();negative=set()
     def device(name,width=4):
         net='b_'+name
-        rtl.extend(['wire [{}:0] {};'.format(width-1,net),
-                    'ack_div #({}) {}(.i(clk),.o(),.done({}));'.format(width,name,net)])
+        rtl.extend(['wire [{}:0] {}; wire clk_{};'.format(width-1,net,name),
+                    'ack_div #({}) {}(.i(clk),.o(clk_{}),.done({}));'.format(width,name,name,net)])
         return net
     def mapping(instance,bit,source,target):
         expected.add(('concat_top.'+instance,'done[{}]'.format(bit),'concat_top.'+source,'concat_top.'+target))
@@ -56,6 +56,10 @@ def main():
     b=device('aliases',1);rtl.extend(['wire x_alias='+b+'[0],y_alias='+b+'[0];reg AA;',
         'always @(posedge clk) if(payload[0]) AA<={x_alias};else AA<={y_alias};'])
     for input_name in ('x_alias','y_alias'):mapping('aliases',0,input_name,'AA')
+    b=device('different_inputs',1)
+    rtl.extend(['wire d_direct='+b+'[0],d_inverted=~'+b+'[0];reg [5:0] shared_reg;',
+                'always @(posedge clk) if(payload[0]) shared_reg[5]<=d_direct;else shared_reg[5]<=d_inverted;'])
+    for input_name in ('d_direct','d_inverted'):mapping('different_inputs',0,input_name,'shared_reg[5]')
     b=device('stress',1);rtl.extend(['genvar n;generate for(n=0;n<{};n=n+1) begin:loads'.format(args.fanout),
         'reg [2:0] q;always @(posedge clk) q<={1\'b0,'+b+',1\'b0};end endgenerate'])
     for i in range(args.fanout):mapping('stress',0,b+'[0]','loads[{}].q[1]'.format(i))
@@ -64,6 +68,17 @@ def main():
     b=device('opaque');rtl.extend(['function hidden;hidden=payload[0];endfunction','reg [4:0] AO;',
         'always @(posedge clk) AO<={'+b+',hidden()};'])
     for i in range(4):mapping('opaque',i,b+'[{}]'.format(i),'AO[{}]'.format(i+1));negative.add(('concat_top.opaque','done[{}]'.format(i),'unresolved','unsupported_expression:npiFuncCall'))
+    mixed={'no_capture':0,'one_capture':1,'two_captures':2}
+    monitor_endpoints={}
+    for name,count in mixed.items():
+        b=device(name,1)
+        rtl.extend(['for(genvar k=0;k<{};k=k+1) begin: tap_{}'.format(args.fanout,name),
+                    'wire monitor='+b+'[0] ^ payload[k%8]; end'])
+        monitor_endpoints['concat_top.'+name]={'concat_top.tap_{}[{}].monitor'.format(name,k) for k in range(args.fanout)}
+        for receiver in range(count):
+            target='q_{}_{}'.format(name,receiver)
+            rtl.append('reg [10:0] '+target+'; always @(posedge clk) '+target+' <= {'+b+"[0],10'b0};")
+            mapping(name,0,b+'[0]',target+'[10]')
     rtl.append('endmodule');design=fixture/'design.sv';design.write_text('\n'.join(rtl),encoding='utf-8')
     kdb=out/'kdb';kdb.mkdir()
     with (kdb/'build.log').open('w') as log:
@@ -74,21 +89,26 @@ def main():
     graph,_=extract(config,out/'tree')
     request=dict(config=graph['config'],seeds=list(seeds_from_graph(graph)),trace_root='concat_top',dft_zero=['dft_mode'])
     write_graph(out/'request.json',request);start=time.monotonic();result=trace(out/'request.json',out/'registers')
-    actual=set();issues=set()
+    actual=set();issues=set();observed_monitors={key:set() for key in monitor_endpoints}
     with sqlite3.connect(str(out/'registers/registers.sqlite')) as db:
         for seed,bit,target,side,mode,status,reason,detail in db.execute('SELECT j.seed,r.bit,r.endpoint,r.side,r.relation,r.status,r.reason,r.detail FROM results r JOIN jobs j ON j.id=r.job'):
             instance=json.loads(seed)['instance'];detail=json.loads(detail)
             if status=='register':
-                assert side=='D' and mode=='direct' and detail['capture_target']==target
+                expected_relation='inverted' if detail['data_input']=='concat_top.d_inverted' else 'direct'
+                assert side=='D' and mode==expected_relation and detail['capture_target']==target,(instance,bit,mode,detail)
                 assert detail['proof']['basis']=='edge_triggered_always'
                 actual.add((instance,bit,detail['data_input'],target))
+            elif instance in monitor_endpoints and target in monitor_endpoints[instance]:
+                assert status=='unresolved' and bit=='done[0]'
+                observed_monitors[instance].add(target)
             else:issues.add((instance,bit,status,reason))
     write_graph(out/'oracle.json',dict(expected=sorted(expected),actual=sorted(actual),missing=sorted(expected-actual),extra=sorted(actual-expected),issues=sorted(issues)))
     assert actual==expected,(sorted(expected-actual)[:5],sorted(actual-expected)[:5])
     assert issues==negative,(issues,negative)
+    assert observed_monitors==monitor_endpoints
     index=RegisterIndex(out/'registers');total=index.export(out/'all.csv');index.export_json(out/'all.json')
     with (out/'all.csv').open(encoding='utf-8-sig') as stream:csv_rows=list(csv.DictReader(stream))
-    assert total==len(csv_rows)==len(expected)+len(negative)
+    assert total==len(csv_rows)==len(expected)+len(negative)+sum(map(len,observed_monitors.values()))
     assert all(row['已确认时序数据输入'] for row in csv_rows if row['状态']=='已确认寄存器')
     before=(out/'registers/verdi.log').stat().st_size
     assert trace(out/'request.json',out/'registers',resume=True)['summary']==result['summary']
@@ -103,27 +123,79 @@ def main():
     assert not plan.resolve(branches['concat_top.plain'],{'without_mux':'$var_swdone'})['ready']
     selected=plan.resolve(branches['concat_top.plain'],{'without_mux':'$var_swdone'},{'var_swdone':choices[0]['id']})
     assert selected['ready'] and selected['code']=='concat_top.b_plain[3:0]'
-    ambiguous=plan.resolve(branches['concat_top.aliases'],{'without_mux':'$var_swdone'})
-    assert not ambiguous['ready'] and '多个时序数据输入' in ' '.join(ambiguous['issues'])
+    template={'without_mux':'initial $display("%b", $var_swdone);'}
+    for name,data,capture_bit in [('aliases','x_alias','AA'),('different_inputs','shared_reg[5]','shared_reg[5]'),('unknown','b_unknown[3:0]','AX[4:1]'),
+                                  ('opaque','b_opaque[3:0]','AO[4:1]'),('one_capture','b_one_capture[0]','q_one_capture_0[10]')]:
+        automatic=plan.resolve(branches['concat_top.'+name],template)
+        assert automatic['ready'] and automatic['values']['var_swdone']=='concat_top.'+data,automatic
+        assert automatic['selected']['var_swdone']['capture_expression']=='concat_top.'+capture_bit
+        if name=='different_inputs':
+            assert automatic['selected']['var_swdone']['capture_fallbacks']==[
+                dict(formal_bit='done[0]',receiver='concat_top.shared_reg[5]',data_inputs=['concat_top.d_direct','concat_top.d_inverted'])]
+    two=branches['concat_top.two_captures'];none=branches['concat_top.no_capture']
+    choices=plan.candidates(two,'var_swdone')
+    assert {c['capture_expression'] for c in choices}=={'concat_top.q_two_captures_0[10]','concat_top.q_two_captures_1[10]'}
+    assert not plan.resolve(two,template)['ready'] and not plan.resolve(none,template)['ready']
+    assert not plan.candidates(none,'var_swdone')
+    sv=out/'generated.sv'
+    first=plan.export(template,sv)
+    assert 'concat_top.b_one_capture[0]' in sv.read_text() and 'concat_top.b_two_captures[0]' not in sv.read_text()
+    chosen={two['id']:{'var_swdone':choices[0]['id']}}
+    second=plan.export(template,sv,chosen)
+    assert second['blocks']==first['blocks']+1 and second['skipped']==first['skipped']-1
+    assert sv.read_text().count('concat_top.b_two_captures[0]')==1 and 'concat_top.b_no_capture' not in sv.read_text()
+    checks=fixture/'generated_checks.sv';checks.write_text('module generated_checks;\n'+sv.read_text()+'\nendmodule\n')
+    compile_dir=out/'compile';compile_dir.mkdir()
+    with (compile_dir/'vcs.log').open('w') as log:
+        subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all','-top','concat_top',
+                               '-top','generated_checks',str(design),str(checks),'-o','simv'],cwd=str(compile_dir),stdout=log,stderr=subprocess.STDOUT)
     gui_errors=[]
     if args.gui:
+        from unittest.mock import patch
         from clocktree.gui import ClockTreeApp
         from clocktree.register_view import RegisterDialog
+        from clocktree.sv_view import CandidateDialog,SVDialog
         from check_workbench_gui import pump
         from check_indexed_gui import capture
         app=ClockTreeApp(runs=out/'gui-runs',session_dir=out/'gui-session',remember=True)
         app.geometry('1840x1000+0+0');app.report_callback_exception=lambda *e:gui_errors.append(''.join(traceback.format_exception(*e)))
         pump(app,lambda:not app.busy);app.show_graph(graph);pump(app)
         dialog=RegisterDialog(app);dialog.geometry('1800x860+0+0');dialog.load_directory(out/'registers');pump(app)
-        assert dialog.total==total and len(dialog.table.get_children())==100
+        assert dialog.total==total and len(dialog.table.get_children())==min(100,total)
         dialog.search.set('concat_top.b_plain');dialog.refresh(True);assert dialog.total==8
         item=dialog.table.get_children()[0];dialog.table.selection_set(item);dialog.show_detail();pump(app)
         assert 'concat_top.b_plain' in dialog.detail.get('1.0','end') and '接收寄存器位' in dialog.detail.get('1.0','end')
-        assert dialog.table.item(item,'values')[-1].startswith('concat_top.b_plain[')
-        capture(dialog,out/'swdone-input-and-capture.png');dialog.close();app._save_session_now();app.close()
+        assert dialog.table.set(item,'data_input').startswith('concat_top.b_plain[')
+        capture(dialog,out/'swdone-input-and-capture.png');dialog.close()
+        app.ui_state.update(graph['config'],register_trace_completed_directory=str(out/'registers'))
+        editor=SVDialog(app)
+        assert editor.registers.get()==str(out/'registers')
+        for pane in editor.editors.values():
+            pane.delete('1.0','end');pane.insert('1.0',template['without_mux'])
+        editor.analyze_button.invoke()
+        pump(app,lambda:editor.plan is not None and editor.analyze_button.instate(['!disabled']))
+        shared=branches['concat_top.different_inputs']
+        editor.table.selection_set(shared['id']);editor.detail()
+        preview=editor.preview.get('1.0','end')
+        assert all(part in preview for part in ('concat_top.d_direct','concat_top.d_inverted','$var_swdone = concat_top.shared_reg[5]'))
+        assert editor.table.set(shared['id'],'status')=='已就绪'
+        assert editor.table.set(two['id'],'status')=='需处理'
+        editor.table.selection_set(two['id']);editor.pick('var_swdone')
+        picker=next(child for child in editor.winfo_children() if isinstance(child,CandidateDialog))
+        assert set(picker.items)=={c['id'] for c in choices}
+        picker.table.selection_set(choices[0]['id']);picker.choose();pump(app)
+        assert editor.table.set(two['id'],'status')=='已就绪'
+        gui_sv=out/'generated-from-gui.sv'
+        with patch('clocktree.sv_view.filedialog.asksaveasfilename',return_value=str(gui_sv)):
+            editor.export_button.invoke()
+        pump(app,lambda:editor.export_result is not None and editor.export_button.instate(['!disabled']))
+        assert editor.export_result['blocks']==second['blocks'] and gui_sv.read_bytes()==sv.read_bytes()
+        editor.close();app._save_session_now();app.close()
         assert not gui_errors,gui_errors
     write_graph(out/'acceptance.json',dict(passed=True,native_kdb=True,fanout=args.fanout,proven_input_capture_pairs=len(expected),
-        explicit_negative_results=len(negative),summary=result['summary'],seconds=time.monotonic()-start,
+        explicit_negative_results=len(negative),nonregister_monitors_per_port=args.fanout,automatic_blocks=first['blocks'],
+        blocks_after_choosing_receiver=second['blocks'],same_receiver_d_inputs_value='concat_top.shared_reg[5]',
+        summary=result['summary'],seconds=time.monotonic()-start,
         gui_checked=args.gui,gui_errors=gui_errors,csv_rows=total,sv_data_input=True,multiple_register_choices=True,resume_unchanged=True))
     print('SWDONE_CONCAT_ACCEPTED '+str(len(expected)),flush=True)
 

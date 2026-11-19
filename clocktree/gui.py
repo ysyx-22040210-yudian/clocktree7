@@ -1,4 +1,4 @@
-"""ClockTree7 native Tk/ttk desktop application (compatible with Tk 8.5)."""
+"""Native Tk/ttk desktop application (compatible with Tk 8.5)."""
 import copy
 import datetime
 import json
@@ -19,6 +19,7 @@ from itertools import islice
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
 
+from . import APP_NAME
 from .config import configured_input_boundaries, div_source_scopes, extraction_settings, load_config, validate_config, EXTRACTION_MODES
 from .paths import default_runs_dir
 from .paths import user_state_root
@@ -35,7 +36,8 @@ from .devices import auxiliary_details, wire_details
 from .viewmodel import GraphView
 from .profiles import (GATE_KINDS, SINGLE_INPUT_KINDS, TREE_PROFILES, LABEL_TO_TREE,
                        tree_type, profile, rule_ports, empty_config, result_filename, output_ports, selectable_kinds)
-from .session import SessionStore, SessionWriter, read_graph, same_config, snapshot_graph
+from .session import SessionStore, SessionWriter, read_canvas_graph as read_graph, same_config, snapshot_graph
+from .input_coverage import LABEL as INPUT_GAP_LABEL, prepare_coverage, visible_gaps
 from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
 from .indexed_view import IndexedGraphView
 from .runtime import RunJournal, read_json as runtime_json, diagnose, diagnose_gui, tail_text, stage_node, bind_gui, alive, LABELS
@@ -126,7 +128,7 @@ class RuleDialog(tk.Toplevel):
             ttk.Entry(row,textvariable=variable,width=21).pack(side='left',fill='x',expand=True,ipady=2)
             ttk.Button(row, text='正则添加', command=lambda d=direction,r=role:self.edit_ports(d,r)).pack(side='right',padx=(8,0))
             self.aux_rows[role]=row;self.aux_fields[role]=variable
-        self.selection_status=tk.StringVar(value='直接编辑端口名，或从 elab 正则筛选后加入。')
+        self.selection_status=tk.StringVar(value='可直接编辑端口名，也可从 elab 正则筛选后确认增删。')
         ttk.Label(frame,textvariable=self.selection_status,style='Muted.TLabel',wraplength=440).pack(anchor='w',pady=(8,0))
         ttk.Label(side,text='器件预览',style='Section.TLabel').pack(anchor='w',pady=(0,8))
         self.preview=tk.Canvas(side,width=1,height=256,bg=BOARD,highlightthickness=0)
@@ -206,9 +208,8 @@ class RuleDialog(tk.Toplevel):
 
         def confirmed(names, expression, rows):
             expressions[regex_key] = expression
-            merged = names if single else list(dict.fromkeys(previous + names))
-            field.set(', '.join(merged))
-            self.selection_status.set('已写入{}端口名，可在文本框继续编辑。'.format(DIRECTIONS[direction]))
+            field.set(', '.join(names))
+            self.selection_status.set('{}{}端口已更新，共 {} 个。'.format(role+' ' if role else '关注',DIRECTIONS[direction],len(names)))
             self.error.set('')
 
         def cache(rows):
@@ -219,7 +220,8 @@ class RuleDialog(tk.Toplevel):
         cached = self.discovered_rows if self.discovered_module == (module, self.hierarchy, directions) else None
         return InputPortDialog(self, self.app.get_config(validate=False), module, self.hierarchy,
                                expressions.get(regex_key, '.*'), previous, confirmed, direction=direction,
-                               read_directions=directions, cached_rows=cached, cache_callback=cache, single=single)
+                               read_directions=directions, cached_rows=cached, cache_callback=cache, single=single,
+                               optional=bool(role))
 
     def invalidate_ports(self,*args):
         self.discovered_module = None
@@ -282,11 +284,13 @@ class ClockTreeApp(tk.Tk):
         if old:write_json(gui_base/'previous.json',old)
         write_json(latest,self.gui_journal.paths())
         self.gui_journal.emit('begin','display','初始化 Tk 界面')
+        # Keep the X11 application class used by existing desktop launchers.
         try:super().__init__(className='ClockTree7')
         except BaseException as error:
             self.gui_journal.fail(error)
             raise
-        self.title('ClockTree7  |  RTL 时钟树 / 复位树架构分析')
+        self.title(APP_NAME + '  |  RTL 时钟树 / 复位树架构分析')
+        self.iconname(APP_NAME)
         self.iconphoto(True,artwork(self).photo('brand'))
         self.configure(bg=SURFACE)
         fit_window(self, None, (1760, 980), (940, 600))
@@ -383,7 +387,7 @@ class ClockTreeApp(tk.Tk):
         header.pack(fill='x')
         header.columnconfigure(3, weight=1)
         tk.Label(header,image=artwork(self).photo('brand'),bg=BAR,bd=0).grid(row=0,column=0,padx=(0,9))
-        tk.Label(header,text='ClockTree7',font=(self.latin,16,'bold'),bg=BAR,fg='#f3f6ff').grid(row=0,column=1,padx=(0,20))
+        tk.Label(header,text=APP_NAME,font=(self.family,16,'bold'),bg=BAR,fg='#f3f6ff').grid(row=0,column=1,padx=(0,20))
         self.analysis_combo = ttk.Combobox(header, textvariable=self.analysis_var, values=[p['label'] for p in TREE_PROFILES.values()],
                                            width=7,state='readonly',style='Header.TCombobox')
         self.analysis_combo.grid(row=0, column=2)
@@ -394,6 +398,9 @@ class ClockTreeApp(tk.Tk):
         tk.Label(project,textvariable=self.project,width=1,anchor='w',bg=BAR,fg='#ccd7ec',font=(self.family,10)).pack(side='left',fill='x',expand=True)
         self.state_badge = ttk.Label(header,textvariable=self.state,style='idle.Status.TLabel')
         self.state_badge.grid(row=0, column=4, padx=(0, 13))
+        self._badge_category = None
+        for sequence in ('<Button-1>','<Return>','<space>'):
+            self.state_badge.bind(sequence, lambda event:self.open_issues(self._badge_category) if self._badge_category else None)
         file_button = tk.Menubutton(header, text='文件 ▾', bg=BAR, fg='white', activebackground='#294855',
                                     activeforeground='white', padx=9, pady=3, takefocus=True)
         file_button.grid(row=0, column=5, padx=(0, 8))
@@ -1049,9 +1056,10 @@ class ClockTreeApp(tk.Tk):
                 branch.diagram.model.div_source_levels = levels
                 branch.diagram.schedule()
 
-    def _badge(self,text,kind='idle'):
+    def _badge(self,text,kind='idle',category=None):
+        self._badge_category=category
         self.state.set(text)
-        self.state_badge.configure(style=kind+'.Status.TLabel')
+        self.state_badge.configure(style=kind+'.Status.TLabel',cursor='hand2' if category else '',takefocus=bool(category))
 
     def _remember_workspace(self):
         if self._session_restoring:return
@@ -1086,6 +1094,12 @@ class ClockTreeApp(tk.Tk):
                     state.update(active=mode,origin='explicit')
             except Exception as error:
                 state['warnings'].append('启动指定文件未能加载：'+str(error))
+            for mode,workspace in state['workspaces'].items():
+                if workspace.get('graph') is not None:
+                    try:workspace['graph']=prepare_coverage(workspace['graph'])
+                    except (ValueError,KeyError,TypeError,sqlite3.Error) as error:
+                        workspace.update(graph=None,graph_token=None)
+                        state['warnings'].append('{}输入连接检查失败：{}'.format(TREE_PROFILES[mode]['label'],error))
             self.gui_journal.emit('end','session','历史工作区读取完成')
             self.events.put(('session_loaded',state))
         threading.Thread(target=worker,daemon=True).start()
@@ -1560,7 +1574,7 @@ class ClockTreeApp(tk.Tk):
 
     def open_device_library(self):
         dialog=tk.Toplevel(self)
-        dialog.title('ClockTree7 · 器件模型库')
+        dialog.title(APP_NAME + ' · 器件模型库')
         dialog.configure(bg='white')
         dialog.transient(self)
         fit_window(dialog,self,(945,645),(580,400))
@@ -1635,7 +1649,7 @@ class ClockTreeApp(tk.Tk):
 
     def open_result(self):
         if self.busy:return
-        path=filedialog.askopenfilename(parent=self,title='打开时钟树 / 复位树提取结果',initialdir=str(self.runs),filetypes=[('ClockTree7 JSON','*.json')])
+        path=filedialog.askopenfilename(parent=self,title='打开时钟树 / 复位树提取结果',initialdir=str(self.runs),filetypes=[(APP_NAME + ' JSON','*.json')])
         if path:self.load_result(path)
 
     def _set_busy(self,kind):
@@ -1679,6 +1693,7 @@ class ClockTreeApp(tk.Tk):
         threading.Thread(target=worker,daemon=True).start()
 
     def show_graph(self,graph,path=None,graph_token=None):
+        graph=prepare_coverage(graph)
         self._latest_job_failure=None
         runtime=graph.get('metadata',{}).get('runtime',{})
         if runtime.get('journal_directory') and Path(runtime['journal_directory']).is_dir():
@@ -1708,7 +1723,13 @@ class ClockTreeApp(tk.Tk):
         summary=graph['summary']
         input_boundaries = configured_input_boundaries(graph['config'])
         undriven=summary.get('undriven_inputs',0)
-        if summary['connectivity_complete'] and undriven:
+        gaps=summary.get('inputs_without_source',0)
+        if gaps:
+            progress='追踪完成' if summary['connectivity_complete'] else '追踪不完整'
+            if summary.get('trace_timeout_instances'):
+                progress='{} 个实例追踪超时'.format(summary['trace_timeout_instances'])
+            self._badge('{} · {:,} 个输入缺少上游连接 · 查看'.format(progress,gaps),'warn',INPUT_GAP_LABEL)
+        elif summary['connectivity_complete'] and undriven:
             self._badge('追踪完成 · {:,} 个输入无驱动'.format(undriven),'warn')
         elif summary['connectivity_complete'] and summary.get('topology_valid',True):
             if input_boundaries:
@@ -1751,7 +1772,7 @@ class ClockTreeApp(tk.Tk):
             ('提取方式',EXTRACTION_MODES[summary.get('extraction_mode','full')]),
             ('完整性','全部关注输入反查驱动；末端表示没有已配置的下游器件。普通负载未核验。' if summary.get('extraction_mode')=='target' else '全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
-        self._replace_text(self.diag_text,'{} 个诊断 · {} 个未解析端点 · {} 个输入无驱动\n\n打开完整问题表，可筛选、搜索、分页、定位和导出全部记录。\n正常范围边界不作为未解析错误。'.format(len(graph.get('diagnostics',[])),summary.get('unresolved',0),undriven))
+        self._replace_text(self.diag_text,'{} 个输入缺少上游连接 · {} 个输入无驱动\n{} 个诊断 · {} 个未解析端点\n\n在问题表选择“输入缺少上游连接”，可按实例和端口查看、定位或导出。'.format(gaps,undriven,len(graph.get('diagnostics',[])),summary.get('unresolved',0)))
         self.refresh_nodes()
         self.refresh_runs()
         self.set_status('架构图就绪 · {:,} 实例 / {:,} 连接 · 滚轮缩放，拖动画布平移'.format(summary['instances'],summary['edges']))
@@ -1999,7 +2020,7 @@ class ClockTreeApp(tk.Tk):
                 if tree_type(run_config)!=self._active_tree_type:continue
                 if (directory/'summary.json').is_file():
                     s=read_json(directory/'summary.json')
-                    status='完整' if s['connectivity_complete'] and s.get('topology_valid',True) and not s.get('undriven_inputs') else '诊断'
+                    status='完整' if s['connectivity_complete'] and s.get('topology_valid',True) and not (s.get('undriven_inputs') or s.get('inputs_without_source')) else '诊断'
                     count=s['instances']
                 elif (directory/'gui-job.json').is_file():
                     job=read_json(directory/'gui-job.json')
@@ -2073,7 +2094,7 @@ class ClockTreeApp(tk.Tk):
         self.ui_state.update(self.graph['config'],layout=self.diagram.layout_mode,subsystem_references=self.references_var.get())
         self.diagram.rebuild()
 
-    def open_issues(self):
+    def open_issues(self,category=''):
         extra=[]
         directory=getattr(self,'_runtime_directory',None)
         if directory:
@@ -2085,7 +2106,7 @@ class ClockTreeApp(tk.Tk):
                     'run_directory':str(directory),'stage':report.get('stage')})
         if not extra and getattr(self,'_latest_job_failure',None):extra.append(self._latest_job_failure)
         from .issue_view import IssueDialog
-        IssueDialog(self,extra)
+        return IssueDialog(self,extra,category)
 
     def locate_issue_object(self,instance,pin=''):
         if self.diagram.model and instance in self.diagram.model.original:
@@ -2217,6 +2238,8 @@ class ClockTreeApp(tk.Tk):
                     ('连接名来源','NPI 例化端口 npiHighConn；表达式由 elab 还原' if 'port_connections' in node else '该历史结果未采集例化连接名；使用新版重新提取后显示'),
                     ('结构状态',' / '.join(x for value,x in [(node.get('trace_timeout'),'实例 trace 超时'),(node.get('root'),'根结构'),(node.get('terminal'),'分支末端'),(node.get('scope_input_boundary'),'范围入口'),(node.get('scope_output_boundary'),'范围出口'),(node.get('has_unresolved_output'),'存在未解析输出')] if value) or '中间结构'),
                     ('范围边界','{} 项，原始证据保留在 raw.jsonl'.format(len(boundaries))),('RTL 来源',node.get('source','—'))]
+            missing_upstream=visible_gaps(node)
+            if missing_upstream:fields.append(('缺少上游连接的输入','\n'.join(missing_upstream)))
             if node.get('trace_timeout'):
                 timeout=node['trace_timeout']
                 fields.insert(4,('trace 超时断点','{} / {} · 阈值 {:g} 秒\n已用 {:g} 秒；仅跳过本例化剩余端口'.format(
@@ -2364,11 +2387,17 @@ class ClockTreeApp(tk.Tk):
     def expand_selected(self):
         if self.selected_object:self.diagram.expand(self.selected_object)
 
-    def open_branch(self,node,source_model=None):
+    def open_branch(self,node,source_model=None,origin=None):
         model=source_model or self.diagram.model
         if model is None:return
-        if node.get('kind') in INPUT_SOURCE_KINDS:
-            self.set_status('双击该边界的下游器件，可打开对应分支。');return
+        if node.get('kind') in INPUT_SOURCE_KINDS and node['input_entry'].get('aggregate_count'):
+            from .branch_view import BoundarySignalDialog
+            view=origin.diagram.model if origin else model
+            target=view.nodes.get(node.get('boundary_group'))
+            if target:
+                return BoundarySignalDialog(origin or self,view,target,node,lambda concrete:self.open_branch(concrete,model))
+            (origin or self).set_status('当前视图已切换，请重新选择边界信号。')
+            return
         if node.get('aggregate'):
             self.set_status('请先展开 RTL 聚合框，再双击具体器件。');return
         from .branch_view import BranchDialog

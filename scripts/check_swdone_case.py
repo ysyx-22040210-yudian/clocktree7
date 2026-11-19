@@ -27,7 +27,8 @@ def main():
     expected=set();positive=[]
     def device(name,width=4):
         b='b_'+name
-        rtl.extend(['wire [{}:0] {};'.format(width-1,b),'ack_div #({}) {}(.i(clk),.o(),.done({}));'.format(width,name,b)])
+        rtl.extend(['wire [{}:0] {}; wire clk_{};'.format(width-1,b,name),
+                    'ack_div #({}) {}(.i(clk),.o(clk_{}),.done({}));'.format(width,name,name,b)])
         return b
     def mapping(name,b,targets):
         positive.append(name)
@@ -110,7 +111,7 @@ def main():
     selections={branches['case_top.stress']['id']:{'var_swdone':choices[0]['id']}}
     report=plan.export(templates,out/'generated.sv',selections)
     assert report['blocks']==len(positive)+1 and report['skipped']==4,report
-    check=fixture/'generated_checks.sv';check.write_text('module generated_checks;\n'+(out/'generated.sv').read_text()+'\nendmodule\n')
+    check=fixture/'generated_checks.sv';check.write_text('module generated_checks;\n'+(out/'generated.sv').read_text(encoding='utf-8')+'\nendmodule\n',encoding='utf-8')
     compile_dir=out/'compile';compile_dir.mkdir()
     with (compile_dir/'vcs.log').open('w') as log:
         subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all','-top','case_top','-top','generated_checks',str(design),str(check),'-o','simv'],cwd=str(compile_dir),stdout=log,stderr=subprocess.STDOUT)
@@ -127,7 +128,7 @@ def main():
         dialog.search.set('case_top.b_plain');dialog.refresh(True);assert dialog.total==4
         item=dialog.table.get_children()[0];dialog.table.selection_set(item);dialog.show_detail();pump(app)
         detail=dialog.detail.get('1.0','end');assert 'case_top.b_plain' in detail and 'case_top.A[' in detail
-        assert dialog.table.item(item,'values')[-1].startswith('case_top.b_plain[')
+        assert dialog.table.set(item,'data_input').startswith('case_top.b_plain[')
         capture(dialog,out/'swdone-case-registers.png');dialog.close();app.close();assert not errors,errors
     write_graph(out/'acceptance.json',dict(passed=True,native_kdb=True,verdi='O-2018.09-SP2',fanout=args.fanout,
         exact_input_capture_pairs=len(expected),case_evidence=case_evidence,negative_rows=len(issues),summary=result['summary'],

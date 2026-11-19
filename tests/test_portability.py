@@ -107,6 +107,8 @@ def test_shortcut_uses_current_installation_and_escapes_exec_fields(tmp_path):
     module = runpy.run_path(str(ROOT / 'scripts/install_desktop.py'))
     root = tmp_path / 'tool with spaces $VAR 100%'
     text = module['desktop_entry'](root)
+    assert 'Name=观钟王' in text.splitlines()
+    assert 'StartupWMClass=Clocktree7' in text.splitlines()
     assert '@CLOCKTREE' not in text and '/mnt/hgfs/' not in text
     assert '100%%' in text and '\\\\$VAR' in text
     assert 'Exec=bash "' in text and 'Path=' + str(root).replace('\\', '\\\\') in text

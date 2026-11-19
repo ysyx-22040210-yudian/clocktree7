@@ -14,7 +14,7 @@ from clocktree.storage import write_graph
 from check_indexed_gui import capture
 
 
-SAMPLE='''// ClockTree7 · 时钟分支检查模板
+SAMPLE='''// 观钟王 · 时钟分支检查模板
 // 单独变量保留路径；check_$var_clkip_sva 自动生成合法名称。
 property check_$var_clkip_sva;
     @(posedge $var_clkip) disable iff (!$var_rst)
@@ -52,7 +52,7 @@ def rss():
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--out',type=Path,required=True);parser.add_argument('--lines',type=int,default=20000)
     args=parser.parse_args();out=args.out.resolve();out.mkdir(parents=True,exist_ok=True)
-    root=tk.Tk();root.title('ClockTree7 · SV 模板编辑验收');root.geometry('1240x820+0+0');errors=[]
+    root=tk.Tk();root.title('观钟王 · SV 模板编辑验收');root.geometry('1240x820+0+0');errors=[]
     root.report_callback_exception=lambda *e:errors.append(''.join(traceback.format_exception(*e)))
     editor=SVCodeEditor(root,'with_mux.sv',SAMPLE);editor.pack(fill='both',expand=True)
     pump(root,lambda:not editor.highlight_busy);text=editor.text;text.focus_force();pump(root)

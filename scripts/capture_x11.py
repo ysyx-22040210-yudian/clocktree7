@@ -61,7 +61,7 @@ def x11_image(window=None):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser()
-    parser.add_argument('--title',default='ClockTree7')
+    parser.add_argument('--title',default='观钟王')
     parser.add_argument('--out',required=True)
     args=parser.parse_args()
     windows=subprocess.check_output(['/usr/bin/xwininfo','-root','-tree'],universal_newlines=True,

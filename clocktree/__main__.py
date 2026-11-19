@@ -1,13 +1,16 @@
 import argparse
+import codecs
 import json
+import sys
 from pathlib import Path
 
+from . import APP_NAME
 from .extract import extract
 from .memory import MemoryResumeError
 
 
 def main():
-    parser = argparse.ArgumentParser(description="ClockTree7 full RTL clock/reset network extraction")
+    parser = argparse.ArgumentParser(description=APP_NAME + " · RTL 时钟树与复位树提取")
     commands = parser.add_subparsers(dest="command")
     inputs = commands.add_parser('discover-inputs', help='Read formal input/output ports without tracing; input only by default')
     inputs.add_argument('--request', required=True)
@@ -60,27 +63,27 @@ def main():
                 settings=json.loads(Path(args.templates).read_text(encoding='utf-8-sig'))
                 if not isinstance(settings,dict):raise ValueError('模板 JSON 必须是对象')
                 result=SVPlan(args.plan).export(settings,args.out,settings.get('selections'),args.report)
-        except (ValueError,RuntimeError,OSError,KeyboardInterrupt) as error:parser.exit(1,'ClockTree7 SV: '+str(error)+'\n')
+        except (ValueError,RuntimeError,OSError,KeyboardInterrupt) as error:parser.exit(1,APP_NAME + ' SV: '+str(error)+'\n')
         print(json.dumps(result,ensure_ascii=False,indent=2))
         return 2 if args.command=='sv-export' and not result['sv_written'] else 0
     if args.command == 'trace-registers':
         from .register_trace import run as trace_registers
         try:result=trace_registers(args.request,args.out,args.resume)
         except (ValueError,RuntimeError,OSError,KeyboardInterrupt) as error:
-            parser.exit(1,'ClockTree7 register trace: '+str(error)+'\n')
+            parser.exit(1,APP_NAME + ' register trace: '+str(error)+'\n')
         print(json.dumps(result['summary'],ensure_ascii=False,indent=2))
         return 0 if result['summary']['complete'] else 2
     if args.command == 'discover-inputs':
         from .input_ports import discover
         try: result = discover(args.request, args.out)
-        except Exception as error: parser.exit(1, 'ClockTree7 port discovery: ' + str(error) + '\n')
+        except Exception as error: parser.exit(1, APP_NAME + ' port discovery: ' + str(error) + '\n')
         print('CT7_INPUT_READY instances={} ports={}'.format(result['instances'], len(result['ports'])))
         return 0
     if args.command == 'resume':
         from .recovery import resume, RecoveryError
         try:graph = resume(args.run, args.memory_limit_gib)
         except (RecoveryError, MemoryResumeError, ValueError, OSError) as error:
-            parser.exit(1, 'ClockTree7: ' + str(error) + '\n')
+            parser.exit(1, APP_NAME + ': ' + str(error) + '\n')
         print(json.dumps(graph['summary'], indent=2))
         return 0 if graph['summary']['connectivity_complete'] else 2
     if args.command=='diagnose':
@@ -109,7 +112,7 @@ def main():
         try:
             graph = extract(args.config, args.out, args.memory_limit_gib)
         except (MemoryResumeError, RecoveryError) as error:
-            parser.exit(1, 'ClockTree7: ' + str(error) + '\n')
+            parser.exit(1, APP_NAME + ': ' + str(error) + '\n')
         print(json.dumps(graph["summary"], indent=2))
         return 0 if graph["summary"]["connectivity_complete"] else 2
     if args.command == "serve":
@@ -120,12 +123,12 @@ def main():
         try:
             from .gui import run_gui
         except ImportError as error:
-            parser.exit(1, 'ClockTree7: Tkinter is required for the GUI: {}\nRun doctor for environment details.\n'.format(error))
+            parser.exit(1, APP_NAME + ': Tkinter is required for the GUI: {}\nRun doctor for environment details.\n'.format(error))
         import tkinter
         try:
             run_gui(args.runs, args.result, args.config,remember=not args.no_session)
         except tkinter.TclError as error:
-            parser.exit(1, 'ClockTree7: GUI display/Tk initialization failed: {}\nUse a graphical session, or run extract/doctor without --gui.\n'.format(error))
+            parser.exit(1, APP_NAME + ': GUI display/Tk initialization failed: {}\nUse a graphical session, or run extract/doctor without --gui.\n'.format(error))
         return 0
     if args.command == 'doctor':
         if args.self_test and args.viewer_only:
@@ -137,11 +140,19 @@ def main():
         else:
             for check in report['checks']:
                 print('[{}] {}: {}'.format(check['status'].upper(), check['name'], check['detail']))
-            print('ClockTree7 {}. Report: {}'.format(report['status'].upper(), report.get('report_file', 'not saved')))
+            print('{} {}. Report: {}'.format(APP_NAME, report['status'].upper(), report.get('report_file', 'not saved')))
         return 0 if report['status'] == 'pass' else 1
     parser.print_help()
     return 1
 
 
 if __name__ == "__main__":
+    # Some Python 3.6 EDA shells use an ASCII locale, even for redirected output.
+    for name in ('stdout', 'stderr'):
+        stream = getattr(sys, name)
+        if stream is not None and getattr(stream, 'encoding', None) and hasattr(stream, 'buffer'):
+            try:
+                APP_NAME.encode(stream.encoding)
+            except UnicodeEncodeError:
+                setattr(sys, name, codecs.getwriter('utf-8')(stream.buffer, errors='backslashreplace'))
     raise SystemExit(main())

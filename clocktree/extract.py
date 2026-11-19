@@ -95,9 +95,12 @@ def finish_extraction(graph, journal):
                      context=failure.get('context',{}),returncode=graph['metadata']['verdi_exit_code'],
                      exit_signal=failure.get('exit_signal'),partial_result=True)
     else:
-        journal.emit('finished' if graph['summary']['connectivity_complete'] else 'attention','export',
-                     '后端提取结束' if graph['summary']['connectivity_complete'] else '结果已写出，存在未解析或诊断',
-                     context={'instances':graph['summary']['instances'],'edges':graph['summary']['edges']})
+        summary=graph['summary']
+        message='后端提取结束' if summary['connectivity_complete'] else '结果已写出，存在未解析或诊断'
+        gaps=summary.get('inputs_without_source',0)
+        if gaps:message+=' · {} 个输入缺少上游连接，详见问题表'.format(gaps)
+        journal.emit('finished' if summary['connectivity_complete'] else 'attention','export',message,
+                     context={'instances':summary['instances'],'edges':summary['edges'],'inputs_without_source':gaps})
 
 
 def _new_extraction(config_path, output_dir, memory_limit_gib):

@@ -231,6 +231,16 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
     parts = []
     kind = node.get('kind')
     aggregate = node.get('aggregate', False)
+    from .input_coverage import visible_gaps
+    gaps = {}
+    for pin in visible_gaps(node):
+        shown = re.sub(r'\[-?\d+\]$', '', pin) if kind=='subsystem' and not node.get('expand_bus') else pin
+        gaps.setdefault(shown, []).append(pin)
+    def input_label(pin):
+        label = trace_pin_label(node,pin)
+        if pin not in gaps:return label
+        suffix = '缺少上游' if gaps[pin]==[pin] else '{} 位缺少上游'.format(len(gaps[pin]))
+        return label+' · '+suffix
     info = device_style(kind, div_level)
     color = info['color']
     inputs, output = port_offsets(node, width, height)
@@ -287,7 +297,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         text(34,cy,node['output'],size=13,fill=color,bold=True,max_width=width-110,tooltip=entry['signal'])
         parts[-1]['overview']='symbol'
         line([(width-48,cy),output],fill=color)
-        text(12,height-16,'展开目标层次查看各口' if entry.get('aggregate_count') else entry['signal'],
+        text(12,height-16,'双击选择边界信号' if entry.get('aggregate_count') else entry['signal'],
             size=10,fill='#9fcfc3',max_width=width-24,tooltip=entry['signal'])
     elif kind == 'wire':
         left, right = width*.35, width*.65
@@ -295,7 +305,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         palette=['#f2d788','#80ceea','#c4abff','#76d8b3','#f4a5bc']
         for pin, (px, py) in zip(node['inputs'], inputs):
             line([(px,py),(left,py)])
-            text(7,py-12,trace_pin_label(node,pin),size=10,max_width=left-12,tooltip=connection_details(node,[pin]))
+            text(7,py-12,input_label(pin),size=10,max_width=left-12,tooltip=connection_details(node,[pin]))
             text(7,py+12,connection_label(node,pin),size=10,fill='#9fcfc3',max_width=left-12,tooltip=connection_details(node,[pin]))
         for pin in output_ports(node):
             px,py=output_offset(node,width,height,pin)
@@ -324,7 +334,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             line([(px, py), (width*.57, py)])
             detail = '{} · {}'.format(node.get('reference_of', path), connection_details(node, [pin]))
             members=[p for p in node['inputs'] if p==pin or p.startswith(pin+'[')]
-            label=trace_pin_label(node,pin)
+            label=input_label(pin)
             if members!=[pin]:label+=' · {} 位 ▸'.format(len(members))
             text(7, py-11, label, size=11, max_width=width*.55, tooltip=detail+'\n'+', '.join(members))
             text(7, py+11, connection_label(node,pin), size=10, fill='#9fcfc3', max_width=width*.55, tooltip=detail)
@@ -394,7 +404,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         for pin, (px, py) in zip(node['inputs'], inputs):
             line([(px, py), (input_end, py)])
             detail = '{} · {}'.format(path, connection_details(node, [pin]))
-            text(7, py-11, trace_pin_label(node,pin), size=11, fill='#ffb27b' if node.get('trace_timeout') else '#b5cbe5', max_width=input_end-12, tooltip=detail)
+            text(7, py-11, input_label(pin), size=11, fill='#ffb27b' if pin in gaps or node.get('trace_timeout') else '#b5cbe5', max_width=input_end-12, tooltip=detail)
             text(7, py+11, connection_label(node,pin), size=11, fill='#9fcfc3', max_width=input_end-12, tooltip=detail)
         line([(output_start, cy), output])
         detail = '{} · {}'.format(path, connection_details(node, [node['output']]))
@@ -402,12 +412,16 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         text(width-7, cy+11, connection_label(node,node['output']), size=11, fill='#9fcfc3', anchor='e', max_width=width-output_start-10, tooltip=detail)
     else:
         for pin, (px,py) in zip(node['inputs'],inputs):
-            text(10,py-7,trace_pin_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
+            text(10,py-7,input_label(pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
             text(10,py+7,connection_label(node,pin),size=9,max_width=width/2-12,tooltip=connection_details(node,[pin]))
         text(width-10,output[1]-7,trace_pin_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
         text(width-10,output[1]+7,connection_label(node,node['output']),size=9,anchor='e',max_width=width/2-12,tooltip=connection_details(node,[node['output']]))
-    for px, py in inputs+([output] if output else []):
-        add('circle', x=px, y=py, r=3, fill='#14253a', stroke=color, width=1.3)
+    for pin,(px,py) in zip(display_inputs(node),inputs):
+        gap = pin in gaps
+        add('circle', x=px, y=py, r=3, fill='#f09a59' if gap else '#14253a',
+            stroke='#ffd1a5' if gap else color, width=1.3)
+    if output:
+        add('circle', x=output[0], y=output[1], r=3, fill='#14253a', stroke=color, width=1.3)
     status_x = width-12
     scope_labels = [label for value, label in [(node.get('scope_input_boundary'), '范围入口'),
                                               (node.get('scope_output_boundary'), '范围出口')] if value]

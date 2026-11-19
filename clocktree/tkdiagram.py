@@ -143,7 +143,7 @@ class ClockDiagram(tk.Frame):
         self.canvas.bind('<Button-5>', lambda e: self.zoom(1/1.15, e.x, e.y))
         self.canvas.bind('<Motion>', self._hover)
         self.minimap.bind('<Button-1>', self._map_click)
-        self.canvas.bind('<Leave>', lambda e: self.on_hover('滚轮缩放 · 拖动画布平移 · 双击器件打开分支画布 · 双击聚合框展开'))
+        self.canvas.bind('<Leave>', lambda e: self.on_hover('滚轮缩放 · 拖动平移 · 双击器件或边界信号打开子画布 · 双击 RTL 聚合框展开'))
         from .canvas_scene import CanvasScene
         self.scene = CanvasScene(self)
         self.bind('<Destroy>', self._destroyed, add='+')

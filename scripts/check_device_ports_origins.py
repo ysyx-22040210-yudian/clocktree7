@@ -234,6 +234,11 @@ def gui(out, native_dir, phase):
     assert editor.fields['clock_inputs'].get() == 'b, a'
     picker(editor,'output','^(o|debug_o)$',('debug_o','o'),read=False,screenshot='output-regex.png')
     picker(editor,'input','^sel$',('sel',),read=False,role='pll_sel')
+    picker(editor,'input','^a$',(),read=False)
+    assert editor.fields['clock_inputs'].get()=='b'
+    picker(editor,'input','^sel$',(),read=False,role='pll_sel')
+    assert editor.aux_fields['pll_sel'].get()==''
+    picker(editor,'input','^sel$',('sel',),read=False,role='pll_sel')
     entry = editor.entries['clock_inputs']
     entry.delete(0,'end');entry.insert(0,'a， b')
     editor.save();pump(app)
@@ -245,8 +250,10 @@ def gui(out, native_dir, phase):
     outgoing = picker(wire,'output','^(pass|extra)$',('pass','extra'),read=False)
     for rows, name in [(incoming,'lanes'),(outgoing,'pass')]:
         assert {(r['left'],r['right'],r['width']) for r in rows if r['name']==name} == {('3','2',2),('4','2',3)}
+    assert wire.fields['clock_output'].get()=='extra, pass'
+    picker(wire,'output','^extra$',(),read=False)
     wire.save();pump(app)
-    assert saved[-1]['clock_outputs']==['extra','pass']
+    assert saved[-1]['clock_outputs']==['pass']
 
     subsystem = RuleDialog(app,2,{'module':'check_probe','kind':'subsystem'},saved.append)
     assert subsystem.port_buttons['output'].instate(['disabled'])

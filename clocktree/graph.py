@@ -6,6 +6,7 @@ import sys
 from .devices import resolve_kind
 from .profiles import profile, tree_type, output_ports
 from .config import configured_input_boundaries, hierarchy_contains
+from .input_coverage import missing_inputs
 
 
 UNRESOLVED = {"error", "unknown_cell", "missing_pin", "width_requires_bit", "trace_limit", "unknown_type", "unsupported_expression",
@@ -321,7 +322,12 @@ def build_graph(events, config, evidence_store=None):
             diagnostics.append({"code": "multiple_drivers", "instance": instance, "pin": pin, "drivers": sorted(drivers)})
     expected_count = 0
     missing = []
+    without_source = 0
     for node in nodes.values():
+        gaps = missing_inputs(node, (pin for pin in node['inputs'] if (node['id'], pin) in pin_drivers))
+        if gaps:
+            node['inputs_without_source'] = gaps
+            without_source += len(gaps)
         for pin in output_ports(node):
             if target_mode and (node['id'], pin) not in output_checks:
                 diagnostics.append({'code': 'pin_validation', 'instance': node['id'], 'pin': pin, 'status': 'missing_output_check'})
@@ -437,6 +443,7 @@ def build_graph(events, config, evidence_store=None):
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
                         "expected_pin_traces": expected_count, "observed_pin_traces": len(trace_keys),
                         "unresolved": unresolved_count, "diagnostics": len(diagnostics), 'undriven_inputs': undriven_count,
+                        'inputs_without_source': without_source,
                         'l1_input_connections': sum(len(n.get('l1_inputs', {})) for n in nodes.values()),
                         'input_boundary_connections': sum(len(n.get('input_boundaries', {})) for n in nodes.values()),
                         'trace_timeout_instances': len(timeout_instances),

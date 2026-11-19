@@ -8,14 +8,14 @@ from .issues import IssueIndex,COLUMNS,HEADINGS
 
 
 class IssueDialog(tk.Toplevel):
-    def __init__(self,app,extra=()):
+    def __init__(self,app,extra=(),category=''):
         super().__init__(app)
         self.app=app;self.title('完整问题表 · 未解析与诊断')
         fit_window(self,app,(1280,680),(760,440))
         self.index=IssueIndex(app.graph or {'nodes':[],'edges':[]},extra);self.offset=0;self.ready=False;self.cancelled=threading.Event();self.queue=queue.Queue()
         dialog_heading(self,'未解析与诊断','issue')
         controls=ttk.Frame(self,padding=(12,7));controls.pack(fill='x')
-        self.category=tk.StringVar(value='全部类别');self.search=tk.StringVar()
+        self.category=tk.StringVar(value=category or '全部类别');self.search=tk.StringVar()
         self.combo=ttk.Combobox(controls,textvariable=self.category,values=['全部类别'],state='readonly',width=23);self.combo.pack(side='left')
         entry=ttk.Entry(controls,textvariable=self.search,width=12);entry.pack(side='left',padx=8,fill='x',expand=True)
         entry.bind('<Return>',lambda e:self.page(0,reset=True));self.combo.bind('<<ComboboxSelected>>',lambda e:self.page(0,reset=True))

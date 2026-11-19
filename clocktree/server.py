@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 
+from . import APP_NAME
 from .config import validate_config
 from .extract import extract
 from .profiles import result_filename, tree_type
@@ -121,5 +122,5 @@ def serve(host, port, runs, result=None):
             except (ValueError, KeyError, OSError) as error:
                 self.send({"error": str(error)}, 400)
 
-    print("ClockTree7: http://{}:{}".format(host, port), flush=True)
+    print("{}: http://{}:{}".format(APP_NAME, host, port), flush=True)
     Server((host, port), Handler).serve_forever()

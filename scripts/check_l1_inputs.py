@@ -97,7 +97,7 @@ endmodule
     generated = plan.export(templates, out/'sv'/'branches.sv')
     assert generated['blocks'] == 8 and generated['skipped'] == 0, generated
     checks = out/'sv'/'checks.sv'
-    checks.write_text('module l1_gate_checks;\n' + (out/'sv'/'branches.sv').read_text() + '\nendmodule\n')
+    checks.write_text('module l1_gate_checks;\n' + (out/'sv'/'branches.sv').read_text(encoding='utf-8') + '\nendmodule\n',encoding='utf-8')
     with (out/'sv'/'vcs.log').open('w') as log:
         subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all',
             '-top','l1_gate_top','-top','l1_gate_checks',str(clean_rtl),str(checks)],

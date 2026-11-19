@@ -22,7 +22,7 @@ def _neighbour_filter(node,direction):
 def neighbour_edges(model,node,direction):
     instance=node.get('reference_of',node['id'])
     if node.get('reference_of') and (direction!='upstream' or not node.get('reference_source')):
-        return []
+        return l1_neighbours(model,node,direction)
     if hasattr(model,'store'):
         from .indexed_view import QuerySequence
         where,params=_neighbour_filter(node,direction)
@@ -40,7 +40,7 @@ def neighbour_edges(model,node,direction):
 def neighbour_destinations(model,node,direction):
     """Two destinations suffice to decide direct jump vs. port chooser."""
     if node.get('reference_of') and (direction!='upstream' or not node.get('reference_source')):
-        return []
+        return l1_neighbours(model,node,direction)[:2]
     other='source' if direction=='upstream' else 'target'
     if hasattr(model,'store') and not l1_neighbours(model,node,direction):
         where,params=_neighbour_filter(node,direction)
@@ -127,7 +127,8 @@ class NeighbourDialog(tk.Toplevel):
         self.table.delete(*self.table.get_children())
         for i,edge in enumerate(edges[self.offset:self.offset+100]):
             self.rows[str(i)]=edge;node=lookup_node(model,edge[other])
-            self.table.insert('','end',iid=str(i),values=(edge[other],edge[port],connection_label(node,edge[port]),edge[local]))
+            peer=node['input_entry']['signal'] if node.get('virtual') and node.get('input_entry') else node.get('reference_of',edge[other])
+            self.table.insert('','end',iid=str(i),values=(peer,edge[port],connection_label(node,edge[port]),edge[local]))
         self.status.set('{}–{} / {} 条端口连接'.format(self.offset+1 if total else 0,min(total,self.offset+100),total))
 
     def locate(self,event=None):

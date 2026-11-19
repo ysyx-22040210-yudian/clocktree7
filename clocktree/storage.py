@@ -249,6 +249,8 @@ class ResultStore:
 
     def finish(self, header):
         conn = self.connection()
+        from .l1_inputs import verified_table
+        verified_table(conn, persist=True)
         header = dict(header, ct7_index_version=INDEX_VERSION)
         config = header.get('config', {})
         if any(rule.get('kind') for layer in config.get('layers', []) for rule in layer.get('modules', [])):
@@ -385,6 +387,7 @@ class IndexedGraph(dict):
     def __init__(self, store, header):
         super().__init__(header)
         self.store = store
+        self.legacy_input_coverage = getattr(header, 'legacy_input_coverage', False)
 
     def boundaries_for(self, instance):
         return RecordSequence(self.store, 'boundaries', 'instance=?', (instance,))
@@ -405,8 +408,11 @@ class IndexedGraph(dict):
                     counts[current.get('kind')] += 1
         return {key: value for key, value in counts.items() if value}
 
-    def present_node(self, record):
+    def present_node(self, record, coverage_connection=None):
         from .devices import matching_rule, resolve_kind
+        if self.legacy_input_coverage:
+            from .input_coverage import legacy_node
+            record = legacy_node(self, record, coverage_connection)
         kind = resolve_kind(record, self['config'])
         if kind and kind != record.get('kind'):
             record = dict(record, kind=kind, kind_source='configured')

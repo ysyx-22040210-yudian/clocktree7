@@ -16,15 +16,17 @@ from .ui_layout import dialog_heading, fit_window, wrapped_label
 
 class InputPortDialog(tk.Toplevel):
     def __init__(self,parent,config,module,hierarchy,expression,selected,callback,direction='input',
-                 read_directions=None,cached_rows=None,cache_callback=None,single=False):
+                 read_directions=None,cached_rows=None,cache_callback=None,single=False,optional=False):
         super().__init__(parent)
         self.parent,self.config,self.module,self.hierarchy,self.callback=parent,config,module,hierarchy,callback
-        self.rows,self.shown,self.selected=[],[],set(selected)
+        self.original_names = tuple(selected)
+        self.rows,self.shown,self.selected=[],[],set(self.original_names)
         self.direction = direction
         self.direction_label = DIRECTION_LABELS[direction]
         self.read_directions = list(read_directions or [direction])
         self.cache_callback = cache_callback
         self.single = single
+        self.optional = optional
         self.process=None;self.stream=None;self.closed=False;self.cancelled=False;self.poll_id=None
         self.title('从 elab 筛选{}端口'.format(self.direction_label))
         self.transient(parent)
@@ -32,7 +34,12 @@ class InputPortDialog(tk.Toplevel):
         dialog_heading(self,'从 elab 筛选{}端口'.format(self.direction_label),'sliders')
         frame=ttk.Frame(self,padding=(16,6,16,8));frame.pack(fill='both',expand=True)
         wrapped_label(frame,text='{}  ·  直接父层 {}'.format(module,hierarchy or config['design'].get('top',''))).pack(fill='x')
-        instruction = '选一个{}端口写入文本框。'.format(self.direction_label) if single else '勾选{}端口，确认后加入文本框。'.format(self.direction_label)
+        if single:
+            instruction = '选一个{}端口写入文本框。'.format(self.direction_label)
+            if optional:
+                instruction += '取消原端口的勾选可清空该辅助口。'
+        else:
+            instruction = '确认后，新增当前匹配中勾选的端口，并从文本框移除已取消勾选的端口。'
         ttk.Label(frame,text=instruction).pack(anchor='w',pady=3)
         actions=ttk.Frame(frame);actions.pack(fill='x',pady=6)
         self.read_button=ttk.Button(actions,text='读取 elab 端口',command=self.start);self.read_button.pack(side='left')
@@ -186,8 +193,7 @@ class InputPortDialog(tk.Toplevel):
         self.update_selection_summary()
 
     def update_selection_summary(self):
-        # Confirmation uses distinct matching formal names, not instance rows
-        # or individual bus bits. Hidden selections are not submitted.
+        # Count the current filter by formal name, across instances and bus bits.
         names={row['name'] for row in self.shown}
         pending=bool(self.shown) and self.expression.get()!=getattr(self,'filtered_expression',None)
         self.selection_summary.set('已选 {} 个{}端口 / {}匹配 {} 个端口名{}'.format(
@@ -203,9 +209,8 @@ class InputPortDialog(tk.Toplevel):
     def confirm(self):
         try:
             if self.expression.get()!=getattr(self,'filtered_expression',None):raise ValueError('请重新筛选')
-            names=confirmed_ports(self.rows,self.expression.get(),self.selected,self.direction)
-            if self.single and len(names) != 1:
-                raise ValueError('请只勾选一个{}端口'.format(self.direction_label))
+            names=confirmed_ports(self.rows,self.expression.get(),self.selected,self.direction,
+                                  previous=self.original_names,single=self.single,optional=self.optional)
         except (ValueError, re.error) as error:self.status.set(str(error));return
         self.callback(names,self.expression.get(),self.rows)
         self.close()

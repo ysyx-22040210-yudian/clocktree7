@@ -1,4 +1,5 @@
 const $ = id => document.getElementById(id);
+const productName = document.querySelector('.brand strong').textContent;
 const ns = 'http://www.w3.org/2000/svg';
 let graph = null, positions = new Map(), selected = null, box = {x: 0, y: 0, w: 2100, h: 700};
 let drag = null, activeJob = null, nodeIndex = new Map(), viewNodes = new Map();
@@ -179,7 +180,7 @@ function locate() {
   box={x:p.x-280,y:p.y-160,w:900,h:900/ratio};setBox();selectNode(node);
 }
 function showGraph(result) {
-  if(!Array.isArray(result.nodes)||!Array.isArray(result.edges)||!result.summary)throw new Error('请选择 ClockTree7 结果 JSON');
+  if(!Array.isArray(result.nodes)||!Array.isArray(result.edges)||!result.summary)throw new Error(`请选择 ${productName} 结果 JSON`);
   setConfig(result.config);graph=result;nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';
   const s=result.summary,values=[s.instances,s.edges,s.roots,s.terminals,s.components,s.unresolved];
   [...$('stats').children].forEach((n,i)=>n.querySelector('b').textContent=values[i].toLocaleString());
@@ -194,11 +195,11 @@ async function loadRuns(){const data=await api('/api/runs');$('runs').innerHTML=
 async function run(){try{const config=getConfig();$('configJson').value=JSON.stringify(config,null,2);$('run').disabled=true;$('treeType').disabled=true;const data=await api('/api/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});activeJob=data.id;$('state').textContent='正在解析 elab';$('state').className='state';document.querySelector('.console').open=true;pollJob();}catch(error){$('run').disabled=false;$('treeType').disabled=false;alert(error.message);}}
 async function pollJob(){if(!activeJob)return;try{const data=await api('/api/job?id='+encodeURIComponent(activeJob));$('log').textContent=data.log||data.error||'正在启动 Verdi…';if(data.state==='running'){setTimeout(pollJob,1500);return;}const id=activeJob;activeJob=null;$('run').disabled=false;$('treeType').disabled=false;await loadRuns();if(data.state==='finished'){showGraph(await api('/api/result?run='+encodeURIComponent(id)));$('runs').value=id;}else{$('state').textContent='提取失败';$('state').className='state warn';}}catch(error){$('log').textContent=error.message;$('run').disabled=false;$('treeType').disabled=false;activeJob=null;}}
 function chooseFile(callback){$('file').value='';$('file').onchange=async()=>{try{const file=$('file').files[0];if(file)callback(JSON.parse(await file.text()));}catch(error){alert(error.message);}};$('file').click();}
-$('loadConfig').onclick=()=>chooseFile(setConfig);$('loadResult').onclick=()=>chooseFile(showGraph);$('saveConfig').onclick=()=>download('clocktree7-config.json',JSON.stringify(getConfig(),null,2));
+$('loadConfig').onclick=()=>chooseFile(setConfig);$('loadResult').onclick=()=>chooseFile(showGraph);$('saveConfig').onclick=()=>download(`${productName}-配置.json`,JSON.stringify(getConfig(),null,2));
 $('addLayer').onclick=()=>{const config=getConfig();config.layers.push({index:config.layers.length+1,hierarchy:'',modules:[]});setConfig(config);};
 $('removeLayer').onclick=()=>{const config=getConfig();if(config.layers.length<=1)return;const last=config.layers.at(-1);if(last.modules.length&&!confirm('删除最后一级及其全部模块规则？'))return;config.layers.pop();setConfig(config);};
-$('exportResult').onclick=()=>{if(graph)download('clocktree7-full.json',JSON.stringify(graph,null,2));};
-$('exportSvg').onclick=()=>{if(graph){const copy=$('graph').cloneNode(true);const style=element('style',{},[...document.styleSheets[0].cssRules].map(r=>r.cssText).join('\n'));copy.prepend(style);download('clocktree7-view.svg',new XMLSerializer().serializeToString(copy),'image/svg+xml');}};
+$('exportResult').onclick=()=>{if(graph)download(`${productName}-全量.json`,JSON.stringify(graph,null,2));};
+$('exportSvg').onclick=()=>{if(graph){const copy=$('graph').cloneNode(true);const style=element('style',{},[...document.styleSheets[0].cssRules].map(r=>r.cssText).join('\n'));copy.prepend(style);download(`${productName}-架构图.svg`,new XMLSerializer().serializeToString(copy),'image/svg+xml');}};
 $('applyJson').onclick=()=>{try{setConfig(JSON.parse($('configJson').value));}catch(error){alert(error.message);}};
 $('component').onchange=()=>{viewScope='';draw();};$('viewMode').onchange=draw;$('allScope').onclick=()=>{viewScope='';viewDepth=5;$('viewMode').value=graph.nodes.length>400?'hierarchy':'instances';draw();};$('search').oninput=search;$('search').onkeydown=e=>{if(e.key==='Enter')locate();};$('locate').onclick=locate;$('run').onclick=run;$('fit').onclick=fit;$('zoomIn').onclick=()=>zoom(.75);$('zoomOut').onclick=()=>zoom(1.3);
 $('runs').onchange=async()=>{if($('runs').value)try{showGraph(await api('/api/result?run='+encodeURIComponent($('runs').value)));}catch(error){alert(error.message);}};

@@ -1,4 +1,4 @@
-# 在其他 EDA 设备部署 ClockTree7
+# 在其他 EDA 设备部署观钟王
 
 更新日期：2026-11-03。工具可从任意目录运行，产品运行只用 Python 标准库；不需要联网下载 Python 包。先在目标设备执行本章的自检，再用目标项目的 elab 做工程验收。
 
@@ -28,7 +28,7 @@
 python3 scripts/build_portable.py
 ```
 
-默认写入 `validation/releases/clocktree7-portable-日期.zip` 和同名 `.tar.gz`。同名文件已存在时不会覆盖；可用 `--name` 另取名称，或用 `--out` 选择输出目录。包中包含工具、手册、模型、原生 GUI、小型 RTL / golden 和设备自检脚本。
+默认写入 `validation/releases/guanzhongwang-portable-日期.zip` 和同名 `.tar.gz`。同名文件已存在时不会覆盖；可用 `--name` 另取名称，或用 `--out` 选择输出目录。包中包含工具、手册、模型、原生 GUI、小型 RTL / golden 和设备自检脚本。
 
 包中不含 EDA 安装、许可证、第三方 SoC 源码、KDB、历史配置缓存和原始验证数据库。无需把原设备的共享盘、虚拟机地址或构建目录搬到目标设备。
 
@@ -125,7 +125,7 @@ clocktree.cmd doctor --viewer-only --gui
 python3 scripts/install_desktop.py --desktop
 ```
 
-脚本根据当前安装位置生成当前用户的应用菜单项和 `~/Desktop/ClockTree7.desktop`；不需要管理员权限。若桌面目录是中文名或其他目录，使用 `--desktop-dir /实际桌面目录`。只生成应用菜单项时省略 `--desktop`。仓库中的 `ClockTree7.desktop.in` 是生成模板。
+脚本根据当前安装位置生成显示名称为“观钟王”的应用菜单项和 `~/Desktop/ClockTree7.desktop`；不需要管理员权限。若桌面目录是中文名或其他目录，使用 `--desktop-dir /实际桌面目录`。只生成应用菜单项时省略 `--desktop`。仓库中的 `ClockTree7.desktop.in` 是生成模板。
 
 移动工具目录后重新执行安装脚本，更新快捷方式所指向的位置。Windows 直接使用解压目录的 `launch_gui.cmd`。
 

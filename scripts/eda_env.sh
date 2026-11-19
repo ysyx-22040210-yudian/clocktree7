@@ -5,7 +5,7 @@ ct_setup_default="${XDG_CONFIG_HOME:-$HOME/.config}/clocktree7/eda.sh"
 ct_setup="${CLOCKTREE_EDA_SETUP:-$ct_setup_default}"
 if [[ -n "${CLOCKTREE_EDA_SETUP:-}" ]] || { ! command -v verdi >/dev/null 2>&1 && [[ -f "$ct_setup" ]]; }; then
   if [[ ! -r "$ct_setup" ]]; then
-    echo "ClockTree7: cannot read EDA setup: $ct_setup" >&2
+    echo "观钟王: cannot read EDA setup: $ct_setup" >&2
     return 1
   fi
   ct_restore_nounset=0
@@ -13,7 +13,7 @@ if [[ -n "${CLOCKTREE_EDA_SETUP:-}" ]] || { ! command -v verdi >/dev/null 2>&1 &
   if source "$ct_setup"; then ct_setup_status=0; else ct_setup_status=$?; fi
   if [[ "$ct_restore_nounset" == 1 ]]; then set -u; fi
   if [[ "$ct_setup_status" != 0 ]]; then
-    echo "ClockTree7: EDA setup returned an error: $ct_setup" >&2
+    echo "观钟王: EDA setup returned an error: $ct_setup" >&2
     return "$ct_setup_status"
   fi
 fi

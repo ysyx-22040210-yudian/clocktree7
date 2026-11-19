@@ -73,7 +73,7 @@ def main(out,source,baseline):
     assert json.loads(saved.read_text())==TEMPLATES
     target=exports/'actual.sv';save_dialog=native_save(app,dialog.export_button.invoke,target)
     pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
-    result=json.loads((dialog.directory/'export.log').read_text());content=target.read_text()
+    result=json.loads((dialog.directory/'export.log').read_text());content=target.read_text(encoding='utf-8')
     assert result['sv_written'] and result['blocks']==15 and content.count('// CT7 branch ')==15
     assert '$var_' not in content and 'initial $display(' in content and not content.lstrip().startswith('{')
     if not baseline:

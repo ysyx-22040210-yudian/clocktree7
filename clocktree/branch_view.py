@@ -8,9 +8,61 @@ import uuid
 from .branch import BranchJob, close_branch
 from .devices import connection_details, connection_label, kind_label, auxiliary_details, wire_details
 from .profiles import output_ports
-from .l1_inputs import INPUT_SOURCE_KINDS
+from .l1_inputs import INPUT_SOURCE_KINDS, group_signals, key as boundary_key, source_node, source_title
 from .tkdiagram import ClockDiagram
 from .ui_layout import dialog_heading, fit_window, wrapped_label
+
+
+class BoundarySignalDialog(tk.Toplevel):
+    """Resolve a grouped boundary marker to one real signal before opening it."""
+    def __init__(self, parent, model, target, marker, open_signal):
+        super().__init__(parent)
+        self.transient(parent)
+        self.model,self.target,self.marker,self.open_signal=model,target,marker,open_signal
+        self.title('选择边界信号')
+        fit_window(self,parent,(850,490),(600,340))
+        dialog_heading(self,'选择边界信号','branch',source_title(marker)+'  /  '+marker['input_entry']['scope'])
+        bar=ttk.Frame(self,padding=(12,6));bar.pack(fill='x')
+        self.search=tk.StringVar()
+        entry=ttk.Entry(bar,textvariable=self.search);entry.pack(side='left',fill='x',expand=True)
+        entry.bind('<Return>',lambda event:self.show(0))
+        ttk.Button(bar,text='查找信号',command=lambda:self.show(0)).pack(side='left',padx=5)
+        footer=ttk.Frame(self,padding=10);footer.pack(side='bottom',fill='x')
+        self.prev=ttk.Button(footer,text='上一页',command=lambda:self.show(self.offset-100));self.prev.pack(side='left')
+        self.next=ttk.Button(footer,text='下一页',command=lambda:self.show(self.offset+100));self.next.pack(side='left',padx=4)
+        self.status=tk.StringVar();ttk.Label(footer,textvariable=self.status).pack(side='left',padx=8)
+        self.open_button=ttk.Button(footer,text='打开信号子画布',command=self.choose);self.open_button.pack(side='right')
+        body=ttk.Frame(self,padding=10);body.pack(fill='both',expand=True)
+        self.table=ttk.Treeview(body,columns=('signal','loads'),show='headings',selectmode='browse')
+        self.table.heading('signal',text='完整 RTL 信号（含位号）');self.table.heading('loads',text='组内直接输入数')
+        self.table.column('signal',width=540);self.table.column('loads',width=115,stretch=False)
+        scroll=ttk.Scrollbar(body,command=self.table.yview);scroll.pack(side='right',fill='y')
+        self.table.configure(yscrollcommand=scroll.set);self.table.pack(fill='both',expand=True)
+        self.table.bind('<Double-1>',self.choose);self.table.bind('<Return>',self.choose)
+        self.show(0);entry.focus_set()
+
+    def show(self,offset):
+        self.offset=max(0,offset)
+        page=group_signals(self.model,self.target,self.marker['input_entry'],self.search.get(),self.offset)
+        self.table.delete(*self.table.get_children())
+        self.rows=page[:100]
+        for i,(signal,port,loads) in enumerate(self.rows):
+            self.table.insert('','end',iid=str(i),values=(signal,loads))
+        self.prev.configure(state='normal' if self.offset else 'disabled')
+        self.next.configure(state='normal' if len(page)>100 else 'disabled')
+        self.open_button.configure(state='normal' if self.rows else 'disabled')
+        self.status.set('第 {} 页'.format(self.offset//100+1) if self.rows else '没有匹配信号')
+        if self.rows:self.table.selection_set('0')
+
+    def choose(self,event=None):
+        selected=self.table.selection()
+        if selected:
+            signal,port,_=self.rows[int(selected[0])]
+            entry=dict(self.marker['input_entry'],signal=signal,port=port)
+            entry.pop('aggregate_count',None)
+            component=self.marker['component']
+            self.destroy()
+            self.open_signal(source_node(entry,component,boundary_key(signal,component,'')))
 
 
 class BranchDialog(tk.Toplevel):
@@ -29,12 +81,15 @@ class BranchDialog(tk.Toplevel):
         self.journal = RunJournal(app.gui_journal.directory/'branches'/uuid.uuid4().hex, prefix='branch')
         self._matches, self._match_index = [], -1
         self.family = app.family
-        instance = node.get('reference_of', node['id'])
+        self.is_boundary=node.get('kind') in INPUT_SOURCE_KINDS
+        instance = node['input_entry']['signal'] if self.is_boundary else node.get('reference_of', node['id'])
+        self.subject=instance
         mode = '复位' if source_model.tree_type == 'reset' else '时钟'
-        self.title('{}分支 · {}'.format(mode, instance))
+        topic=mode+('边界信号' if self.is_boundary else '分支')
+        self.title('{} · {}'.format(topic, instance))
         fit_window(self,app,(1280,800),(840,505))
         self.configure(bg='#eef2f8')
-        dialog_heading(self,'独立{}分支画布'.format(mode),'branch')
+        dialog_heading(self,topic+'子画布' if self.is_boundary else '独立{}分支画布'.format(mode),'branch')
         head = ttk.Frame(self, padding=(14, 3))
         head.pack(fill='x')
         scope=ttk.Label(head,text=instance+('  ·  当前子系统输入' if node.get('reference_of') else ''),wraplength=1000)
@@ -65,7 +120,7 @@ class BranchDialog(tk.Toplevel):
         self.counts = tk.StringVar(value='正在准备分支… 可关闭窗口取消')
         ttk.Label(self, textvariable=self.counts, padding=(14, 5)).pack(fill='x')
         bottom = ttk.Frame(self, padding=(12, 7)); bottom.pack(side='bottom', fill='x')
-        self.status = tk.StringVar(value='正在读取此器件的全部上游和下游连接…')
+        self.status = tk.StringVar()
         ttk.Button(bottom, text='关闭分支窗口', command=self.close).pack(side='right')
         wrapped_label(bottom,textvariable=self.status).pack(side='left', fill='x', expand=True)
         body = ttk.Panedwindow(self, orient='horizontal'); body.pack(fill='both', expand=True, padx=12, pady=5)
@@ -73,7 +128,7 @@ class BranchDialog(tk.Toplevel):
         body.add(canvas_area, weight=5); body.add(inspector, weight=1)
         self.diagram = ClockDiagram(canvas_area, self.family, self.inspect_node, self.inspect_edges,
                                     self.view_changed, self.set_status,
-                                    on_branch=lambda chosen:app.open_branch(chosen, source_model))
+                                    on_branch=lambda chosen:app.open_branch(chosen, source_model, self))
         self.diagram.pack(fill='both', expand=True)
         self.diagram.layout_mode = 'branch'
         self.diagram.runtime_journal = self.journal
@@ -122,8 +177,8 @@ class BranchDialog(tk.Toplevel):
         self.details.configure(state='normal'); self.details.delete('1.0','end'); self.details.configure(state='disabled')
         self.retry_button.configure(state='disabled')
         self.counts.set('正在准备分支… 可关闭窗口取消')
-        self.set_status('正在读取此器件的全部上游和下游连接…')
-        context={'instance':self.seed.get('reference_of',self.seed['id']), 'inputs':self.seed.get('inputs',[]),
+        self.set_status('正在读取边界信号的全部已确认下游连接…' if self.is_boundary else '正在读取此器件的全部上游和下游连接…')
+        context={'instance':self.subject, 'inputs':self.seed.get('inputs',[]),
                  'source_index':str(self.source_model.store.path) if hasattr(self.source_model,'store') else 'JSON'}
         self.journal.emit('begin','load','准备独立分支',context)
         try:
@@ -140,11 +195,11 @@ class BranchDialog(tk.Toplevel):
         self.retry_button.configure(state='normal')
         self.set_status(self.load_error)
         text='失败阶段：{}\n实例：{}\n原因：{}\n\n日志：{}\n\n{}'.format(stage,
-             self.seed.get('reference_of',self.seed['id']),error,self.journal.log_file,detail or str(error))
+             self.subject,error,self.journal.log_file,detail or str(error))
         self.details.configure(state='normal'); self.details.delete('1.0','end')
         self.details.insert('1.0',text); self.details.configure(state='disabled')
         self.journal.emit('failed',{'布局':'layout','画布绘制':'canvas'}.get(stage,'load'),str(error),
-                          {'instance':self.seed.get('reference_of',self.seed['id']), 'phase':stage},traceback=detail or '')
+                          {'instance':self.subject, 'phase':stage},traceback=detail or '')
 
     def _poll(self):
         self._poll_id = None
@@ -166,7 +221,7 @@ class BranchDialog(tk.Toplevel):
             self.diagram.cancel_layout(restore=False)
             self.load_failed('画布加载',error,traceback.format_exc()); return
         self.retry_button.configure(state='normal')
-        self.set_status('滚轮缩放 · 拖动平移 · 双击器件可再开分支画布 · 主画布保留')
+        self.set_status('滚轮缩放 · 拖动平移 · 双击器件或边界信号打开子画布')
 
     def set_status(self, text):
         if not self.closed:
@@ -176,7 +231,9 @@ class BranchDialog(tk.Toplevel):
         if self.graph is None or self.load_error:
             return
         self.mode.set('RTL 层次概览' if info['mode'] == 'hierarchy' else '实例明细')
-        self.counts.set('本分支 {:,} 个真实实例 / {:,} 条真实连接 · 当前 {:,} 个图元 · 缩放 {:.0f}% · 第 {}/{} 组{}'.format(
+        direct=self.graph.get('branch_view',{}).get('direct_loads')
+        prefix='边界直连 {:,} 个输入 · '.format(direct) if direct is not None else ''
+        self.counts.set(prefix+'本分支 {:,} 个真实实例 / {:,} 条器件间连接 · 当前 {:,} 个图元 · 缩放 {:.0f}% · 第 {}/{} 组{}'.format(
             len(self.graph['nodes']), len(self.graph['edges']), info['boxes'], info['zoom']*100,
             info['page']+1, info['pages'], ' · 正在计算布局…' if self.diagram.layout_pending else ''))
         self.prev.configure(state='normal' if info['page'] else 'disabled')
@@ -224,6 +281,9 @@ class BranchDialog(tk.Toplevel):
             lines += ['', '器件引用：仅显示此分支相关输入；真实实例不重复计算。']
         if node.get('trace_timeout') or node.get('has_unresolved_output'):
             lines += ['', '此器件存在 trace 超时或未解析状态；缺失路径没有补画。']
+        from .input_coverage import visible_gaps
+        missing_upstream=visible_gaps(node)
+        if missing_upstream:lines += ['', '缺少上游连接的输入', ', '.join(missing_upstream)]
         auxiliary = auxiliary_details(node)
         if auxiliary:
             lines += ['', '辅助端口', auxiliary]
@@ -233,13 +293,13 @@ class BranchDialog(tk.Toplevel):
         node = self.selected_object
         if not node or node.get('aggregate'):
             return []
-        if node.get('reference_of'):
-            return [node['reference_source']] if direction == 'upstream' and node.get('reference_source') else []
         model = self.diagram.model
         from .l1_inputs import neighbours as l1_neighbours
         if l1_neighbours(model,node,direction):
             from .navigation import neighbour_destinations
             return neighbour_destinations(model,node,direction)
+        if node.get('reference_of'):
+            return [node['reference_source']] if direction == 'upstream' and node.get('reference_source') else []
         match, other = ('target', 'source') if direction == 'upstream' else ('source', 'target')
         if hasattr(model, 'store'):
             return [r[0] for r in model.store.connection().execute('SELECT DISTINCT '+other+' FROM edges WHERE '+match+'=? LIMIT 2', (node['id'],))]
@@ -267,8 +327,9 @@ class BranchDialog(tk.Toplevel):
                 from .l1_inputs import lookup_node
                 source = lookup_node(self.diagram.model,edge['source'])
                 target = self.diagram.model.nodes.get(edge['target']) or lookup_node(self.diagram.model,edge['target'])
-                lines += ['{}.{}（{}）'.format(edge['source'], edge['source_pin'], connection_label(source, edge['source_pin'])),
-                          ' → {}.{}（{}）'.format(edge['target'], edge['target_pin'], connection_label(target, edge['target_pin']))]
+                start=source['input_entry']['signal'] if source.get('kind') in INPUT_SOURCE_KINDS else '{}.{}'.format(edge['source'],edge['source_pin'])
+                lines += ['{}（{}）'.format(start, connection_label(source, edge['source_pin'])),
+                          ' → {}.{}（{}）'.format(target.get('reference_of',edge['target']), edge['target_pin'], connection_label(target, edge['target_pin']))]
                 evidence = edge.get('evidence', {})
                 lines.append('输入反查与输出负载双向核验' if evidence.get('driver') and evidence.get('load') else
                              ('输入反查已证明此连接' if evidence.get('driver') else '历史结果未记录输入反查证据'))

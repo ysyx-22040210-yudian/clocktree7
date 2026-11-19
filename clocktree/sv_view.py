@@ -138,8 +138,13 @@ class SVDialog(tk.Toplevel):
         if previous and Path(previous).exists():
             try:
                 plan=SVPlan(previous)
-                if plan.source().get('architecture_signature')==architecture_signature(self.graph) and self.plan_matches_registers(plan):
+                signature=plan.source().get('architecture_signature')
+                matching_registers=self.plan_matches_registers(plan)
+                if signature==architecture_signature(self.graph) and matching_registers:
                     self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh();self.export_button.configure(state='normal')
+                elif signature==architecture_signature(self.graph,'sv-plan-v9') and matching_registers:
+                    self.status.set('正在用已有寄存器结果更新 sw_done 分支映射…')
+                    self.app.after_idle(self.analyze)
                 else:self.status.set('当前分支计划需要更新，请重新分析全部分支。')
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
         if self.plan and self.export_plan_path==str(self.plan.path) and saved.get('sv_export_signature')==architecture_signature(self.graph) and saved.get('sv_export_result'):
@@ -197,7 +202,7 @@ class SVDialog(tk.Toplevel):
         self.process=subprocess.Popen(command,cwd=str(Path(__file__).resolve().parents[1]),stdout=self.stream,stderr=subprocess.STDOUT)
         self.analyze_button.configure(state='disabled');self.export_button.configure(state='disabled');self.after(150,self.poll)
     def analyze(self):
-        if self.process and self.process.poll() is None:return
+        if self.closed or (self.process and self.process.poll() is None):return
         if self.app.busy:self.status.set('请等待主界面当前任务完成，再分析分支。');return
         try:
             self.refresh_registers()
@@ -285,6 +290,12 @@ class SVDialog(tk.Toplevel):
             text+='\n\n分支最初器件：'+'；'.join('{} · L{} · {}'.format(r['instance'],r.get('layer','?'),r['kind']) for r in info['origins'])
         if info.get('single_device', info.get('single_l1_device')):
             text+='\n单器件分支使用末端输出，只有输入时使用当前输入。已配置的控制口使用实际映射。'
+        done=result['selected'].get('var_swdone',{})
+        if done.get('capture_expression'):
+            text+='\n\nsw_done 接收寄存器位  '+done['capture_expression']
+            for lane in done.get('capture_fallbacks',[]):
+                text+='\n{} 的 D 端路径 {} 均写入 {}，模板取该接收位。'.format(
+                    lane['formal_bit'],'、'.join(lane['data_inputs']),lane['receiver'])
         sources = result['selected'].get('var_div', {}).get('div_sources', [])
         if sources:
             text += '\n\nDIV 来源\n' + '\n'.join('{} · {} {}'.format(

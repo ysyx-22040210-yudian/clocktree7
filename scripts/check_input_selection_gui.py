@@ -20,7 +20,7 @@ parser.add_argument('--request',type=Path,required=True)
 parser.add_argument('--ports',type=int,default=10000)
 args=parser.parse_args()
 out=args.out.resolve();out.mkdir(parents=True,exist_ok=True)
-errors=[];records=[]
+errors=[];records=[];persisted={}
 app=ClockTreeApp(runs=out/'runs',session_dir=out/'session',remember=False)
 app.geometry('1800x980+0+0')
 app.report_callback_exception=lambda *exc:errors.append(''.join(traceback.format_exception(*exc)))
@@ -99,6 +99,43 @@ for mode in ('clock','reset'):
     ports.confirm();editor.save();pump()
     assert saved[0][key]==['clk_bus','aux_clk']
 
+    # Edit the saved rule through the workspace so its actual persistence and
+    # the clock/reset extractor both see the same confirmed list.
+    config['layers'][1]['modules']=[saved[0]]
+    app.set_config(config);app.select_layer(2)
+    app.rules_tree.selection_set('0');app.edit_rule()
+    editor=next(w for w in app.winfo_children() if isinstance(w,RuleDialog))
+    ports=editor.edit_inputs();ports.start()
+    pump(lambda:bool(ports.rows) and str(ports.read_button['state'])=='normal')
+    click_name('clk_bus');count('remove_saved_bus',1,2)
+    assert all(ports.table.item(str(i),'text')=='☐' for i,row in enumerate(ports.shown) if row['name']=='clk_bus')
+    ports.confirm_button.invoke();pump()
+    assert editor.fields[key].get()=='aux_clk',('unchecked input reappeared',editor.fields[key].get())
+
+    ports=editor.edit_inputs();count('reopened_without_bus',1,2)
+    click_name('clk_bus');ports.close();pump()
+    assert editor.fields[key].get()=='aux_clk'
+    ports=editor.edit_inputs();click_name('clk_bus');ports.confirm_button.invoke();pump()
+    assert editor.fields[key].get()=='aux_clk, clk_bus'
+
+    ports=editor.edit_inputs()
+    ports.expression.set('^clk_bus$');ports.filter()
+    ports.toggle_all(False);count('remove_all_matches_keep_hidden',0,1)
+    ports.confirm_button.invoke();pump()
+    assert not ports.winfo_exists() and editor.fields[key].get()=='aux_clk'
+    editor.save_button.invoke();pump()
+    config_path=out/(mode+'-edited-config.json')
+    app.save_config(str(config_path));app.open_config(str(config_path));pump()
+    assert app.get_config()['layers'][1]['modules'][0][key]==['aux_clk']
+    app.run_button.invoke();pump(lambda:not app.busy)
+    assert not errors,errors
+    graph=json.loads((app.job_dir/('clocktree.json' if mode=='clock' else 'resettree.json')).read_text())
+    subs=[n for n in graph['nodes'] if n['module']=='wb_sub']
+    assert len(subs)==2 and all(n['inputs']==['aux_clk'] for n in subs)
+    edges=sorted((e['source'],e['target'],e['target_pin']) for e in graph['edges'])
+    assert edges==[('wb_top.g0','wb_top.s0','aux_clk'),('wb_top.g1','wb_top.s1','aux_clk')],edges
+    persisted[mode]=dict(inputs=['aux_clk'],connections=edges)
+
     # Reuse real parameterized discovery metadata, then stress the preview only.
     editor=RuleDialog(app,2,{'module':'wb_sub','kind':'subsystem',key:['clk_bus'],'input_regex':'^clk_'},lambda rule:None)
     editor.edit_inputs();ports=next(w for w in editor.winfo_children() if isinstance(w,InputPortDialog));pump()
@@ -121,7 +158,7 @@ for mode in ('clock','reset'):
 
 assert not errors,errors
 report=dict(passed=True,python=sys.version,tk=app.tk.call('info','patchlevel'),cases=records,callback_errors=errors,
-            real_eda_discovery=True,clock_and_reset=True,confirmed_names=['clk_bus','aux_clk'])
+            real_eda_discovery=True,clock_and_reset=True,confirmed_names=['clk_bus','aux_clk'],after_uncheck=persisted)
 (out/'acceptance.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),encoding='utf-8')
 app.close()
 print(json.dumps(dict(passed=True,cases=len(records),callback_errors=len(errors)),ensure_ascii=False),flush=True)

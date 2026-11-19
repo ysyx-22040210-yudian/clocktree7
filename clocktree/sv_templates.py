@@ -16,6 +16,7 @@ import sqlite3
 import time
 import uuid
 
+from . import APP_NAME
 from .register_expr import Expressions,MappingError
 from .register_worker import RegisterWorker, WorkerFault
 from .storage import write_graph,IndexedGraph,ResultStore,ARRAY_KEYS
@@ -45,8 +46,12 @@ def sv_output_path(path):
     return path.resolve()
 
 
-def architecture_signature(graph):
-    return identity('sv-plan-v9',graph.get('sv_source_revision'),graph.get('config'),graph.get('metadata'),graph.get('summary'))
+def architecture_signature(graph,version='sv-plan-v10'):
+    summary=graph.get('summary')
+    if summary and 'inputs_without_source' in summary:
+        summary=dict(summary)
+        summary.pop('inputs_without_source')
+    return identity(version,graph.get('sv_source_revision'),graph.get('config'),graph.get('metadata'),summary)
 
 
 def graph_for_templates(graph,draft):
@@ -175,8 +180,10 @@ def bind_controls(db, has_wire, bindings, issues, default_origin=None):
     for variable,kind,role in [('var_pllsel','mux','pll_sel'),('var_div','div','div'),('var_swdone','div','sw_done')]:
         if len(devices[kind]) == 1:
             device = devices[kind][0]
-            if not default_origin or (json.loads(device['data']).get('aux_ports') or {}).get(role):
+            pin = (json.loads(device['data']).get('aux_ports') or {}).get(role)
+            if not default_origin or pin:
                 bindings[variable] = {'instance': device['id']}
+                if role=='sw_done' and pin:bindings[variable]['pin']=pin
         else:
             bindings.setdefault(variable, {'error':'分支没有唯一的 '+kind+' 器件'})
     return devices
@@ -271,24 +278,68 @@ def connection(path,existing=None):
         with closing(database(path)) as db:yield db
 
 
-def add_candidates(db,registers,div_scopes=()):
+def create_candidate_tables(db,schema):
+    db.execute('CREATE TABLE '+schema+'.candidates('
+               'id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,'
+               'bits TEXT,capture_expression TEXT,div_sources TEXT,capture_fallbacks TEXT)')
+    db.execute('CREATE INDEX '+schema+'.candidate_instance ON candidates(instance,role)')
+    db.execute('CREATE TABLE '+schema+'.problems(instance TEXT,role TEXT,pin TEXT,reason TEXT)')
+    db.execute('CREATE INDEX '+schema+'.problem_instance ON problems(instance,role)')
+
+
+def swdone_data_bits(formal_bits, receivers, paths):
+    """Choose each D net or its receiving bit without mixing different captures."""
+    mapped, relations, fallbacks = [], set(), []
+    for bit, receiver in zip(formal_bits, receivers):
+        inputs = paths[(bit, receiver)]
+        for modes in inputs.values():
+            relations.update(modes)
+        names = sorted(name for name in inputs if name)
+        if names and (len(names) == 1 or all(inputs[name] == {'direct'} for name in names)):
+            # Direct aliases of the same formal bit carry the same value.
+            mapped.append(names[0])
+        else:
+            mapped.append(receiver)
+            if names:
+                fallbacks.append(dict(formal_bit=bit, receiver=receiver, data_inputs=names))
+    return mapped, relations, fallbacks
+
+
+def add_candidates(db,registers,div_scopes=(),swdone_only=False):
     """Bit order comes from the completed formal-port job, never string sort."""
+    schema='temp' if swdone_only else 'main'
+    insert_problem='INSERT INTO '+schema+'.problems VALUES(?,?,?,?)'
+    insert_candidate='INSERT OR IGNORE INTO '+schema+'.candidates VALUES(?,?,?,?,?,?,?,?,?,?)'
     with closing(database(Path(registers)/'registers.sqlite')) as source:
         for job in source.execute('SELECT * FROM jobs ORDER BY id'):
-            seed=json.loads(job['seed']);summary=json.loads(job['summary'])
+            seed=json.loads(job['seed'])
             instance,pin,role=seed['instance'],seed['pin'],seed['role']
+            if swdone_only and role!='sw_done':
+                continue
+            summary=json.loads(job['summary'])
             bit_names=[v[len(instance)+1:] for v in summary.get('bits',[])]
-            choices=defaultdict(set);relations=set();bad=[];data_inputs=defaultdict(set)
+            choices=defaultdict(set);relations=set();bad=[];other_loads=set()
+            data_inputs=defaultdict(lambda:defaultdict(set))
             for row in source.execute('SELECT * FROM results WHERE job=?',(job['id'],)):
-                if row['status']!='register':bad.append(row['status']+': '+row['reason']);continue
+                if row['status']!='register':
+                    reason=row['status']+': '+row['reason']
+                    if role=='sw_done':other_loads.add(reason)
+                    else:bad.append(reason)
+                    continue
+                if role=='sw_done' and (row['side']!='D' or not row['endpoint']):
+                    other_loads.add('没有已证明的接收寄存器位')
+                    continue
                 if role == 'div' and row['side'] != 'Q':
                     bad.append('DIV 来源必须是已证明的时序输出 Q')
                     continue
                 choices[row['bit']].add(row['endpoint']);relations.add(row['relation'])
-                if role=='sw_done' and row['side']=='D':
-                    data_inputs[(row['bit'],row['endpoint'])].add(json.loads(row['detail']).get('data_input') or row['endpoint'])
+                if role=='sw_done':
+                    name=json.loads(row['detail']).get('data_input') or ''
+                    data_inputs[(row['bit'],row['endpoint'])][name].add(row['relation'])
             vectors=[];incomplete=[]
-            if job['state']!='complete' or not bit_names or any(not choices[b] for b in bit_names):bad.append('端口尚无完整逐位寄存器映射')
+            if job['state']!='complete' or not bit_names or any(not choices[b] for b in bit_names):
+                bad.append('端口尚无完整逐位寄存器映射')
+                bad.extend(sorted(other_loads))
             elif all(len(choices[b])==1 for b in bit_names):vectors=[[next(iter(choices[b])) for b in bit_names]]
             elif len(bit_names)==1:vectors=[[name] for name in sorted(choices[bit_names[0]])]
             else:
@@ -303,31 +354,26 @@ def add_candidates(db,registers,div_scopes=()):
                     else:incomplete.extend(sorted({v for values in group.values() for v in values}))
                 if not vectors:bad.append('多位多目的映射无法归并为完整寄存器向量；已追到：'+', '.join(incomplete))
             if bad:
-                db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,'; '.join(sorted(set(bad)))));continue
+                db.execute(insert_problem,(instance,role,pin,'; '.join(sorted(set(bad)))));continue
             if incomplete:
-                db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,'另有未覆盖全部端口 bit 的寄存器候选：'+', '.join(incomplete)))
+                db.execute(insert_problem,(instance,role,pin,'另有未覆盖全部端口 bit 的寄存器候选：'+', '.join(incomplete)))
             for vector in vectors:
-                mapped=vector;capture=''
+                mapped=vector;capture='';vector_relations=relations;capture_fallbacks=[]
                 if role=='sw_done':
-                    # Group by the real destination first: two registers fed
-                    # by the same D net remain two choices, never one success.
-                    inputs=[data_inputs.get((bit,target),{target}) for bit,target in zip(bit_names,vector)]
-                    if any(len(values)!=1 for values in inputs):
-                        db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,'同一接收位存在多个时序数据输入：'+', '.join(sorted({v for values in inputs for v in values}))));continue
-                    mapped=[next(iter(values)) for values in inputs]
+                    mapped,vector_relations,capture_fallbacks=swdone_data_bits(bit_names,vector,data_inputs)
                 try:
                     expression=vector_expression(mapped)
                     if role=='sw_done':capture=vector_expression(vector)
                 except ValueError as error:
-                    db.execute('INSERT INTO problems VALUES(?,?,?,?)',(instance,role,pin,str(error)));continue
-                certainty='direct' if relations=={'direct'} else ','.join(sorted(relations))
+                    db.execute(insert_problem,(instance,role,pin,str(error)));continue
+                certainty=','.join(sorted(vector_relations))
                 if len({re.sub(r'\[-?\d+\]$','',v) for v in vector})>1:
                     certainty+=';multiple_registers'
                 key=identity(instance,role,pin,vector,mapped,certainty)
                 sources = [dict(signal=endpoint, **classify_div_source(endpoint, div_scopes))
                            for endpoint in vector] if role == 'div' else []
-                db.execute('INSERT OR IGNORE INTO candidates VALUES(?,?,?,?,?,?,?,?,?)',
-                           (key,instance,role,pin,expression,certainty,json.dumps(mapped),capture,json.dumps(sources)))
+                db.execute(insert_candidate,(key,instance,role,pin,expression,certainty,json.dumps(mapped),capture,
+                                             json.dumps(sources),json.dumps(capture_fallbacks) if capture_fallbacks else None))
 
 
 def prepare(graph,registers,directory,resolve_connections=True):
@@ -405,14 +451,11 @@ def prepare(graph,registers,directory,resolve_connections=True):
              CREATE INDEX node_kind ON nodes(kind);
              CREATE INDEX edge_target ON edges(target,pin);
              CREATE INDEX edge_source ON edges(source);
-             CREATE TABLE candidates(id TEXT PRIMARY KEY,instance TEXT,role TEXT,pin TEXT,expression TEXT,certainty TEXT,bits TEXT,capture_expression TEXT,div_sources TEXT);
-             CREATE INDEX candidate_instance ON candidates(instance,role);
-             CREATE TABLE problems(instance TEXT,role TEXT,pin TEXT,reason TEXT);
-             CREATE INDEX problem_instance ON problems(instance,role);
              CREATE TABLE branches(id TEXT PRIMARY KEY,seq INTEGER,instance TEXT,pin TEXT,clkip TEXT,mode TEXT,issues TEXT,bindings TEXT);
              CREATE INDEX branch_sequence ON branches(seq);
              CREATE TABLE meta(key TEXT PRIMARY KEY,value TEXT);
             ''')
+            create_candidate_tables(db,'main')
             by_instance, scope_exits, global_issues, mismatches = structure_issues(graph)
             outgoing, degree, pinwise = defaultdict(list), {}, set()
 
@@ -609,7 +652,7 @@ def prepare(graph,registers,directory,resolve_connections=True):
                         else:db.execute('INSERT INTO branches VALUES(?,?,?,?,?,?,?,?)',(identifier,seq,inst,end_pin,value,mode,json.dumps(final_issues,ensure_ascii=False),json.dumps(final,ensure_ascii=False)))
                         if end_pin!=ends[-1]:seq+=1
                     report('branches','分析末端分支',{'branch':seq,'instance':inst,'pin':pin})
-            db.execute('INSERT INTO meta VALUES(?,?)',('source',json.dumps({'architecture_signature':architecture_signature(graph),'config':graph['config'],'connectivity_complete':bool(graph.get('summary',{}).get('connectivity_complete')),'registers':str(Path(registers).resolve()) if registers else '', 'register_result_stamp':register_result_stamp(registers), 'register_fingerprint':manifest.get('fingerprint'), 'dft_zero':manifest['request'].get('dft_zero',[]),'branches':seq},ensure_ascii=False)))
+            db.execute('INSERT INTO meta VALUES(?,?)',('source',json.dumps({'architecture_signature':architecture_signature(graph),'swdone_receiver_policy':1,'config':graph['config'],'connectivity_complete':bool(graph.get('summary',{}).get('connectivity_complete')),'registers':str(Path(registers).resolve()) if registers else '', 'register_result_stamp':register_result_stamp(registers), 'register_fingerprint':manifest.get('fingerprint'), 'dft_zero':manifest['request'].get('dft_zero',[]),'branches':seq},ensure_ascii=False)))
             db.commit()
             report('finished','分支分析完成',{'branches':seq})
         return SVPlan(path)
@@ -622,6 +665,9 @@ def candidate_record(row):
     record = dict(row)
     if 'div_sources' in record:
         record['div_sources'] = json.loads(record['div_sources'])
+    fallbacks=record.pop('capture_fallbacks',None)
+    if fallbacks:
+        record['capture_fallbacks']=json.loads(fallbacks)
     return record
 
 
@@ -629,9 +675,37 @@ class SVPlan:
     def __init__(self,path):
         self.path=Path(path)
         if not self.path.is_file():raise ValueError('分支计划不存在：'+str(path))
-        self._candidate_search=None
+        self._candidate_search={}
+        self._source=None
     def source(self):
-        with closing(database(self.path)) as db:return json.loads(db.execute("SELECT value FROM meta WHERE key='source'").fetchone()[0])
+        if self._source is None:
+            with closing(database(self.path)) as db:
+                self._source=json.loads(db.execute("SELECT value FROM meta WHERE key='source'").fetchone()[0])
+        return self._source
+    def candidate_schema(self,db,role):
+        if role!='sw_done':
+            return 'main'
+        source=self.source()
+        if source.get('swdone_receiver_policy') or not source.get('registers'):
+            return 'main'
+        if db.execute("SELECT 1 FROM sqlite_temp_master WHERE name='candidates'").fetchone():
+            return 'temp'
+        path=Path(source['registers'])
+        if not (path/'registers.sqlite').is_file() or register_result_stamp(path)!=source.get('register_result_stamp'):
+            # A portable historical plan can still supply the evidence it actually saved.
+            return 'main'
+        # Historical plans may have discarded every valid receiver on mixed fanout.
+        # Rebuild only sw_done in connection-local tables. The saved plan stays intact.
+        db.execute('SAVEPOINT rebuild_swdone')
+        try:
+            create_candidate_tables(db,'temp')
+            add_candidates(db,path,swdone_only=True)
+        except Exception:
+            db.execute('ROLLBACK TO rebuild_swdone')
+            raise
+        finally:
+            db.execute('RELEASE rebuild_swdone')
+        return 'temp'
     def branches(self,search='',offset=0,limit=100,_db=None):
         with connection(self.path,_db) as db:
             clause=' WHERE instr(lower(instance||pin||clkip||mode),lower(?))>0'
@@ -639,16 +713,23 @@ class SVPlan:
             return count,[dict(r) for r in db.execute('SELECT * FROM branches'+clause+' ORDER BY seq LIMIT ? OFFSET ?',(search,limit,offset))]
     def candidates(self,branch,role,search='',offset=0,limit=100,_db=None):
         bindings=json.loads(branch.get('bindings','{}'))
-        var=role;role=ROLES.get(var,role);instance=bindings.get(var,{}).get('instance')
+        var=role;role=ROLES.get(var,role)
+        binding=bindings.get('var_swdone' if role=='sw_done' else var,{})
+        instance=binding.get('instance')
         if var in ROLES and not instance:return []
         with connection(self.path,_db) as db:
             if not instance:branch_scope(db,branch['instance'],bindings.get('_branch',{}).get('scope_pin',branch['pin']))
-            if self._candidate_search is None:
-                columns={r['name'] for r in db.execute('PRAGMA table_info(candidates)')}
-                self._candidate_search='c.instance||c.expression'+("||coalesce(c.capture_expression,'')" if 'capture_expression' in columns else '')
-            sql=('SELECT c.* FROM candidates c' if instance else 'SELECT c.* FROM walk CROSS JOIN candidates c ON c.instance=walk.id')+' WHERE c.role=? AND instr(lower('+self._candidate_search+'),lower(?))>0'
-            if instance:sql+=' AND c.instance=?'
-            return [candidate_record(r) for r in db.execute(sql+' ORDER BY c.instance,c.pin,c.expression LIMIT ? OFFSET ?',(role,search)+((instance,) if instance else ())+(limit,offset))]
+            try:schema=self.candidate_schema(db,role)
+            except ValueError:return []
+            if schema not in self._candidate_search:
+                columns={r['name'] for r in db.execute('PRAGMA '+schema+'.table_info(candidates)')}
+                self._candidate_search[schema]='c.instance||c.expression'+("||coalesce(c.capture_expression,'')" if 'capture_expression' in columns else '')
+            table=schema+'.candidates'
+            sql=('SELECT c.* FROM '+table+' c' if instance else 'SELECT c.* FROM walk CROSS JOIN '+table+' c ON c.instance=walk.id')+' WHERE c.role=? AND instr(lower('+self._candidate_search[schema]+'),lower(?))>0'
+            params=[role,search]
+            if instance:sql+=' AND c.instance=?';params.append(instance)
+            if binding.get('pin'):sql+=' AND c.pin=?';params.append(binding['pin'])
+            return [candidate_record(r) for r in db.execute(sql+' ORDER BY c.instance,c.pin,c.expression,c.id LIMIT ? OFFSET ?',params+[limit,offset])]
     def resolve(self,branch,templates,selection=None,_db=None,_macros=None):
         selection=selection or {};issues=json.loads(branch['issues']);mode=selection.get('mode',branch['mode'])
         template=templates.get(mode,'')
@@ -667,14 +748,32 @@ class SVPlan:
                 if var not in ROLES:issues.append('$'+var+' 未解析');continue
                 role=ROLES[var];selected=selection.get(var)
                 instance=binding.get('instance','')
-                rows=list(db.execute('SELECT * FROM candidates WHERE role=? AND instance=?'+(' AND id=?' if selected else '')+' LIMIT 2',(role,instance)+((selected,) if selected else ())))
-                problems=list(db.execute('SELECT * FROM problems WHERE role=? AND instance=?',(role,instance)))
+                condition=' WHERE role=? AND instance=?';params=(role,instance)
+                if binding.get('pin'):
+                    condition+=' AND pin=?';params+=(binding['pin'],)
+                try:schema=self.candidate_schema(db,role)
+                except ValueError as error:
+                    issues.append('$'+var+'：'+str(error));continue
+                query='SELECT * FROM '+schema+'.candidates'+condition
+                rows=list(db.execute(query+' LIMIT 2',params))
+                problems=list(db.execute('SELECT * FROM '+schema+'.problems'+condition,params))
+                unique_receiver=(role=='sw_done' and len(rows)==1 and not problems and
+                                 'multiple_registers' not in rows[0]['certainty'])
+                if unique_receiver:
+                    selected=None
+                elif selected:
+                    rows=list(db.execute(query+' AND id=?',params+(selected,)))
                 if len(rows)!=1:
                     reasons='; '.join(p['reason'] for p in problems[:3])
+                    if not rows and not selected and role=='sw_done' and schema=='main':
+                        source=self.source()
+                        if source.get('registers') and not source.get('swdone_receiver_policy'):
+                            reasons=(reasons+'。' if reasons else '')+'旧计划可能未保存全部接收位，请选择原寄存器结果并重新分析分支'
                     issues.append('$'+var+(' 所选映射不属于当前分支' if selected else ' 存在多组映射，请选择' if len(rows)>1 else ' 缺少寄存器映射')+('：'+reasons if reasons else ''));continue
                 row=rows[0]
-                if not selected and (row['certainty']!='direct' or problems):
-                    issues.append('$'+var+' 含非直接映射、跨寄存器或其他未解析候选，请核对并明确选择'+('：'+'; '.join(p['reason'] for p in problems) if problems else ''));continue
+                if not selected and not unique_receiver and (row['certainty']!='direct' or problems):
+                    message=' 存在多处接收寄存器位，请选择' if role=='sw_done' else ' 含非直接映射、跨寄存器或其他未解析候选，请核对并明确选择'
+                    issues.append('$'+var+message+('：'+'; '.join(p['reason'] for p in problems) if problems else ''));continue
                 # Stale architecture rules must not pick an old auxiliary pin.
                 node=db.execute('SELECT data FROM nodes WHERE id=?',(row['instance'],)).fetchone()
                 actual=json.loads(node['data']).get('aux_ports') or {}
@@ -708,7 +807,7 @@ class SVPlan:
         signal.signal(signal.SIGTERM,cancel)
         try:
             with temporary.open('w',encoding='utf-8',newline='\n') as stream,temp_report.open('w',encoding='utf-8') as evidence,closing(database(self.path)) as db:
-                stream.write('// Generated by ClockTree7 from saved elaborated connectivity and register evidence.\n')
+                stream.write('// Generated by {} from saved elaborated connectivity and register evidence.\n'.format(APP_NAME))
                 source=json.loads(db.execute("SELECT value FROM meta WHERE key='source'").fetchone()[0])
                 stream.write('// DFT zero assumptions: '+', '.join(source.get('dft_zero',[])).replace('\n',' ').replace('\r',' ')+'\n')
                 if macros.pairs:

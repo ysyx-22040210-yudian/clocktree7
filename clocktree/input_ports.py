@@ -24,15 +24,28 @@ def filter_ports(rows, expression):
     return [row for row in rows if pattern.search(row['name'])]
 
 
-def confirmed_ports(rows, expression, selected, direction='input'):
-    matches = filter_ports(rows, expression)
+def confirmed_ports(rows, expression, selected, direction='input', previous=(), single=False, optional=False):
+    """Apply the checked matches and explicit removals to the edited port field."""
+    matches = {row['name'] for row in filter_ports(rows, expression)}
     label = DIRECTION_LABELS[direction]
     if not matches:
         raise ValueError('正则未匹配任何{}端口'.format(label))
-    names = sorted({row['name'] for row in matches} & set(selected))
-    if not names:
-        raise ValueError('至少勾选一个匹配的{}端口'.format(label))
-    return names
+    selected = set(selected)
+    checked = matches & selected
+    if single:
+        if len(checked) == 1:
+            return sorted(checked)
+        if optional and previous and not selected:
+            return []
+        raise ValueError('请勾选一个匹配的{}端口'.format(label))
+
+    # The original order determines MUX input slots. An unchecked original
+    # stays removed across filters. Manual names outside discovery stay intact.
+    previous = list(dict.fromkeys(previous))
+    retained = [name for name in previous if name in selected]
+    if checked or (retained and len(retained) < len(previous)):
+        return retained + sorted(checked.difference(retained))
+    raise ValueError('至少勾选一个匹配的{}端口'.format(label))
 
 
 def discover(request_path, output):

@@ -1,14 +1,14 @@
-# ClockTree7
+# 观钟王
 
 **原生 Tk 桌面时钟树 / 复位树架构分析工具：默认两级，可自定义层级，从 RTL elaboration 自动恢复全部关注结构和连接。**
 
-用户填写 RTL 层次范围、module 定义名、器件类型及关注输入/输出端口。工具枚举所有匹配实例，依据实际 elab 网络连接全部扇出、选择器汇合、同层串接及跨层跳接。分支可以在任意已配置层结束；产品名称 ClockTree7 不再表示层级上限。
+用户填写 RTL 层次范围、module 定义名、器件类型及关注输入/输出端口。工具枚举所有匹配实例，依据实际 elab 网络连接全部扇出、选择器汇合、同层串接及跨层跳接。分支可以在任意已配置层结束。
 
 **[详细 GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md)** · [离线 HTML 阅读版](docs/GUI_USER_MANUAL.zh-CN.html) · **[其他 EDA 设备部署与验收](docs/PORTABILITY.zh-CN.md)** · [验证摘要](docs/VALIDATION.zh-CN.md) · [可浏览示例](examples/flexible_layers/README.md)
 
-**[产品介绍 PPT（38 页，含 module 配置与 SV 模板演示）](presentations/clocktree7-product-20261113/README.md)** · [直接下载 PowerPoint](https://github.com/ysyx-22040210-yudian/clocktree7/raw/refs/heads/main/presentations/clocktree7-product-20261113/ClockTree7_Product_Introduction_20261113.pptx) · [上一版](presentations/clocktree7-product-20261110/README.md)
+**[产品介绍 PPT（2026-11-13 版，38 页，含 module 配置与 SV 模板演示）](presentations/clocktree7-product-20261113/README.md)** · [直接下载 PowerPoint](https://github.com/ysyx-22040210-yudian/clocktree7/raw/refs/heads/main/presentations/clocktree7-product-20261113/ClockTree7_Product_Introduction_20261113.pptx) · [上一版](presentations/clocktree7-product-20261110/README.md)
 
-![原生 Tk 工作台中查看 DIV 的时钟端口、控制信号与上下游实例](docs/images/desktop-workspace.png)
+![观钟王原生 Tk 工作台中的时钟树与器件连接](docs/images/guanzhongwang-workspace.png)
 
 工作台支持在整树概览和端口明细之间缩放。选中器件可在检查器中查看实际信号，点击干线可查看经过该段的连接。[GUI 操作手册](docs/GUI_USER_MANUAL.zh-CN.md#workspace) · [高扇出画布实测](docs/DESKTOP_STUDIO_VALIDATION_20261119.zh-CN.md)
 
@@ -20,7 +20,7 @@
 - 启动自动恢复上次模式、配置、选中层级和结果图；支持未导出草稿和本地结果快照，关闭时完成最后一次保存。
 - 时钟器件包括 **MUX、SYNC_GATE、GATE_WRAP、OCC_ROOT、OCC_BRANCH、DIV、穿线、SUBSYSTEM**。复位器件包括 **MUX、RSY_SYNC、穿线、SUBSYSTEM**。已有 `gate`、`occ` 规则继续可读。
 - 可选辅助端口：MUX 的 `pll_sel` 输入、DIV 的 `div` 输入及 `sw_done` 输出、门控的 `gt` 输入，均由用户填写实际接口名。逐实例读取 elab 连接并显示在器件下方，不参加时钟树连线追踪；缺失、方向不符及未连接进入问题表，JSON/SVG/历史恢复保留。[填写与查看](docs/GUI_USER_MANUAL.zh-CN.md#auxiliary-ports) · [Verdi 2018 验收](docs/AUXILIARY_PORTS_VALIDATION.zh-CN.md)。
-- **辅助口 → 寄存器** 独立任务：`pll_sel/div/gt` 逐 bit driver 到实际时序输出，`sw_done` 沿 load 确认时序数据输入，同时保存接收寄存器位。例如时序赋值 `A <= {B,C,D}` 中可证明的 `B` 作为输入信号供 SV 使用，`A` 的对应 bit 保留为证据。按 elab 表达式应用 `dft_mode=0`，保留完整路径、位序、条件与时序证据；不会把普通 `reg` 声明当作寄存器。提供原生 Tk 结果表、分页搜索、CSV/JSON、端口断点、内存轮换及可选超时。[操作手册](docs/GUI_USER_MANUAL.zh-CN.md#register-trace) · [寄存器追踪验收](docs/REGISTER_TRACE_VALIDATION.zh-CN.md) · [拼接输入修复验收](docs/SWDONE_CONCAT_FIX_20261110.zh-CN.md)。
+- **辅助口 → 寄存器** 独立任务：`pll_sel/div/gt` 逐 bit driver 到实际时序输出，`sw_done` 沿 load 确认时序数据输入，同时保存接收寄存器位。例如时序赋值 `A <= {B,C,D}` 中可证明的 `B` 作为输入信号供 SV 使用，`A` 的对应 bit 保留为证据。按 elab 表达式应用 `dft_mode=0`，保留完整路径、位序、条件与时序证据；不会把普通 `reg` 声明当作寄存器。`sw_done` 有唯一接收位时自动取值，多个不同的 D 端信号写同一位且等价性未证实时取该接收位。提供原生 Tk 结果表、分页搜索、CSV/JSON、端口断点、内存轮换及可选超时。[操作手册](docs/GUI_USER_MANUAL.zh-CN.md#register-trace) · [寄存器追踪验收](docs/REGISTER_TRACE_VALIDATION.zh-CN.md) · [拼接输入修复验收](docs/SWDONE_CONCAT_FIX_20261110.zh-CN.md) · [多负载取值验收](docs/SWDONE_RECEIVER_VALIDATION.zh-CN.md)。
 - **分支 SV 模板**：起始有/无选择器分别使用用户模板，每个真实末端输入生成一段，全部写到一个 `.sv`。支持 `$var_pllsel`、`$var_div`、`$var_swdone`、按实际连接排序的 `$var_gt0～2`、按关注输入顺序编号的 `$var_pll0～3`、`$var_clkip` 和最初器件所属层复位信号 `$var_rst`；不存在的门控/PLL 槽位补 `1'b1`。每层 RTL 父层路径下可填写复位短名或完整信号路径，配置/历史保留；模板引用但未填写复位时明确提示。多寄存器分支暂时跳过，分页选择候选后重新生成同一文件，不重复追加。两套模板、选择及分支计划自动恢复。[详细用法](docs/GUI_USER_MANUAL.zh-CN.md#sv-templates) · [SV 验收](docs/SV_TEMPLATES_VALIDATION.zh-CN.md) · [复位变量验收](docs/SV_RESET_VALIDATION.zh-CN.md)。
 - **模板代码编辑器**：原生 Tk 深色 SystemVerilog 高亮、行号、12 个变量插入按钮、缩进、撤销/重做和查找。`check_$var_clkip_sva` 自动生成 `check_top_u_clk_sva` 这样的合法名称，单独的 `$var_clkip` 仍保留真实信号路径；支持 `${var_clkip}` 显式边界和未知变量提示。长模板分批着色，无需联网或安装编辑器依赖。[操作与验收](docs/SV_EDITOR_VALIDATION_20261110.zh-CN.md)。
 - 在器件编辑窗口可按输入或输出方向从 elab 正则筛选，并在文本框直接增删改关注端口和辅助口。SUBSYSTEM 支持编辑多个输入，参数化总线按实际范围展开，各输入独立。

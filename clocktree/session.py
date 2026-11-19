@@ -73,6 +73,11 @@ def read_graph(path, expected=None):
     return graph
 
 
+def read_canvas_graph(path):
+    from .input_coverage import prepare_coverage
+    return prepare_coverage(read_graph(path))
+
+
 class SessionStore:
     def __init__(self, runs, directory=None):
         self.runs = Path(runs).resolve()

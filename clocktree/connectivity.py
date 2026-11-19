@@ -8,19 +8,20 @@ from .profiles import output_ports
 from functools import lru_cache
 
 
-def indexed_paths(model, instance, direction, seed_pins=None, cancel=None):
+def indexed_paths(model, instance, direction, seed_pins=None, cancel=None, arrivals=None):
     """Disk-backed queue and result set; memory remains bounded on large trees."""
     import uuid
     from .indexed_view import SQLSelection
     conn=model.store.connection();name='ct7_wire_path_'+uuid.uuid4().hex
     conn.execute('CREATE TEMP TABLE '+name+'(id TEXT PRIMARY KEY)')
     conn.execute('CREATE TEMP TABLE '+name+'_queue(seq INTEGER PRIMARY KEY,id TEXT,pin TEXT,UNIQUE(id,pin))')
-    conn.execute('INSERT INTO '+name+'_queue(id,pin) VALUES(?,?)',(instance,''))
     @lru_cache(maxsize=2048)
     def node(key):return model.original[key]
     match,other=('target','source') if direction=='upstream' else ('source','target')
     cursor=0
     try:
+        starts=[(instance,'')] if arrivals is None else arrivals
+        conn.executemany('INSERT OR IGNORE INTO '+name+'_queue(id,pin) VALUES(?,?)',starts)
         while True:
             if cancel is not None and cancel.is_set():
                 from .branch import BranchCancelled
@@ -83,11 +84,12 @@ def focused_pins(node, direction):
     return {pin} if pin in output_ports(node) else allowed_pins(node,direction,pin)
 
 
-def walk_edges(model, instance, direction, seed_pins=None, cancel=None):
+def walk_edges(model, instance, direction, seed_pins=None, cancel=None, arrivals=None):
     """Yield exact physical edges, with (instance, arrival port) visited keys."""
     match, other = ('target', 'source') if direction == 'upstream' else ('source', 'target')
     adjacency = model.incoming if direction == 'upstream' else model.outgoing
-    queue, seen, emitted = deque([(instance, None)]), set(), set()
+    queue = deque([(instance, None)] if arrivals is None else arrivals)
+    seen, emitted = set(), set()
     while queue:
         if cancel is not None and cancel.is_set():
             from .branch import BranchCancelled

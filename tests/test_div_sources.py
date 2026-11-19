@@ -103,6 +103,6 @@ def test_div_metadata_uses_saved_register_bits_in_table_csv_and_sv(tmp_path):
     assert not plan.resolve(row, templates)['ready']
     result = plan.export(templates,tmp_path/'generated.sv',{row['id']:{'var_div':candidates[0]['id']}})
     assert result['blocks'] == 1
-    assert '{'+', '.join(reversed(endpoints))+'}' in (tmp_path/'generated.sv').read_text()
+    assert '{'+', '.join(reversed(endpoints))+'}' in (tmp_path/'generated.sv').read_text(encoding='utf-8')
     report = json.loads((tmp_path/'generated.sv.mapping.json').read_text(encoding='utf-8'))
     assert report['branches'][0]['selected']['var_div']['div_sources'] == candidates[0]['div_sources']

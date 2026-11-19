@@ -92,7 +92,7 @@ def test_reset_uses_first_device_layer_and_leaves_missing_branches_out(tmp_path)
         node['l1_inputs']={p:{'signal':'chip.l1_clock','status':'verified'} for p in node['inputs']}
     plan=prepare(graph,reg,tmp_path/'plan',False);templates=dict(with_mux='$var_rst $var_clkip',without_mux='$var_rst $var_clkip')
     result=plan.export(templates,tmp_path/'rst.sv');assert result['blocks']==1 and result['skipped']==1
-    content=(tmp_path/'rst.sv').read_text();assert content.count('chip.mux_rst')==1 and 'unused_l1_rst' not in content and 'terminal_rst' not in content
+    content=(tmp_path/'rst.sv').read_text(encoding='utf-8');assert content.count('chip.mux_rst')==1 and 'unused_l1_rst' not in content and 'terminal_rst' not in content
     records=json.loads((tmp_path/'rst.sv.mapping.json').read_text())['branches']
     blocked=next(r for r in records if not r['ready']);assert 'L4' in ' '.join(blocked['issues'])
     assert all(r['reset']['layer']==2 for r in records if r['ready'])
@@ -153,7 +153,7 @@ def test_subsystem_inputs_have_separate_upstreams_and_exactly_one_block_each(tmp
         r=plan.resolve(row,templates);assert r['ready'],r['issues']
         if row['pin']=='clk_mux':assert r['mode']=='with_mux' and r['values']['var_pllsel']=='chip.D[5:2]' and 'var_gt' not in r['values']
         else:assert r['mode']=='without_mux' and r['values']['var_gt']=='chip.C[7]' and not plan.candidates(row,'pll_sel')
-    result=plan.export(templates,tmp_path/'all.sv');text=(tmp_path/'all.sv').read_text()
+    result=plan.export(templates,tmp_path/'all.sv');text=(tmp_path/'all.sv').read_text(encoding='utf-8')
     assert result['blocks']==2 and text.count('// CT7 branch ')==2 and text.count('A(')==1 and text.count('B(')==1
     report=json.loads((tmp_path/'all.sv.mapping.json').read_text());assert report['block_count']==2 and report['source']['dft_zero']==['dft_mode']
 
@@ -166,7 +166,7 @@ def test_ambiguity_requires_choice_and_never_multiplies_branch_count(tmp_path):
     choices=plan.candidates(row,'sw_done');assert len(choices)==2
     selected={row['id']:{'var_swdone':choices[1]['id']}}
     result=plan.export(templates,tmp_path/'all.sv',selected);assert result['blocks']==2
-    assert choices[1]['expression'] in (tmp_path/'all.sv').read_text()
+    assert choices[1]['expression'] in (tmp_path/'all.sv').read_text(encoding='utf-8')
 
 
 @pytest.mark.parametrize('multiple',[False,True])
@@ -189,6 +189,136 @@ def test_swdone_binds_proven_d_input_and_keeps_distinct_register_choices(tmp_pat
     if multiple:result=plan.resolve(branch,template,{'var_swdone':choices[0]['id']})
     assert result['ready'] and result['code']=='check(chip.B);'
     assert result['selected']['var_swdone']['capture_expression'] in ('chip.E[10]','chip.E[11]')
+
+
+@pytest.mark.parametrize('multiple',[False,True])
+def test_swdone_mixed_fanout_counts_only_proven_capture_bits(tmp_path,multiple):
+    graph,reg=setup(tmp_path,multiple)
+    with create_database(reg/'registers.sqlite') as db:
+        db.execute("UPDATE results SET detail=? WHERE job=3",(json.dumps({'data_input':'chip.done_d'}),))
+        unrelated=[(3,'done','chip.monitor[{}]'.format(i),'','direct','unresolved','no_sequential_endpoint',None,'{}') for i in range(600)]
+        unrelated.append((3,'done','chip.other','Q','direct','register','',None,'{}'))
+        db.executemany('INSERT INTO results VALUES(NULL,?,?,?,?,?,?,?,?,?)',unrelated)
+        db.execute("INSERT INTO results VALUES(NULL,3,'done','chip.E[10]','D','conditional','register','',NULL,?)",
+                   (json.dumps({'data_input':'chip.done_d'}),))
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    branch=next(row for row in plan.branches()[1] if row['mode']=='with_mux')
+    templates={'with_mux':'check($var_swdone);','without_mux':'other($var_gt0);'}
+    choices=plan.candidates(branch,'var_swdone')
+    assert {c['capture_expression'] for c in choices}==({'chip.E[10]','chip.E[11]'} if multiple else {'chip.E[10]'})
+    assert {c['expression'] for c in choices}=={'chip.done_d'}
+    if multiple:
+        assert not plan.resolve(branch,templates)['ready']
+        assert not plan.resolve(branch,templates,{'var_swdone':'stale-id'})['ready']
+        first=plan.export(templates,tmp_path/'out.sv')
+        assert (first['blocks'],first['skipped'])==(1,1)
+        choices_in_report=json.loads((tmp_path/'out.sv.mapping.json').read_text())['branches']
+        blocked=next(row for row in choices_in_report if not row['ready'])
+        assert len(blocked['available_choices']['var_swdone'])==2
+    else:
+        assert plan.resolve(branch,templates,{'var_swdone':'stale-id'})['code']=='check(chip.done_d);'
+    selection={branch['id']:{'var_swdone':choices[0]['id']}} if multiple else {}
+    result=plan.export(templates,tmp_path/'out.sv',selection)
+    assert (result['blocks'],result['skipped'])==(2,0)
+    assert (tmp_path/'out.sv').read_text(encoding='utf-8').count('check(chip.done_d);')==1
+
+
+@pytest.mark.parametrize('state,complete_bits',[('complete',False),('pending',True)])
+def test_swdone_never_invents_a_missing_bit_or_uses_uncommitted_work(tmp_path,state,complete_bits):
+    graph,reg=setup(tmp_path)
+    with create_database(reg/'registers.sqlite') as db:
+        db.execute('UPDATE jobs SET state=?,summary=? WHERE id=3',(state,json.dumps({'bits':['chip.div.done[0]','chip.div.done[1]']})))
+        db.execute("UPDATE results SET bit='done[0]' WHERE job=3")
+        if complete_bits:
+            db.execute("INSERT INTO results VALUES(NULL,3,'done[1]','chip.E[11]','D','direct','register','',NULL,'{}')")
+        db.execute("INSERT INTO results VALUES(NULL,3,'done[1]','chip.tap','','direct','boundary','outside_trace_root',NULL,'{}')")
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    row=next(r for r in plan.branches()[1] if r['mode']=='with_mux')
+    result=plan.resolve(row,{'with_mux':'check($var_swdone);'})
+    assert not result['ready'] and not plan.candidates(row,'var_swdone')
+    assert '完整逐位' in ' '.join(result['issues'])
+
+
+def test_sw_done_sibling_diagnostics_do_not_relax_driver_roles(tmp_path):
+    graph,reg=setup(tmp_path)
+    with create_database(reg/'registers.sqlite') as db:
+        db.execute("UPDATE results SET relation='inverted' WHERE job IN (2,3)")
+        db.execute("INSERT INTO results VALUES(NULL,3,'done','chip.monitor','','direct','boundary','outside_trace_root',NULL,'{}')")
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    row=next(r for r in plan.branches()[1] if r['mode']=='with_mux')
+    assert plan.resolve(row,{'with_mux':'$var_swdone'})['code']=='chip.E[10]'
+    assert not plan.resolve(row,{'with_mux':'$var_div'})['ready']
+
+
+@pytest.mark.parametrize('other_name,relation,expected',[
+    ('','conditional','chip.direct_d'),
+    ('chip.alt_d','direct','chip.alt_d'),
+    ('chip.alt_d','inverted','chip.E[10]'),
+    ('chip.alt_d','conditional','chip.E[10]')])
+def test_same_receiver_selects_proven_d_or_the_receiving_bit(tmp_path,other_name,relation,expected):
+    graph,reg=setup(tmp_path)
+    with create_database(reg/'registers.sqlite') as db:
+        db.execute("UPDATE results SET detail=? WHERE job=3",(json.dumps({'data_input':'chip.direct_d'}),))
+        db.execute("INSERT INTO results VALUES(NULL,3,'done','chip.E[10]','D',?,'register','',NULL,?)",
+                   (relation,json.dumps({'data_input':other_name})))
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    branch=next(r for r in plan.branches()[1] if r['mode']=='with_mux')
+    result=plan.resolve(branch,{'with_mux':'check($var_swdone);'})
+    assert result['ready'] and result['code']=='check('+expected+');'
+    candidate=result['selected']['var_swdone']
+    assert candidate['capture_expression']=='chip.E[10]'
+    if expected=='chip.E[10]':
+        assert candidate['capture_fallbacks']==[dict(formal_bit='done',receiver=expected,data_inputs=['chip.alt_d','chip.direct_d'])]
+    else:assert 'capture_fallbacks' not in candidate
+
+
+def test_vector_only_substitutes_the_lane_with_competing_d_inputs(tmp_path):
+    graph,reg=setup(tmp_path)
+    with create_database(reg/'registers.sqlite') as db:
+        db.execute('UPDATE jobs SET summary=? WHERE id=3',(json.dumps({'bits':['chip.div.done[0]','chip.div.done[1]']}),))
+        db.execute("UPDATE results SET bit='done[0]',endpoint='chip.R[4]',detail=? WHERE job=3",(json.dumps({'data_input':'chip.low_d'}),))
+        for name,relation in [('chip.high_a','direct'),('chip.high_b','inverted')]:
+            db.execute("INSERT INTO results VALUES(NULL,3,'done[1]','chip.R[5]','D',?,'register','',NULL,?)",
+                       (relation,json.dumps({'data_input':name})))
+        db.execute("INSERT INTO results VALUES(NULL,3,'done[0]','chip.tap','','direct','boundary','outside_trace_root',NULL,'{}')")
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    row=next(r for r in plan.branches()[1] if r['mode']=='with_mux')
+    result=plan.resolve(row,{'with_mux':'$var_swdone'})
+    assert result['ready'] and result['code']=='{chip.R[5], chip.low_d}'
+    selected=result['selected']['var_swdone']
+    assert selected['capture_expression']=='chip.R[5:4]'
+    assert [v['formal_bit'] for v in selected['capture_fallbacks']]==['done[1]']
+
+
+def test_older_mixed_fanout_plan_replays_only_swdone_from_original_result(tmp_path):
+    import sqlite3
+    from clocktree.sv_templates import SVPlan
+    graph,reg=setup(tmp_path)
+    with create_database(reg/'registers.sqlite') as db:
+        db.execute("INSERT INTO results VALUES(NULL,3,'done','chip.tap','','direct','unresolved','no_sequential_endpoint',NULL,'{}')")
+    plan=prepare(graph,reg,tmp_path/'plan',False)
+    old_source=plan.source().copy()
+    del old_source['swdone_receiver_policy']
+    with sqlite3.connect(str(plan.path)) as db:
+        db.execute("UPDATE meta SET value=? WHERE key='source'",(json.dumps(old_source),))
+        db.execute("DELETE FROM candidates WHERE role='sw_done'")
+        db.execute("INSERT INTO problems VALUES('chip.div','sw_done','done','unresolved load')")
+    original=plan.path.read_bytes()
+    old=SVPlan(plan.path)
+    templates={'with_mux':'check($var_swdone, $var_pllsel);','without_mux':'other($var_gt0);'}
+    row=next(r for r in old.branches()[1] if r['mode']=='with_mux')
+    assert len(old.candidates(row,'var_swdone'))==1
+    exported=old.export(templates,tmp_path/'old.sv')
+    assert exported['blocks']==2 and 'check(chip.E[10], chip.D[5:2]);' in (tmp_path/'old.sv').read_text(encoding='utf-8')
+    assert plan.path.read_bytes()==original
+    with (reg/'manifest.json').open('a') as manifest:manifest.write('\n')
+    result=old.resolve(row,templates)
+    assert not result['ready'] and '原寄存器结果' in ' '.join(result['issues'])
+    assert old.resolve(row,{'with_mux':'$var_pllsel'})['ready']
+    with sqlite3.connect(str(old.path)) as db:
+        db.execute("DELETE FROM problems WHERE role='sw_done'")
+        db.execute("INSERT INTO candidates(id,instance,role,pin,expression,certainty,bits,capture_expression,div_sources) VALUES('saved','chip.div','sw_done','done','chip.E[10]','direct','[]','chip.E[10]','[]')")
+    assert old.resolve(row,templates)['ready']
 
 
 def test_legacy_plan_candidates_remain_searchable_without_capture_column(tmp_path):
@@ -217,13 +347,13 @@ def test_partial_output_lists_all_candidates_then_regenerates_without_duplicates
     graph,reg=setup(tmp_path,True);plan=prepare(graph,reg,tmp_path/'plan',False)
     templates={'with_mux':'A($var_swdone);','without_mux':'B($var_gt0);'}
     output=tmp_path/'all.sv';result=plan.export(templates,output)
-    assert result['blocks']==1 and result['skipped']==1 and 'B(chip.C[7])' in output.read_text()
+    assert result['blocks']==1 and result['skipped']==1 and 'B(chip.C[7])' in output.read_text(encoding='utf-8')
     report=json.loads((tmp_path/'all.sv.mapping.json').read_text())
     skipped=next(r for r in report['branches'] if not r['ready'])
     assert {r['expression'] for r in skipped['available_choices']['var_swdone']}=={'chip.E[10]','chip.E[11]'}
     chosen=skipped['available_choices']['var_swdone'][0]['id']
     result=plan.export(templates,output,{skipped['id']:{'var_swdone':chosen}})
-    assert result['blocks']==2 and result['skipped']==0 and output.read_text().count('// CT7 branch ')==2
+    assert result['blocks']==2 and result['skipped']==0 and output.read_text(encoding='utf-8').count('// CT7 branch ')==2
 
 
 @pytest.mark.parametrize('problem_owner,problem_pin', [('chip.gate', 'i'), ('chip.sink', 'clk_other')])

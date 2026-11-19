@@ -1,6 +1,7 @@
 import copy
 import csv
 import json
+import re
 import pytest
 from clocktree.viewmodel import GraphView,clip_segment
 from clocktree.indexed_view import IndexedGraphView
@@ -67,6 +68,38 @@ def test_whole_branch_excludes_upstream_side_branch(tmp_path):
     assert {r[0] for r in indexed.store.connection().execute(scoped.sql,scoped.params)}==expected
 
 
+@pytest.mark.parametrize('direction', ['input', 'output'])
+def test_confirmed_port_edits_remove_unchecked_and_keep_manual_order(direction):
+    rows = [{'name': name} for name in ['clk_a', 'clk_a', 'clk_b', 'clk_c', 'rst']]
+    previous = ['clk_b', 'manual_bus[3]', 'rst', 'clk_a']
+    selected = {'clk_b', 'manual_bus[3]', 'rst', 'clk_c'}
+    assert confirmed_ports(rows, '^clk', selected, direction, previous=previous) == [
+        'clk_b', 'manual_bus[3]', 'rst', 'clk_c']
+    # clk_a was unchecked before narrowing. clk_c was newly checked but is
+    # outside the confirmed filter. Existing entries keep their slot order.
+    assert confirmed_ports(rows, '^rst$', selected, direction, previous=previous) == [
+        'clk_b', 'manual_bus[3]', 'rst']
+    assert confirmed_ports(rows, '^clk', {'manual_bus[3]', 'rst'}, direction, previous=previous) == [
+        'manual_bus[3]', 'rst']
+
+
+def test_picker_confirmation_distinguishes_explicit_removal_and_empty_selection():
+    rows = [{'name': 'clk_a'}, {'name': 'clk_b'}]
+    with pytest.raises(ValueError):
+        confirmed_ports(rows, '^clk_b$', {'clk_a'}, previous=['clk_a'])
+    with pytest.raises(ValueError):
+        confirmed_ports(rows, '^clk', set(), previous=['clk_a'])
+    for expression in ('missing', '['):
+        with pytest.raises((ValueError, re.error)):
+            confirmed_ports(rows, expression, {'other'}, previous=['clk_a', 'other'])
+    assert confirmed_ports(rows, '^clk_b$', {'clk_b'}, previous=['clk_a'], single=True) == ['clk_b']
+    with pytest.raises(ValueError):
+        confirmed_ports(rows, '^clk', set(), previous=['clk_a'], single=True)
+    assert confirmed_ports(rows, '^clk', set(), previous=['clk_a'], single=True, optional=True) == []
+    with pytest.raises(ValueError):
+        confirmed_ports(rows, '^clk_b$', {'clk_a'}, previous=['clk_a'], single=True, optional=True)
+
+
 def test_input_selection_is_explicit_and_subsystem_has_no_output():
     rows=[{'name':'clk_bus'},{'name':'clk_aux'},{'name':'data'}]
     assert confirmed_ports(rows,'clk',['clk_bus'])==['clk_bus']
@@ -118,7 +151,8 @@ def test_issues_cover_more_than_500_records_and_expand_objects(tmp_path):
                          {'status':'scope_boundary','instance':'r','pin':'i','direction':'driver'}]
     issues=IssueIndex(graph);issues.build()
     total,affected,rows=issues.query(offset=700)
-    assert total==704 and affected==4 and len(rows)==4
+    assert total==706 and affected==5 and len(rows)==6
+    assert {(r[5],r[6]) for r in issues.query(category='输入缺少上游连接')[2]}=={('r','i'),('d','i')}
     assert len(issues.objects(rows[1][0]))==3
     path=tmp_path/'all.csv';assert issues.export(path)==total
     with path.open(encoding='utf-8-sig',newline='') as stream:assert len(list(csv.reader(stream)))==total+1

@@ -77,7 +77,7 @@ endmodule
     selected=next(c for c in choices if c['capture_expression']=='sv_top.E[11]')
     selections={other['id']:{'var_swdone':selected['id']}};complete=plan.export(TEMPLATES,output,selections)
     assert complete['blocks']==2 and complete['skipped']==0
-    content=output.read_text();assert content.count('// CT7 branch ')==2 and content.count('$display')==2 and '$var_' not in content
+    content=output.read_text(encoding='utf-8');assert content.count('// CT7 branch ')==2 and content.count('$display')==2 and '$var_' not in content
     write_graph(out/'templates.json',dict(TEMPLATES,selections=selections))
     (fixture/'template_checks.sv').write_text('module template_checks;\n'+content+'\nendmodule\n')
     compiled=out/'compile';compiled.mkdir()
@@ -135,7 +135,7 @@ def gui(out,phase,screenshots):
         item=next(k for k,r in picker.items.items() if r.get('capture_expression',r['expression'])=='sv_top.E[11]');picker.table.selection_set(item);picker.choose();pump(app)
         dialog.export(out/'gui-generated.sv');pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
         assert json.loads(Path(dialog.export_result['mapping']).read_text())['block_count']==2
-        content=(out/'gui-generated.sv').read_text()
+        content=(out/'gui-generated.sv').read_text(encoding='utf-8')
         assert content.count('sv_top.rst_alt_n')==TEMPLATES['with_mux'].count('$var_rst') and content.count('sv_top.rst_n')==TEMPLATES['without_mux'].count('$var_rst') and 'sv_top.rst_upstream_n' not in content
         dialog.table.selection_set(other['id']);dialog.detail();pump(app)
         assert dialog.export_button.winfo_y()+dialog.export_button.winfo_height()<=dialog.export_button.master.winfo_height()

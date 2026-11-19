@@ -15,64 +15,125 @@ def key(*parts):
 def entries(node):
     values = dict(node.get('l1_inputs', {}))
     values.update(node.get('input_boundaries', {}))
+    if not values:
+        return {}
+    pins = set(node.get('inputs', []))
     return {pin:value for pin,value in values.items()
-            if pin in node.get('inputs',[]) and value.get('status')=='verified'}
+            if pin in pins and value.get('status')=='verified' and value.get('signal')
+            and value.get('scope') and value.get('port')}
+
+
+def verified_table(conn, persist=False):
+    """Older read-only indexes get the same lookup in their private connection."""
+    name = 'ct7_verified_inputs'
+    if conn.execute("SELECT 1 FROM main.sqlite_master WHERE name=?", (name,)).fetchone():
+        return 'main.' + name
+    schema = 'main' if persist else 'temp'
+    table = schema + '.' + name
+    if not persist and conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name=?", (name,)).fetchone():
+        return table
+    conn.execute('SAVEPOINT index_verified_inputs')
+    try:
+        conn.execute('CREATE TABLE '+table+'(instance TEXT,pin TEXT,signal TEXT,scope TEXT,port TEXT,'
+                     'layer INTEGER,kind TEXT,PRIMARY KEY(instance,pin))')
+        nodes = conn.execute("""SELECT data FROM main.nodes WHERE instr(data,'"l1_inputs"')>0
+                                OR instr(data,'"input_boundaries"')>0""")
+        for data, in nodes:
+            node = json.loads(data)
+            conn.executemany('INSERT INTO '+table+' VALUES(?,?,?,?,?,?,?)', (
+                (node['id'], pin, value['signal'], value['scope'], value['port'],
+                 value.get('layer', 0), value.get('source_kind', 'port')) for pin,value in entries(node).items()))
+        conn.execute('CREATE INDEX '+schema+'.ct7_verified_signal ON '+name+'(signal,instance,pin)')
+    except BaseException:
+        conn.execute('ROLLBACK TO index_verified_inputs')
+        raise
+    finally:
+        conn.execute('RELEASE index_verified_inputs')
+    return table
 
 
 def aggregate_entries(model,node):
-    """A wide overview uses one honest bundle per scope, expanded on demand."""
+    """Keep a concrete signal visible when every load in a group shares it."""
     if hasattr(model,'store'):
         conn=model.store.connection()
-        if not conn.execute("SELECT 1 FROM sqlite_temp_master WHERE name='ct7_l1_entries'").fetchone():
-            conn.execute('CREATE TEMP TABLE ct7_l1_entries(instance TEXT,scope TEXT,pin TEXT,layer INTEGER,kind TEXT,PRIMARY KEY(instance,pin))')
-            for data, in conn.execute("""SELECT data FROM nodes WHERE instr(data,'"l1_inputs"')>0
-                                       OR instr(data,'"input_boundaries"')>0"""):
-                item=json.loads(data)
-                conn.executemany('INSERT OR IGNORE INTO ct7_l1_entries VALUES(?,?,?,?,?)',
-                    ((item['id'],value['scope'],pin,value.get('layer',0),value.get('source_kind','port'))
-                     for pin,value in entries(item).items()))
         where,params=model.member_condition(node)
-        return list(conn.execute('SELECT scope,layer,kind,COUNT(*) FROM ct7_l1_entries WHERE instance IN (SELECT id FROM nodes WHERE '+where+') GROUP BY scope,layer,kind',params))
-    grouped=defaultdict(int)
+        return conn.execute('SELECT scope,layer,kind,COUNT(*),CASE WHEN MIN(signal)=MAX(signal) THEN MIN(signal) END,MIN(port) '
+                            'FROM '+verified_table(conn)+' WHERE instance IN (SELECT id FROM nodes WHERE '+where+') '
+                            'GROUP BY scope,layer,kind',params)
+    grouped={}
     for instance in node['members']:
         for value in entries(model.original[instance]).values():
-            grouped[(value['scope'], value.get('layer', 0), value.get('source_kind','port'))] += 1
-    return [(*entry, count) for entry, count in sorted(grouped.items())]
+            group=(value['scope'],value.get('layer',0),value.get('source_kind','port'))
+            count,signal,port=grouped.get(group,(0,value['signal'],value['port']))
+            grouped[group]=(count+1,signal if signal==value['signal'] else None,min(port,value['port']))
+    return [group + counts for group,counts in sorted(grouped.items())]
+
+
+def group_signals(model, target, entry, search='', offset=0, limit=101):
+    """One page of concrete signal names belonging to the clicked overview group."""
+    group=(entry['scope'], entry.get('layer',0), entry.get('source_kind','port'))
+    if hasattr(model,'store'):
+        conn=model.store.connection()
+        where,params=model.member_condition(target)
+        return list(conn.execute('SELECT signal,MIN(port),COUNT(*) FROM '+verified_table(conn)+
+            ' WHERE instance IN (SELECT id FROM nodes WHERE '+where+') AND scope=? AND layer=? AND kind=? '
+            'AND instr(lower(signal),lower(?))>0 GROUP BY signal ORDER BY signal LIMIT ? OFFSET ?',
+            params+group+(search,limit,offset)))
+    counts={}
+    for instance in target['members']:
+        for value in entries(model.original[instance]).values():
+            if (value['scope'],value.get('layer',0),value.get('source_kind','port'))==group and search.lower() in value['signal'].lower():
+                signal=value['signal']
+                port,count=counts.get(signal,(value['port'],0))
+                counts[signal]=(min(port,value['port']),count+1)
+    return [(sig,)+counts[sig] for sig in sorted(counts)[offset:offset+limit]]
+
+
+def source_node(entry, component, identifier):
+    explicit=bool(entry.get('layer'))
+    port=entry['port']
+    node=dict(id=identifier,path=entry['scope'],module='层次边界 · elab 已确认' if explicit else 'L1 层次输入 · elab 已确认',
+              kind='boundary_input' if explicit else 'l1_input',virtual=True,layer=entry.get('layer') or 1,component=component,
+              inputs=[],output=port,root=True,terminal=False,input_entry=entry,port_connections={port:{
+                  'status':'connected','expression':port,'full_name':entry['signal'],'coverage':'port'}})
+    if not explicit:node['l1_entry']=entry
+    return node
 
 
 def project_sources(model):
     ports,wires={},[]
+    branch=model.graph.get('branch_view',{})
     for target in list(model.nodes.values()):
         if target.get('aggregate'):
-            values=[('输入',{'scope':scope,
-                    'port':'{} ×{}'.format('wire' if kind=='wire' else '输入端口',count),'signal':scope,
-                    'aggregate_count':count,'layer':layer,'source_kind':kind})
-                    for scope,layer,kind,count in aggregate_entries(model,target)]
-        else:values=list(entries(target).items())
-        for pin,entry in values:
-            aggregate=entry.get('aggregate_count',0)
+            values=[]
+            for scope,layer,kind,count,signal,port in aggregate_entries(model,target):
+                entry=dict(scope=scope,layer=layer,source_kind=kind,signal=signal or scope,port=port)
+                if signal is None:
+                    entry.update(aggregate_count=count,port='{} ×{}'.format('wire' if kind=='wire' else '输入端口',count))
+                values.append(('输入',entry,count))
+        else:values=((pin,entry,0) for pin,entry in entries(target).items())
+        for pin,entry,count in values:
+            aggregate=bool(entry.get('aggregate_count'))
             identifier=key(entry['signal'],target['component'],
-                           (target['id'],entry['source_kind']) if aggregate else '')
+                           (target['id'],entry['source_kind'],entry.get('layer',0)) if aggregate else '')
+            if branch.get('signal')==entry['signal'] and branch.get('source_id'):
+                identifier=branch['source_id']
             explicit = bool(entry.get('layer'))
             layer = entry.get('layer') or 1
-            source = ports.setdefault(identifier,dict(id=identifier,path=entry['scope'],
-                module='层次边界 · elab 已确认' if explicit else 'L1 层次输入 · elab 已确认',
-                kind='boundary_input' if explicit else 'l1_input',virtual=True,layer=layer,component=target['component'],
-                inputs=[],output=entry['port'],root=True,terminal=False,input_entry=entry,port_connections={entry['port']:{'status':'connected',
-                'expression':entry['port'],'full_name':entry['signal'],'coverage':'port'}}))
-            if not explicit:
-                source.setdefault('l1_entry', entry)
+            if identifier not in ports:
+                ports[identifier]=source_node(entry,target['component'],identifier)
+            if aggregate:ports[identifier]['boundary_group']=target['id']
             wires.append(dict(id=key(identifier,target['id'],pin),source=identifier,source_pin=entry['port'],
                 target=target['id'],target_pin=pin,layer_delta=target['layer']-layer,input_boundary=True,
                 l1_boundary=not explicit, boundary_layer=layer,
-                aggregate_count=aggregate,evidence={'driver':entry.get('evidence',[])}))
+                aggregate_count=count,evidence={'driver':entry.get('evidence',[])}))
     model.l1_nodes,model.l1_edges=ports,{edge['id']:edge for edge in wires}
     model.nodes.update(ports);model.edges.extend(wires)
 
 
 def lookup_node(model,identifier):
     shown=model.nodes.get(identifier)
-    return shown if shown and (shown.get('virtual') or shown.get('aggregate')) else model.original[identifier]
+    return shown if shown and (shown.get('virtual') or shown.get('aggregate') or shown.get('reference_of')) else model.original[identifier]
 
 
 def source_title(node):
@@ -95,7 +156,7 @@ def describe(node):
     return [('显示类型',source_title(node)), ('RTL 层次',value['scope']),
             ('连接信号',value['port']),('完整信号',value['signal']),
             ('连接依据',source_basis(node)+
-             ('当前为聚合显示，展开目标 RTL 范围后查看各端口。' if value.get('aggregate_count') else ''))]
+             ('双击可选择该组中的具体信号。' if value.get('aggregate_count') else ''))]
 
 
 class CombinedEdges(Sequence):

@@ -125,7 +125,7 @@ class RegisterDialog(tk.Toplevel):
             context=state.get('context',{})
             state['message']='上次进程已退出；最后阶段 {}，信号 {}。具体原因查看 controller.log / verdi.log，可从已提交端口继续。'.format(state.get('stage'),context.get('signal',context.get('arguments','')))
         self.resume_button.configure(state='disabled' if state.get('stage')=='finished' else 'normal')
-        attention='（含未解析 / 边界 / 未固定条件，请检查状态列）' if state.get('stage')=='finished' and not state.get('context',{}).get('complete') else ''
+        attention='（逐条未解析、边界及条件记录见状态列）' if state.get('stage')=='finished' and not state.get('context',{}).get('complete') else ''
         self.status.set(('历史任务 · '+state.get('message','断点已保存'))+attention+' · '+str(path))
         self.refresh()
 
@@ -182,7 +182,7 @@ class RegisterDialog(tk.Toplevel):
             self.app.refresh_div_colors()
             self.status.set('已完成 {} 个辅助端口 · {} 个 bit 找到寄存器 · {} 条寄存器映射 · {} · {}'.format(
                 summary['ports'],summary['register_bits'],summary['counts'].get('register',0),
-                '存在未解析/边界/条件，请查看状态列' if not summary['complete'] else '追踪完成',str(self.directory)))
+                  '逐条追踪诊断见状态列' if not summary['complete'] else '追踪完成',str(self.directory)))
         else:self.status.set('任务中断，可从已提交端口继续：'+tail_text(self.directory/'controller.log',900));self.resume_button.configure(state='normal')
         self.refresh()
 

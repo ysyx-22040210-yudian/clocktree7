@@ -81,7 +81,7 @@ def build(output, name, root=ROOT):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', default=str(ROOT / 'validation/releases'))
-    parser.add_argument('--name', default='clocktree7-portable-' + datetime.date.today().strftime('%Y%m%d'))
+    parser.add_argument('--name', default='guanzhongwang-portable-' + datetime.date.today().strftime('%Y%m%d'))
     parser.add_argument('--verify', help='Verify an already unpacked bundle against its manifest')
     args = parser.parse_args()
     if not args.name or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in args.name):

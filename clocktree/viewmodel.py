@@ -1,6 +1,7 @@
 """Presentation of the complete graph; aggregation never changes the source graph."""
 from collections import Counter, defaultdict, deque
 from xml.sax.saxutils import escape, quoteattr
+from . import APP_NAME
 from .devices import typed_nodes, node_height, port_offsets, symbol_parts, symbol_svg, pin_index, output_offset
 from .div_sources import div_source_level
 from .profiles import tree_type
@@ -261,6 +262,7 @@ class GraphView:
         """Export the current scope at readable world scale, retaining all projected nodes."""
         _, _, width, height = self.bounds
         lines = ['<svg xmlns="http://www.w3.org/2000/svg" data-tree-type="{}" width="{}" height="{}" viewBox="0 0 {} {}">'.format(self.tree_type, width, height, width, height),
+                 '<title>{} · {}架构图</title>'.format(escape(APP_NAME), '复位树' if self.tree_type == 'reset' else '时钟树'),
                  '<rect width="100%" height="100%" fill="#101b2e"/>',
                  '<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#6c94c8"/></marker></defs>']
         for layer in (range(1, self.layer_count + 1) if getattr(self,'layout_mode','branch') == 'layers' else []):

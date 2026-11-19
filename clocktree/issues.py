@@ -7,9 +7,11 @@ from contextlib import closing
 from pathlib import Path
 from .graph import UNRESOLVED
 from .devices import connection_label
+from .input_coverage import CAUSES, FIELD, LABEL, gap_reason, nodes_with_gaps
 
 
 LABELS={
+    'input_without_source':(LABEL,'核对例化输入绑定、上游器件规则和边界层次。追踪超时或跳过时可查看阶段日志。'),
     'multiple_l1_inputs':('多个 L1 输入来源','核对多驱动或位映射；不能自动选择其中一个 L1 端口'),
     'multiple_layer_inputs':('多个层次输入来源','核对该关注输入的多驱动、位映射和已勾选的边界层次'),
     'wire_connection_unresolved':('穿线内部未解析','核对输出是否由已配置输入直接连接；逻辑运算、常量、时序电路不作直连'),
@@ -66,12 +68,7 @@ class IssueIndex:
             conn.execute('CREATE TABLE issues(id INTEGER PRIMARY KEY,category TEXT,severity TEXT,layer TEXT,module TEXT,instance TEXT,pin TEXT,signal TEXT,reason TEXT,hint TEXT,raw TEXT)')
             conn.execute('CREATE TABLE objects(issue INTEGER,instance TEXT,pin TEXT)')
             conn.execute('CREATE INDEX object_issue ON objects(issue)')
-            sources=((row,False) for row in self.graph.get('diagnostics',[]))
-            from itertools import chain
-            sources=chain(sources,((row,True) for row in self.graph.get('boundaries',[]) if row.get('status') in UNRESOLVED
-                                   or (row.get('status') == 'undriven' and row.get('direction') == 'driver')),
-                          ((row,False) for row in self.extra))
-            for row,boundary in sources:
+            for row,boundary,known_node in self._sources(conn,cancel):
                 if cancel and cancel.is_set():return
                 code=row.get('status') if boundary else row.get('code','diagnostic')
                 label,hint=LABELS.get(code,('其他诊断（{}）'.format(code),'查看阶段日志和原始证据'))
@@ -84,7 +81,7 @@ class IssueIndex:
                 if isinstance(detail,dict) and detail.get('instance'):refs.append((detail['instance'],detail.get('pin','')))
                 refs=list(dict.fromkeys(refs))
                 instance,pin=refs[0] if refs else ('','')
-                node=nodes[instance] if instance in nodes else {}
+                node=known_node if known_node is not None else (nodes[instance] if instance in nodes else {})
                 severity='错误' if code in ('fatal','elaboration_error','verdi_exit','missing_module','scope_not_found','missing_pin','missing_trace') else '警告'
                 status=row.get('status','')
                 reason=row.get('message') or row.get('reason') or LABELS.get(status,(status or label,''))[0]
@@ -97,6 +94,30 @@ class IssueIndex:
                 conn.executemany('INSERT INTO objects VALUES (?,?,?)',((seq,key,pin) for key,pin in refs))
             conn.commit()
         finally:conn.close()
+
+    def _sources(self,conn,cancel):
+        # Retain only short cause codes. Raw NPI paths stay in the graph.
+        check_gaps = self.graph.get('summary',{}).get(FIELD) != 0
+        if check_gaps:
+            conn.execute('CREATE TEMP TABLE observations(instance TEXT,pin TEXT,code TEXT,PRIMARY KEY(instance,pin,code))')
+        for field in ('diagnostics','boundaries'):
+            boundary = field=='boundaries'
+            for row in self.graph.get(field,()):
+                if cancel is not None and cancel.is_set():return
+                code = row.get('status') if boundary else row.get('code')
+                if check_gaps and code in CAUSES and row.get('direction','driver')=='driver' and row.get('instance') and row.get('pin'):
+                    conn.execute('INSERT OR IGNORE INTO observations VALUES(?,?,?)',(row['instance'],row['pin'],code))
+                if not boundary or code in UNRESOLVED or (code=='undriven' and row.get('direction')=='driver'):
+                    yield row,boundary,None
+        for row in self.extra:yield row,False,None
+        if not check_gaps:return
+        for node,pins in nodes_with_gaps(self.graph,cancel):
+            observed = {}
+            for pin,code in conn.execute('SELECT pin,code FROM observations WHERE instance=?',(node['id'],)):
+                observed.setdefault(pin,[]).append(code)
+            for pin in pins:
+                yield dict(code='input_without_source',instance=node['id'],pin=pin,direction='driver',
+                           reason=gap_reason(node,pin,observed.get(pin,()))),False,node
 
     def connect(self):return sqlite3.connect(str(self.path))
 

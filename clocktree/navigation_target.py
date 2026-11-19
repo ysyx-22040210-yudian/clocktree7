@@ -10,10 +10,11 @@ def location_target(node, edge=None, endpoint=None, pin=None):
     if pin:
         target['pin'] = pin
     if edge is not None:
-        if endpoint not in ('source', 'target') or edge[endpoint] != target['instance']:
+        if endpoint not in ('source', 'target') or not (edge[endpoint] == target['instance'] or
+                (edge.get('input_boundary') and edge[endpoint] == node['id'])):
             raise ValueError('Navigation edge does not identify the requested endpoint')
         target.update(edge=edge['id'], endpoint=endpoint, pin=edge[endpoint+'_pin'])
-        if endpoint == 'target':
+        if endpoint == 'target' and not (edge.get('input_boundary') and node.get('reference_of')):
             target['reference_source'] = edge['source']
     return target
 

@@ -109,7 +109,7 @@ endmodule
         details.append(value)
     assert not any(r['instance'] in ('sv_ends.first','sv_ends.middle') for r in rows)
     export=plan.export(TEMPLATES,out/'all.sv');assert export['blocks']==15 and export['skipped']==0
-    content=(out/'all.sv').read_text();assert content.count('// CT7 branch ')==15 and '$var_' not in content
+    content=(out/'all.sv').read_text(encoding='utf-8');assert content.count('// CT7 branch ')==15 and '$var_' not in content
     (fixture/'checks.sv').write_text('module template_checks;\n'+content+'\nendmodule\n')
     compiled=out/'compile';compiled.mkdir()
     with (compiled/'compile.log').open('w') as log:

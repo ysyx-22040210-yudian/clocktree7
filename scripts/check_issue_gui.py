@@ -22,16 +22,21 @@ def main():
                              {'code':'missing_module','layer':2,'module':'not_found','hierarchy':'wb_top'}]
     graph['boundaries'] += [{'status':'trace_timeout','instance':'wb_top.s1','pin':'aux_clk','direction':'driver'},
                             {'status':'scope_boundary','instance':'wb_top.g0','pin':'i','direction':'driver'}]
+    from clocktree.l1_inputs import entries
+    connected={(e['target'],e['target_pin']) for e in graph['edges']}
+    gaps={(n['id'],p) for n in graph['nodes'] for p in n['inputs'] if (n['id'],p) not in connected and p not in entries(n)}
+    expected_total=704+len(gaps)
+    expected_affected=len({'wb_top.g0','wb_top.s0','wb_top.s1'} | {instance for instance,_ in gaps})
     errors=[];app=ClockTreeApp(runs=out/'runs',remember=False,session_dir=out/'session');app.geometry('1840x1000+0+0')
     app.report_callback_exception=lambda *e:errors.append(''.join(traceback.format_exception(*e)))
     pump(app,lambda:not app.busy);app.show_graph(graph);pump(app)
     issues=IssueDialog(app);pump(app,lambda:issues.ready)
     assert len(issues.table.get_children())==100
-    total,affected,rows=issues.index.query();assert total==704 and affected==3,(total,affected)
+    total,affected,rows=issues.index.query();assert (total,affected)==(expected_total,expected_affected),(total,affected)
     for i in range(7):issues.page(1)
-    assert len(issues.table.get_children())==4
-    count=issues.index.export(out/'issues.csv');assert count==704
-    with (out/'issues.csv').open(encoding='utf-8-sig',newline='') as stream:assert len(list(csv.reader(stream)))==705
+    assert len(issues.table.get_children())==min(100,expected_total-700)
+    count=issues.index.export(out/'issues.csv');assert count==expected_total
+    with (out/'issues.csv').open(encoding='utf-8-sig',newline='') as stream:assert len(list(csv.reader(stream)))==expected_total+1
     issues.category.set('端口超时');issues.page(0,True)
     key=issues.table.get_children()[0];issues.table.selection_set(key);issues.locate();pump(app)
     assert app.selected_object['id']=='wb_top.s1' and app.diagram.issue_port==('wb_top.s1','aux_clk')
@@ -40,7 +45,7 @@ def main():
     for child in issues.winfo_children():
         if child.winfo_class()=='Toplevel':child.destroy()
     issues.category.set('全部类别');issues.search.set('s0');issues.page(0,True)
-    assert issues.index.query(search='s0')[0]==702
+    assert issues.index.query(search='s0')[0]==702+issues.index.query(category='输入缺少上游连接',search='s0')[0]
     issues.table.selection_set(issues.table.get_children()[0]);pump(app)
     capture(issues,out/'issues.png');issues.close();pump(app)
     app.layout_var.set('分支紧凑布局');app.change_layout();pump(app)
@@ -57,7 +62,7 @@ def main():
     assert app.log_visible and app.log_source.get()=='阶段日志'
     failed.close()
     assert not errors,errors
-    write_graph(out/'acceptance.json',{'passed':True,'problems':704,'affected_instances':3,'csv_rows':704,'page_size':100,'no_result_failure_located':True,'errors':errors})
+    write_graph(out/'acceptance.json',{'passed':True,'problems':total,'affected_instances':affected,'csv_rows':count,'page_size':100,'no_result_failure_located':True,'errors':errors})
     app.close()
     print('ISSUE_GUI_ACCEPTED',flush=True)
 

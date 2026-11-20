@@ -254,10 +254,11 @@ class ResultStore:
         header = dict(header, ct7_index_version=INDEX_VERSION)
         config = header.get('config', {})
         if any(rule.get('kind') for layer in config.get('layers', []) for rule in layer.get('modules', [])):
-            from .devices import resolve_kind
+            from .devices import DeviceRules
+            rules = DeviceRules(config)
             for seq, data in conn.execute('SELECT seq,data FROM nodes WHERE kind IS NULL'):
                 node = self.decode(data)
-                kind = resolve_kind(node, config)
+                kind = rules.resolve(node)
                 if kind:
                     node.update(kind=kind, kind_source='configured')
                     conn.execute('UPDATE nodes SET kind=?,data=? WHERE seq=?', (kind, self.encode(node), seq))
@@ -388,40 +389,65 @@ class IndexedGraph(dict):
         super().__init__(header)
         self.store = store
         self.legacy_input_coverage = getattr(header, 'legacy_input_coverage', False)
+        self._device_rules = None
 
     def boundaries_for(self, instance):
         return RecordSequence(self.store, 'boundaries', 'instance=?', (instance,))
 
     def kind_counts(self, where='1', params=()):
+        return self.module_kind_counts(where, params)[1]
+
+    @property
+    def device_rules(self):
+        from .devices import DeviceRules
+        config = self['config']
+        if self._device_rules is None or self._device_rules.config is not config:
+            self._device_rules = DeviceRules(config)
+        return self._device_rules
+
+    def module_kind_counts(self, where, params):
         from collections import Counter
         conn = self.store.connection()
-        counts = Counter(dict(conn.execute('SELECT kind,COUNT(*) FROM nodes WHERE ' + where + ' GROUP BY kind', params)))
-        pairs = sorted({(edit['layer'], edit['module']) for edit in self.get('presentation', {}).get('kind_overrides', [])})
-        if pairs:
-            clause = ' OR '.join('(layer=? AND module=?)' for _ in pairs)
-            arguments = tuple(value for pair in pairs for value in pair)
-            for data, in conn.execute('SELECT data FROM nodes WHERE (' + where + ') AND (' + clause + ')', tuple(params) + arguments):
-                raw = self.store.decode(data)
-                current = self.present_node(raw)
-                if current.get('kind') != raw.get('kind'):
-                    counts[raw.get('kind')] -= 1
-                    counts[current.get('kind')] += 1
-        return {key: value for key, value in counts.items() if value}
+        rules = self.device_rules
+        edits = {(e['layer'], e['module']) for e in self.get('presentation', {}).get('kind_overrides', [])}
+        modules, kinds = Counter(), Counter()
+        pending = set()
+        grouped = 'SELECT layer,module,kind,COUNT(*) FROM nodes WHERE ' + where + ' GROUP BY layer,module,kind'
+        for layer, module, kind, count in conn.execute(grouped, params):
+            modules[module] += count
+            key = (layer, module)
+            if key not in edits and not rules.needs_resolution(kind, rules.by_module.get(key, ())):
+                kinds[kind] += count
+                continue
+            pending.add((layer, module, kind))
+        if pending:
+            # One streaming pass even when thousands of old rules need refinement.
+            query = 'SELECT layer,module,kind,data FROM nodes WHERE (' + where + ')'
+            args = tuple(params)
+            if len(pending) == 1:
+                query += ' AND layer=? AND module=? AND kind IS ?'
+                args += next(iter(pending))
+            for layer, module, kind, data in conn.execute(query, args):
+                if (layer, module, kind) in pending:
+                    kinds[self._present_kind(self.store.decode(data))] += 1
+        return modules, kinds
 
-    def present_node(self, record, coverage_connection=None):
-        from .devices import matching_rule, resolve_kind
-        if self.legacy_input_coverage:
-            from .input_coverage import legacy_node
-            record = legacy_node(self, record, coverage_connection)
-        kind = resolve_kind(record, self['config'])
-        if kind and kind != record.get('kind'):
-            record = dict(record, kind=kind, kind_source='configured')
+    def _present_kind(self, record):
+        from .devices import matching_rule
         for edit in reversed(self.get('presentation', {}).get('kind_overrides', [])):
             if record['layer'] == edit['layer'] and record['module'] == edit['module']:
                 layer = self['config']['layers'][record['layer']-1]
                 if any(rule.get('kind') == edit['kind'] and matching_rule(record, layer, rule) for rule in layer['modules']):
-                    record = dict(record, kind=edit['kind'], kind_source='configured')
-                    break
+                    return edit['kind']
+        return self.device_rules.resolve(record)
+
+    def present_node(self, record, coverage_connection=None):
+        if self.legacy_input_coverage:
+            from .input_coverage import legacy_node
+            record = legacy_node(self, record, coverage_connection)
+        kind = self._present_kind(record)
+        if kind and kind != record.get('kind'):
+            record = dict(record, kind=kind, kind_source='configured')
         return record
 
 

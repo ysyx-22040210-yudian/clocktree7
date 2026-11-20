@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 from clocktree.config import validate_config, write_tcl_config
-from clocktree.devices import device_style, symbol_parts, port_offsets, node_height, resolve_kind
+from clocktree.devices import CLOCK_SUBTYPES, device_style, symbol_parts, port_offsets, node_height, resolve_kind
 from clocktree.graph import build_graph
 from clocktree.viewmodel import GraphView
 
@@ -95,6 +95,75 @@ def test_clock_subtypes_use_distinct_styles_and_keep_their_logical_kinds_in_svg(
             assert 'DIV {}'.format(level) in [part.text for part in group.findall('svg:text', namespace)]
     assert len(swatches) == len(styles)
     assert view.positions == bounds and view.edges == []
+
+
+@pytest.mark.parametrize('selected,timeout', [(False,False), (True,False), (False,True)])
+def test_four_subtypes_color_the_entire_card_and_keep_selection_or_timeout(selected, timeout):
+    fills, bands, compact = set(), set(), set()
+    for kind in CLOCK_SUBTYPES:
+        n = dict(node(kind), trace_timeout=timeout)
+        parts = symbol_parts(n, 382, node_height(n), selected)
+        card = parts[0]
+        style = device_style(kind)
+        assert (card['w'],card['h'],card['fill']) == (382,node_height(n),style['card'])
+        assert card['stroke'] == ('#81c9ff' if selected else '#f5a46b' if timeout else style['color'])
+        assert any(p['op']=='rect' and p['w'] >= 350 and p['fill']==style['color'] for p in parts)
+        assert any(p.get('overview')=='symbol' and p.get('compact_text')==style['compact'][0] for p in parts)
+        fills.add(card['fill'])
+        bands.add(style['color'])
+        compact.add(style['compact'][0])
+    assert len(fills) == len(bands) == len(compact) == 4
+
+
+@pytest.mark.parametrize('indexed', [False, True])
+def test_legacy_subtypes_on_real_nodes_aggregates_and_saved_indexes(tmp_path, indexed):
+    from clocktree.indexed_view import IndexedGraphView
+    from clocktree.storage import index_graph, new_store
+    from clocktree.devices import card_style, subtype_band_colors
+
+    cfg = config('gate',['a'])
+    cfg['layers'][0]['hierarchy'] = 'top.region'
+    cfg['layers'][0]['modules'] = [dict(module=k, kind=k, clock_inputs=['a'], clock_output='q')
+                                   for k in CLOCK_SUBTYPES]
+    nodes = []
+    for k in CLOCK_SUBTYPES:
+        for i in range(2):
+            key = 'top.region.{}.n{}'.format(k,i)
+            nodes.append(dict(node('gate' if 'gate' in k else 'occ'), id=key, path=key, module=k))
+    # A similar module name outside the configured scope and a different port
+    # signature must keep their saved generic kind.
+    for key, inputs in [('top.region_other.x',['a']),('top.region.other.x',['z'])]:
+        nodes.append(dict(node('gate', inputs), id=key, path=key, module='sync_gate'))
+    graph = dict(config=cfg,nodes=nodes,edges=[])
+    if indexed:
+        graph = index_graph(graph, new_store(tmp_path))
+        assert graph.kind_counts() == dict({'gate':2}, **{k:2 for k in CLOCK_SUBTYPES})
+    view = (IndexedGraphView if indexed else GraphView)(graph).project()
+    assert [view.nodes[n['id']]['kind'] for n in nodes] == [k for k in CLOCK_SUBTYPES for _ in range(2)] + ['gate','gate']
+    view.project('hierarchy',scope='top.region',depth=3)
+    for k in CLOCK_SUBTYPES:
+        group = next(n for n in view.nodes.values() if n.get('path')=='top.region.'+k)
+        assert group['kind_counts']=={k:2} and group.get('kind') is None
+        assert card_style(group)['card']==device_style(k)['card']
+    view.project('hierarchy',depth=1)
+    group = next(iter(view.nodes.values()))
+    bands = subtype_band_colors(group)
+    assert 'card' not in card_style(group) and len(bands)==5
+    assert all(device_style(k)['color'] in bands for k in CLOCK_SUBTYPES)
+    assert view.edges==[]
+    if indexed:
+        graph.store.close()
+
+
+def test_legacy_rule_conflicts_and_explicit_kinds_are_not_relabelled():
+    cfg = config('gate_wrap',['a'])
+    raw = node('gate')
+    assert resolve_kind(raw,cfg)=='gate_wrap'
+    assert resolve_kind(node('occ'),cfg)=='occ'
+    assert resolve_kind(node('sync_gate'),cfg)=='sync_gate'
+    cfg['layers'][0]['modules'].append(dict(cfg['layers'][0]['modules'][0],kind='sync_gate'))
+    assert resolve_kind(raw,cfg)=='gate'
+    assert resolve_kind(node(None,['a']),cfg) is None
 
 
 def test_mux_many_inputs_route_to_exact_same_anchors_as_exported_symbol():

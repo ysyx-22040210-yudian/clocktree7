@@ -7,6 +7,40 @@ let viewScope = '', viewDepth = 5;
 let savedDesign = {};
 let activeTree = 'clock';
 const workspaces = new Map();
+// Light canvas colors. The four labels match the native clock device library.
+const clockSubtypes = new Map([
+  ['sync_gate',  {family:'gate', fill:'#d4f3e6', ink:'#12644e'}],
+  ['gate_wrap',  {family:'gate', fill:'#eaf2bf', ink:'#506710'}],
+  ['occ_root',   {family:'occ',  fill:'#ffe4c5', ink:'#8b4911'}],
+  ['occ_branch', {family:'occ',  fill:'#f9d8e9', ink:'#88375d'}],
+]);
+let deviceRules = new Map();
+function indexDeviceRules(config) {
+  const rules = new Map();
+  if (config.tree_type === 'reset') return rules;
+  for (const layer of config.layers || []) for (const rule of layer.modules || []) {
+    const key = JSON.stringify([layer.index, rule.module]);
+    if (!rules.has(key)) rules.set(key, []);
+    rules.get(key).push({scope:layer.hierarchy, rule});
+  }
+  return rules;
+}
+function clockSubtype(node) {
+  if (activeTree !== 'clock') return null;
+  if (node.aggregate) return node.subtypes.size === 1 ? node.subtypes.values().next().value : null;
+  if (clockSubtypes.has(node.kind)) return node.kind;
+  if (node.kind && node.kind !== 'gate' && node.kind !== 'occ') return null;
+  const pins = node.configured_inputs || node.inputs;
+  const kinds = new Set();
+  for (const {scope,rule} of deviceRules.get(JSON.stringify([node.layer,node.module])) || []) {
+    if (scope && node.id !== scope && !node.id.startsWith(scope+'.') && !node.id.startsWith(scope+'[')) continue;
+    if (rule.kind && rule.clock_output === node.output && rule.clock_inputs?.length === pins.length &&
+        pins.every((pin,i) => pin === rule.clock_inputs[i])) kinds.add(rule.kind);
+  }
+  if (kinds.size !== 1) return null;
+  const kind = kinds.values().next().value, style = clockSubtypes.get(kind);
+  return style && (!node.kind || node.kind === style.family) ? kind : null;
+}
 const profiles = {
   clock:{label:'时钟树',network:'时钟网络',inputs:'clock_inputs',output:'clock_output',types:{mux:'选择器',sync_gate:'SYNC_GATE',gate_wrap:'GATE_WRAP',occ_root:'OCC_ROOT',occ_branch:'OCC_BRANCH',div:'DIV 分频器',gate:'门控',occ:'OCC'}},
   reset:{label:'复位树',network:'复位网络',inputs:'reset_inputs',output:'reset_output',types:{mux:'MUX',rsy_sync:'RSY_SYNC'}}
@@ -83,7 +117,9 @@ function selectNode(node) {
   const relevantIds=new Set(relevant.map(e=>e.id));
   document.querySelectorAll('.node').forEach(n=>n.classList.toggle('selected',n.dataset.id===node.id));
   document.querySelectorAll('.edge').forEach(n=>n.classList.toggle('selected',relevantIds.has(n.dataset.id)));
-  details(node.id,{...node,upstream:relevant.filter(e=>e.target===node.id).map(e=>({instance:e.source,output:e.source_pin,input:e.target_pin})),downstream:relevant.filter(e=>e.source===node.id).map(e=>({instance:e.target,input:e.target_pin,output:e.source_pin})),boundaries:graph.boundaries.filter(b=>b.instance===node.id)});
+  const subtype=clockSubtype(node);
+  const classification=subtype ? {'显示器件类型':subtype.toUpperCase()} : {};
+  details(node.id,{...node,...classification,upstream:relevant.filter(e=>e.target===node.id).map(e=>({instance:e.source,output:e.source_pin,input:e.target_pin})),downstream:relevant.filter(e=>e.source===node.id).map(e=>({instance:e.target,input:e.target_pin,output:e.source_pin})),boundaries:graph.boundaries.filter(b=>b.instance===node.id)});
 }
 function inScope(path) {return !viewScope || path===viewScope || path.startsWith(viewScope+'.') || path.startsWith(viewScope+'[');}
 function makeView(nodes, edges) {
@@ -91,8 +127,9 @@ function makeView(nodes, edges) {
   const groups=new Map(),owners=new Map();
   for(const node of nodes) {
     const prefix=node.id.split('.').slice(0,viewDepth).join('.'),key=`group:${node.component}:${node.layer}:${prefix}`;
-    if(!groups.has(key)) groups.set(key,{id:key,path:prefix,layer:node.layer,component:node.component,aggregate:true,members:[],moduleCounts:{},inputs:['输入'],output:'输出',rootCount:0,terminalCount:0,internalEdges:0});
+    if(!groups.has(key)) groups.set(key,{id:key,path:prefix,layer:node.layer,component:node.component,aggregate:true,members:[],moduleCounts:{},subtypes:new Set(),inputs:['输入'],output:'输出',rootCount:0,terminalCount:0,internalEdges:0});
     const group=groups.get(key);group.members.push(node.id);group.moduleCounts[node.module]=(group.moduleCounts[node.module]||0)+1;group.rootCount+=Number(node.root);group.terminalCount+=Number(node.terminal);group.has_unresolved_output ||= node.has_unresolved_output;owners.set(node.id,group);
+    group.subtypes.add(clockSubtype(node));
   }
   const display=[];
   for(const group of groups.values()) {
@@ -156,7 +193,21 @@ function draw() {
   }
   for(const node of nodes) {
     const p=positions.get(node.id),g=element('g',{class:'node'+(node.aggregate?' aggregate':''),transform:`translate(${p.x},${p.y})`,'data-id':node.id});
-    g.appendChild(element('rect',{width:236,height:p.height}));
+    const kind=clockSubtype(node),style=clockSubtypes.get(kind);
+    g.appendChild(element('rect',{width:236,height:p.height,class:'card'}));
+    if(style) {
+      g.classList.add('subtyped');
+      g.setAttribute('data-device-kind',kind);
+      g.style.setProperty('--device-fill',style.fill);
+      g.style.setProperty('--device-ink',style.ink);
+      g.appendChild(element('text',{x:225,y:p.height-7,class:'subtype-label','text-anchor':'end'},kind.toUpperCase()));
+    }
+    const bands=node.aggregate ? [...clockSubtypes.keys()].filter(k=>node.subtypes.has(k)) : (kind ? [kind] : []);
+    if(bands.length && node.aggregate && node.subtypes.has(null)) bands.push(null);
+    bands.forEach((k,i)=>{
+      const span=220/bands.length;
+      g.appendChild(element('path',{d:`M${8+i*span},3 h${span}`,stroke:clockSubtypes.get(k)?.ink||'#8291a8','stroke-width':4,class:'subtype-band'}));
+    });
     const short=(node.path||node.id).split('.').slice(-2).join('.');
     g.appendChild(element('text',{x:12,y:19,class:'name'},short.length>30?short.slice(0,28)+'…':short));
     g.appendChild(element('text',{x:12,y:34,class:'module'},node.module));
@@ -181,7 +232,7 @@ function locate() {
 }
 function showGraph(result) {
   if(!Array.isArray(result.nodes)||!Array.isArray(result.edges)||!result.summary)throw new Error(`请选择 ${productName} 结果 JSON`);
-  setConfig(result.config);graph=result;nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';
+  setConfig(result.config);graph=result;deviceRules=indexDeviceRules(result.config);nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';
   const s=result.summary,values=[s.instances,s.edges,s.roots,s.terminals,s.components,s.unresolved];
   [...$('stats').children].forEach((n,i)=>n.querySelector('b').textContent=values[i].toLocaleString());
   $('state').textContent=!s.connectivity_complete?'含未解析项 / 诊断':s.topology_valid===false?'连接已解析 · 存在结构异常':result.config.trace_scope?`范围内连接已解析 · ${s.scope_boundaries||0} 处边界`:'全量连接已解析';$('state').className='state '+(s.connectivity_complete&&s.topology_valid!==false?'pass':'warn');

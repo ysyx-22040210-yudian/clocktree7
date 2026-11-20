@@ -1,7 +1,7 @@
 """Retained Tk scene: transforms existing items and updates viewport differences."""
 from collections import Counter
 
-from .devices import device_style
+from .devices import card_style, subtype_band_colors
 from .div_sources import div_source_level
 from .layout import SpatialIndex
 from .desktop_art import draw_grid
@@ -157,11 +157,12 @@ class CanvasScene:
             issue_pin=issue[1] if issue[0] and issue[0] in (key,node.get('reference_of')) else None
             navigation_pin=(getattr(d,'selection_target',None) or {}).get('pin') if selected else None
             div_level = div_source_level(node, m.div_source_levels)
+            appearance = (node.get('kind'), div_level, id(node.get('kind_counts')))
             detail_key = ('coarse' if coarse else 'detail', round(scale,5) if not zooming else None,
-                          selected,issue_pin,navigation_pin,div_level)
+                          selected,issue_pin,navigation_pin,appearance)
             if old:
                 tag,previous,_ = old
-                if (previous[0] == detail_key[0] and previous[2] == selected and previous[-1] == div_level
+                if (previous[0] == detail_key[0] and previous[2] == selected and previous[-1] == appearance
                         and (zooming or previous == detail_key)):
                     continue
                 for item in c.find_withtag(tag): d.port_tooltips.pop(item,None)
@@ -171,9 +172,18 @@ class CanvasScene:
             x,y,w,h = m.positions[key]
             tags=('world','node',tag)
             if coarse or zooming:
-                style=device_style(node.get('kind'),div_level)
-                c.create_rectangle(x*scale+ox,y*scale+oy,(x+w)*scale+ox,(y+h)*scale+oy,
-                                   fill=style['fill'],outline='#def0ff' if selected else style['color'],tags=tags)
+                style=card_style(node,div_level)
+                left,top=x*scale+ox,y*scale+oy
+                right,bottom=(x+w)*scale+ox,(y+h)*scale+oy
+                outline='#def0ff' if selected else ('#f5a46b' if node.get('trace_timeout') else style['color'])
+                c.create_rectangle(left,top,right,bottom,fill=style['fill'],outline=outline,tags=tags)
+                if node.get('aggregate'):
+                    bands=subtype_band_colors(node)
+                    if len(bands)>1:
+                        span=(right-left-2)/len(bands)
+                        for i,ink in enumerate(bands):
+                            c.create_rectangle(left+1+i*span,top+1,left+1+(i+1)*span,top+max(3,5*scale),
+                                               fill=ink,outline='',tags=tags)
                 if zooming and not coarse:
                     detail_key = ('temporary',) + detail_key[1:]
             else:
@@ -213,7 +223,7 @@ class CanvasScene:
                 points=[v for x,y in m.edge_points(edge) for v in (px+x*ratio,py+y*ratio)]
                 if len(points)>=4:c.create_line(*points,fill='#526d8e',tags='map-route')
             for key,(x,y,w,h) in m.positions.items():
-                color=device_style(m.nodes[key].get('kind'),div_source_level(m.nodes[key],m.div_source_levels))['color']
+                color=card_style(m.nodes[key],div_source_level(m.nodes[key],m.div_source_levels))['color']
                 nx,ny=px+x*ratio,py+y*ratio
                 c.create_rectangle(nx,ny,nx+max(2,w*ratio),ny+max(2,h*ratio),fill=color,outline='',tags='map-node')
         else:

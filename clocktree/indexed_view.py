@@ -1,5 +1,4 @@
 """Bounded, query-on-expansion presentation of a disk indexed complete graph."""
-from collections import Counter
 import json
 from collections.abc import Mapping, Sequence
 import uuid
@@ -217,12 +216,9 @@ class IndexedGraphView(GraphView):
                     node['component'] = 0
             else:
                 members = QuerySequence(self.store, 'SELECT id FROM nodes WHERE ' + condition, gp, count=count)
-                modules, kinds = Counter(), Counter()
-                for module, kind, n in conn.execute('SELECT module,kind,COUNT(*) FROM nodes WHERE ' + condition + ' GROUP BY module,kind', gp):
-                    modules[module] += n
-                    kinds[kind or 'unclassified'] += n
-                if self.graph.get('presentation', {}).get('kind_overrides'):
-                    kinds = self.graph.kind_counts(condition, gp)
+                modules, kinds = self.graph.module_kind_counts(condition, gp)
+                if None in kinds:
+                    kinds['unclassified'] += kinds.pop(None)
                 node = dict(id='group:{}:{}:{}'.format(c, layer, path), path=path, layer=layer, component=c,
                     aggregate=True, members=members, module_counts=modules, kind_counts=kinds,
                     module='{} 个实例 · {} 种模块'.format(count, len(modules)), inputs=['输入'], output='输出',

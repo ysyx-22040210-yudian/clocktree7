@@ -25,7 +25,7 @@ from .paths import default_runs_dir
 from .paths import user_state_root
 from .environment import resolve_verdi
 from .tkdiagram import ClockDiagram, draw_device
-from .devices import DIV_SOURCE_STYLES, LABEL_TO_KIND, device_style, kind_label, type_labels, node_height, matching_rule, connection_details
+from .devices import DIV_SOURCE_STYLES, LABEL_TO_KIND, card_style, device_style, kind_label, type_labels, node_height, matching_rule, connection_details
 from .div_sources import read_div_source_levels
 from .l1_inputs import INPUT_SOURCE_KINDS, source_title, source_basis
 from .register_results import latest_register_result
@@ -2190,7 +2190,7 @@ class ClockTreeApp(tk.Tk):
         level=node.get('layer')
         kind=node.get('kind')
         from .div_sources import div_source_level
-        look=device_style(kind,div_source_level(node,self.diagram.model.div_source_levels))
+        look=card_style(node,div_source_level(node,self.diagram.model.div_source_levels))
         category='RTL 层次聚合' if node.get('aggregate') else kind_label(kind,self._active_tree_type)
         if kind=='div' and look.get('short')!='DIV':category=look['short']
         self.identity_type.configure(text='  ·  '.join(filter(None,(category,'L{}'.format(level) if level is not None else ''))))

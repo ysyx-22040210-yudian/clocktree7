@@ -11,11 +11,15 @@ from .l1_inputs import INPUT_SOURCE_KINDS, source_title
 DEVICE_TYPES = {
     'mux': {'label': '选择器', 'short': 'MUX', 'color': '#66b7ff', 'fill': '#193954'},
     'gate': {'label': '门控', 'short': 'GATE', 'color': '#42d1b2', 'fill': '#163b38'},
-    'sync_gate': {'label': 'SYNC_GATE', 'short': 'SYNC_GATE', 'color': '#42d1b2', 'fill': '#163b38'},
-    'gate_wrap': {'label': 'GATE_WRAP', 'short': 'GATE_WRAP', 'color': '#c5e66a', 'fill': '#343e24'},
+    'sync_gate': {'label': 'SYNC_GATE', 'short': 'SYNC_GATE', 'compact': 'SYNC',
+                  'color': '#64f0c5', 'fill': '#12604e', 'card': '#103e36'},
+    'gate_wrap': {'label': 'GATE_WRAP', 'short': 'GATE_WRAP', 'compact': 'WRAP',
+                  'color': '#e0f478', 'fill': '#526315', 'card': '#394617'},
     'occ': {'label': 'OCC', 'short': 'OCC', 'color': '#f1ba64', 'fill': '#3c3125'},
-    'occ_root': {'label': 'OCC_ROOT', 'short': 'OCC_ROOT', 'color': '#ffc067', 'fill': '#3c3125'},
-    'occ_branch': {'label': 'OCC_BRANCH', 'short': 'OCC_BRANCH', 'color': '#ff758f', 'fill': '#47263a'},
+    'occ_root': {'label': 'OCC_ROOT', 'short': 'OCC_ROOT', 'compact': 'ROOT',
+                 'color': '#ffbd73', 'fill': '#74431d', 'card': '#50331d'},
+    'occ_branch': {'label': 'OCC_BRANCH', 'short': 'OCC_BRANCH', 'compact': 'BRANCH',
+                   'color': '#ff9bca', 'fill': '#713051', 'card': '#50253e'},
     'div': {'label': 'DIV 分频器', 'short': 'DIV', 'color': '#9bb0c7', 'fill': '#29394b'},
     'rsy_sync': {'label': 'RSY_SYNC', 'short': 'RSY_SYNC', 'color': '#f39bbd', 'fill': '#402939'},
     'subsystem': {'label': '子系统 SUBSYSTEM', 'short': 'SUBSYS', 'color': '#80ceea', 'fill': '#193c4d'},
@@ -32,12 +36,35 @@ INPUT_SOURCE_STYLES = {
     'boundary_input': {'short': '层次边界', 'color': '#7ee1c6', 'fill': '#1c4340'},
 }
 UNTYPED_STYLE = {'color': '#8199b9', 'fill': '#1c2d44', 'short': '未分类'}
+CLOCK_SUBTYPES = ('sync_gate', 'gate_wrap', 'occ_root', 'occ_branch')
+LEGACY_SUBTYPES = {'gate': ('sync_gate', 'gate_wrap'), 'occ': ('occ_root', 'occ_branch')}
 
 
 def device_style(kind, div_level=None):
     if kind == 'div' and div_level in DIV_SOURCE_STYLES:
         return DIV_SOURCE_STYLES[div_level]
     return DEVICE_TYPES.get(kind) or INPUT_SOURCE_STYLES.get(kind, UNTYPED_STYLE)
+
+
+def card_style(node, div_level=None):
+    if node.get('aggregate'):
+        counts = node.get('kind_counts', {})
+        if len(counts) == 1:
+            only_kind = next(iter(counts))
+            if only_kind in CLOCK_SUBTYPES:
+                return DEVICE_TYPES[only_kind]
+    return device_style(node.get('kind'), div_level)
+
+
+def subtype_band_colors(node):
+    if not node.get('aggregate'):
+        kind = node.get('kind')
+        return (DEVICE_TYPES[kind]['color'],) if kind in CLOCK_SUBTYPES else ()
+    counts = node.get('kind_counts', {})
+    colors = tuple(DEVICE_TYPES[k]['color'] for k in CLOCK_SUBTYPES if counts.get(k))
+    if colors and any(n and k not in CLOCK_SUBTYPES for k, n in counts.items()):
+        colors += (UNTYPED_STYLE['color'],)
+    return colors
 
 
 def kind_label(kind, tree='clock'):
@@ -67,33 +94,49 @@ def matching_rule(node, layer, rule):
             (node.get('configured_outputs', output_ports(node)) == output if rule.get('kind') == 'wire' else (node.get('output') or None) == (output or None)))
 
 
+class DeviceRules:
+    """Resolve saved declarations by layer, module, scope and ports."""
+
+    def __init__(self, config):
+        self.config = config
+        self.allowed = profile(config)['kinds']
+        self.by_module = {}
+        for layer in config.get('layers', []):
+            for rule in layer.get('modules', []):
+                key = (layer['index'], rule['module'])
+                self.by_module.setdefault(key, []).append((layer, rule))
+
+    def needs_resolution(self, kind, candidates):
+        if kind not in self.allowed:
+            return bool(candidates)
+        family = LEGACY_SUBTYPES.get(kind, ())
+        return bool(family) and any(rule.get('kind') in family for _, rule in candidates)
+
+    def resolve(self, node):
+        kind = node.get('kind')
+        if kind in self.allowed and kind not in LEGACY_SUBTYPES:
+            return kind
+        candidates = self.by_module.get((node['layer'], node['module']), ())
+        if self.needs_resolution(kind, candidates):
+            matched = {rule['kind'] for layer, rule in candidates
+                       if rule.get('kind') in self.allowed and matching_rule(node, layer, rule)}
+            if len(matched) == 1:
+                declared = matched.pop()
+                if kind not in self.allowed or declared in LEGACY_SUBTYPES.get(kind, ()):
+                    return declared
+        return kind if kind in self.allowed else None
+
+
 def resolve_kind(node, config):
-    """Read explicit metadata only. A module name never determines its kind."""
-    allowed = profile(config)['kinds']
-    if node.get('kind') in allowed:
-        return node['kind']
-    for layer in config.get('layers', []):
-        for rule in layer.get('modules', []):
-            if rule.get('kind') in allowed and matching_rule(node, layer, rule):
-                return rule['kind']
-    return None
+    return DeviceRules(config).resolve(node)
 
 
 def typed_nodes(graph):
     result = {}
-    allowed = profile(graph.get('config', graph))['kinds']
-    # Index rules so opening a large graph is linear in the number of instances.
-    rules = {}
-    for layer in graph.get('config', {}).get('layers', []):
-        for rule in layer.get('modules', []):
-            if rule.get('kind') in allowed:
-                rules.setdefault((layer['index'], rule['module']), []).append((layer, rule))
+    rules = DeviceRules(graph.get('config', graph))
     for original in graph['nodes']:
         node = dict(original)
-        kind = node.get('kind')
-        if kind not in allowed:
-            kind = next((rule['kind'] for layer, rule in rules.get((node['layer'], node['module']), [])
-                         if matching_rule(node, layer, rule)), None)
+        kind = rules.resolve(node)
         if kind:
             node['kind'], node['kind_source'] = kind, 'configured'
         else:
@@ -241,7 +284,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         if pin not in gaps:return label
         suffix = '缺少上游' if gaps[pin]==[pin] else '{} 位缺少上游'.format(len(gaps[pin]))
         return label+' · '+suffix
-    info = device_style(kind, div_level)
+    info = card_style(node, div_level)
     color = info['color']
     inputs, output = port_offsets(node, width, height)
     total_height = height
@@ -252,9 +295,15 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
         add('polyline', points=points, fill=fill, width=stroke_width, **kwargs)
     def text(x, y, value, size=10, fill='#b9cee9', bold=False, anchor='w', max_width=None, tooltip=None):
         add('text', x=x, y=y, text=value, size=size, fill=fill, bold=bold, anchor=anchor, max_width=max_width, tooltip=tooltip)
+    accent = color if 'card' in info else '#3b506b'
     add('rect', x=0, y=0, w=width, h=total_height, radius=8,
-        fill='#1d3552' if selected else '#19283b',stroke='#81c9ff' if selected else ('#f5a46b' if node.get('trace_timeout') else '#3b506b'),
+        fill=info.get('card', '#1d3552' if selected else '#19283b'),
+        stroke='#81c9ff' if selected else ('#f5a46b' if node.get('trace_timeout') else accent),
         width=2 if selected else 1, dash=aggregate)
+    bands = subtype_band_colors(node)
+    for index, ink in enumerate(bands):
+        span = (width - 16) / len(bands)
+        add('rect', x=8+index*span, y=2, w=span, h=5, radius=0, fill=ink, stroke='', width=0)
     path = node.get('path', node['id'])
     title = path.split('.')[-1] if aggregate else '.'.join(path.split('.')[-2:])
     if aggregate:
@@ -271,6 +320,8 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
     parts[-1]['overview']='badge'
     text(width-9-badge_width/2,16,badge,size=10,fill=color,bold=True,anchor='center',max_width=badge_width-5,tooltip=badge)
     parts[-1]['overview']='badge'
+    if 'compact' in info and not aggregate:
+        parts[-1]['compact_text'] = info['compact']
     text(18,35,node['module'],size=11,fill='#b0bfd1',max_width=width-(128 if node.get('trace_timeout') else 30))
     if node.get('trace_timeout'):
         text(width-11, 34, 'trace 超时', size=10, fill='#ffb27b', bold=True, anchor='e')
@@ -359,6 +410,7 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
             else:
                 first, second = info['short'].split('_')
                 text(108, cy-13, first, size=9, fill=color, bold=True, anchor='center')
+                parts[-1].update(overview='symbol', compact_text=info['compact'][0])
                 text(108, cy-3, second, size=9, fill=color, bold=True, anchor='center')
             line([(92,cy+13),(98,cy+13),(98,cy+5),(105,cy+5),(105,cy+13),(117,cy+13)], stroke_width=1.2)
             input_end, output_start = 78, 143
@@ -390,6 +442,8 @@ def symbol_parts(node, width, height, selected=False, div_level=None):
                 fill=info['fill'], stroke=color, width=1.8)
             text(122, cy-8, info['short'], size=16 if kind == 'occ' else 11,
                  fill=color, bold=True, anchor='center')
+            if 'compact' in info:
+                parts[-1].update(overview='symbol', compact_text=info['compact'][0])
             pulse = [(84,cy+16)]
             for x in (91,112,133):
                 pulse += [(x,cy+16),(x,cy+6),(x+9,cy+6),(x+9,cy+16)]

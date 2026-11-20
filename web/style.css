@@ -2,3 +2,7 @@
 
 .toolbar{flex-wrap:wrap}.toolbar #runs{max-width:195px}.toolbar #search{min-width:160px}.scope-bar{padding:7px 16px;background:#edf3ff;display:flex;gap:10px;align-items:center;font-size:11px;overflow-wrap:anywhere}.scope-bar[hidden]{display:none}.scope-bar button{padding:5px 8px}.node.aggregate rect{stroke-dasharray:5 3;fill:#eef4ff}.node.aggregate .name{fill:#265fae}.inspector button{margin:8px 0;max-width:100%;white-space:normal}
 .edge-hit{fill:none;stroke:transparent;stroke-width:12;vector-effect:non-scaling-stroke;cursor:pointer}.column-bg,.column-title,.column-count{pointer-events:none}
+.node.subtyped rect.card{fill:var(--device-fill);stroke:var(--device-ink)}
+.node.subtyped:hover rect.card,.node.subtyped.selected rect.card{stroke:#3977e6;stroke-width:2}
+.node.subtyped.search-match rect.card{stroke:#a6690d;stroke-width:2}
+.node .subtype-label{fill:var(--device-ink);font-size:10px;font-weight:700}

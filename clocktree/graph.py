@@ -3,7 +3,7 @@ from collections import Counter, defaultdict, deque
 import hashlib
 import json
 import sys
-from .devices import resolve_kind
+from .devices import DeviceRules
 from .profiles import profile, tree_type, output_ports
 from .config import configured_input_boundaries, hierarchy_contains
 from .input_coverage import missing_inputs
@@ -258,8 +258,9 @@ def build_graph(events, config, evidence_store=None):
         metadata['expected_module_checkpoints'] = expected_modules
         if metadata.get('module_checkpoints', 0) != expected_modules or (completed and metadata.get('npi_counts', {}).get('module_rules') != expected_modules):
             diagnostics.append({'code': 'missing_module_checkpoint', 'expected': expected_modules, 'observed': metadata.get('module_checkpoints', 0)})
+    device_rules = DeviceRules(config)
     for node in nodes.values():
-        kind = resolve_kind(node, config)
+        kind = device_rules.resolve(node)
         if kind:
             node['kind'], node['kind_source'] = kind, 'configured'
     for trace in active.values():

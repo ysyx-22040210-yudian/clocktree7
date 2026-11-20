@@ -10,7 +10,7 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">观钟王  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="gui">观钟王 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本 3.19 · 更新于 2026-11-20 · 适用界面为 Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本 3.20 · 更新于 2026-11-20 · 适用界面为 Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶栏的分析类型下拉框可切换时钟树与复位树。时钟树有 MUX、SYNC_GATE、GATE_WRAP、OCC_ROOT、OCC_BRANCH、DIV、穿线和 SUBSYSTEM。复位树有 MUX、RSY_SYNC、穿线和 SUBSYSTEM。关注端口及辅助端口都可从 elab 正则筛选后写入文本框，也可直接编辑。两种分析均默认两级，可自定义层数并分别保存配置草稿、结果和搜索历史。端口操作见 <a href="#device-ports-and-div-sources">第 36 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
@@ -392,7 +392,7 @@ L7  fixture_top.l7
 <td>一个关注输入</td>
 <td>一个关注输出</td>
 <td><code>occ_branch</code></td>
-<td>珊瑚红色切角块，显示 OCC_BRANCH</td>
+<td>玫红色切角块，显示 OCC_BRANCH</td>
 </tr>
 <tr>
 <td>DIV 分频器</td>
@@ -2621,9 +2621,11 @@ end
 <p><a class="figure" href="images/device-output-regex.png" target="_blank"><img alt="从 elab 筛选实际输出端口" src="images/device-output-regex.png" /></a></p>
 <h3 id="362-occ">36.2 选择 OCC 和门控子类型</h3>
 <p>模块规则的器件类型下拉框、架构图和 SVG 显示 <code>OCC_ROOT</code>、<code>OCC_BRANCH</code>、<code>SYNC_GATE</code>、<code>GATE_WRAP</code>。类型由用户选择。<code>OCC_ROOT</code> 的名称表示器件类型，实际分支起点由连线决定。两个门控类型都支持 <code>gt</code>，分支中的门控按照实际串接顺序共用 <code>$var_gt0</code>、<code>$var_gt1</code>、<code>$var_gt2</code>。</p>
-<p>已有 <code>occ</code>、<code>gate</code> 的配置和结果可继续打开。编辑旧规则时可改选对应子类型。时钟分支可从任意规则层开始，使用实际起始器件分类模板，并读取它所属层的复位信号。</p>
+<p>主画布和双击打开的分支画布用整张卡片的底色及顶边色带区分四类器件。SYNC_GATE 为青绿，GATE_WRAP 为黄绿，OCC_ROOT 为琥珀橙，OCC_BRANCH 为玫红。缩小时，符号内分别显示 <strong>S、W、R、B</strong>，再缩小时保留类型色块。选中器件后，外框标记选中状态，底色继续表示类型。勾选画布右上角的 <strong>器件图例</strong> 可对照名称。</p>
+<p>在 <strong>RTL 层次概览</strong> 中，只含一种已分类门控或 OCC 的聚合卡片沿用该类型底色。混合聚合在顶部列出各类型的色段，灰段表示还包含其他类型，各色段表示类型存在。点击卡片可在右侧查看实例数量。</p>
+<p>打开只记录了 <code>gate</code> 或 <code>occ</code> 的旧结果时，工具会核对结果中保存的层级、module、实例范围和关注端口。唯一匹配到明确子类型时，卡片会自动着色。如果旧规则也只写了通用类型，可在左侧编辑对应 module 规则，选择子类型并保存。只改类型即可更新已有结果的画布。时钟分支可从任意规则层开始，使用实际起始器件分类模板，并读取它所属层的复位信号。</p>
 <p>如果旧版结果曾在 L1 层次接口终止追踪，请用新版重新提取一次，以恢复该接口上游的实际连接。已有结果可直接按已保存的连线重新分析 SV 分支。</p>
-<p><a class="figure" href="images/device-origin-tree.png" target="_blank"><img alt="包含新器件子类型的真实提取结果" src="images/device-origin-tree.png" /></a></p>
+<p><a class="figure" href="images/clock-subtype-cards.png" target="_blank"><img alt="VM 原生 Tk 画布中的两类门控和两类 OCC，同一分支可见四种卡片底色" src="images/clock-subtype-cards.png" /></a></p>
 <h3 id="363-div">36.3 填写 DIV 的两条来源层次</h3>
 <p>在主界面 <strong>提取配置 → DIV 寄存器来源</strong> 成对填写 <strong>来源层次 1</strong> 与 <strong>来源层次 2</strong> 的完整 RTL 路径。例如 <code>chip.u_ctrl_a</code> 和 <code>chip.u_ctrl_b</code>。配置 JSON 对应如下。</p>
 <pre><code class="language-json">&quot;div_source_scopes&quot;: [&quot;chip.u_ctrl_a&quot;, &quot;chip.u_ctrl_b&quot;]

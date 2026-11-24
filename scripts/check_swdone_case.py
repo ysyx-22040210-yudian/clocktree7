@@ -23,12 +23,14 @@ def main():
     args=parser.parse_args();out=args.out.resolve();out.mkdir(parents=True,exist_ok=True)
     fixture=out/'fixture';fixture.mkdir()
     rtl=['module ack_div #(parameter W=4)(input i,output o,output [W-1:0] done);assign o=i;assign done={W{i}};endmodule',
+         'module check_sink(input clk_i); endmodule',
          'module case_top(input clk,rst_n,dft_mode,en,input [1:0] state,state2,C,D,input [7:0] payload,input [2:0] idx);']
     expected=set();positive=[]
     def device(name,width=4):
         b='b_'+name
         rtl.extend(['wire [{}:0] {}; wire clk_{};'.format(width-1,b,name),
                     'ack_div #({}) {}(.i(clk),.o(clk_{}),.done({}));'.format(width,name,name,b)])
+        rtl.append('check_sink sink_{}(.clk_i(clk_{}));'.format(name,name))
         return b
     def mapping(name,b,targets):
         positive.append(name)
@@ -71,7 +73,7 @@ def main():
         subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all','-top','case_top',str(design),'-o','simv'],cwd=str(kdb),stdout=log,stderr=subprocess.STDOUT)
     rule=dict(module='ack_div',kind='div',clock_inputs=['i'],clock_output='o',aux_ports={'sw_done':'done'})
     config=dict(design=dict(top='case_top',elab=str(kdb/'simv.daidir/kdb.elab++')),memory_limit_gib=4,
-                layers=[dict(index=1,hierarchy='case_top',modules=[rule])])
+                layers=[dict(index=1,hierarchy='case_top',modules=[rule,dict(module='check_sink',kind='subsystem',clock_inputs=['clk_i'])])])
     graph,_=extract(config,out/'tree')
     request=dict(config=graph['config'],seeds=list(seeds_from_graph(graph)),trace_root='case_top',dft_zero=['dft_mode'])
     write_graph(out/'request.json',request);start=time.monotonic();result=trace(out/'request.json',out/'registers');seconds=time.monotonic()-start
@@ -101,7 +103,7 @@ def main():
     before=(out/'registers/verdi.log').stat().st_size
     assert trace(out/'request.json',out/'registers',resume=True)['summary']==result['summary']
     assert (out/'registers/verdi.log').stat().st_size==before
-    plan=prepare(graph,out/'registers',out/'plan',False);branches={r['instance']:r for r in plan.branches(limit=100)[1]}
+    plan=prepare(graph,out/'registers',out/'plan',False);branches={r['instance'].replace('.sink_','.'):r for r in plan.branches(limit=100)[1]}
     templates={'without_mux':'initial $display("sw_done=%b", $var_swdone);'}
     resolved=plan.resolve(branches['case_top.plain'],templates)
     assert resolved['ready'] and resolved['values']['var_swdone']=='case_top.b_plain[3:0]'

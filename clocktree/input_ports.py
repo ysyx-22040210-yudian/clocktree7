@@ -87,18 +87,19 @@ def discover(request_path, output):
     # Verdi. No trace calls, no timer, and no source-code regex are involved.
     command = [executable, '-batch', '-nologo', '-play', 'discover_inputs.tcl']
     code = subprocess.call(command, cwd=str(work), env=environment)
-    rows, completed, failure = [], None, None
+    rows, warnings, completed, failure = [], [], None, None
     if raw.exists():
         with raw.open(encoding='utf-8') as stream:
             for line in stream:
                 item = json.loads(line)
                 if item['event'] in ('input_port', 'output_port'): rows.append(item)
+                elif item['event'] == 'diagnostic' and item.get('code') == 'missing_module': warnings.append(item)
                 elif item['event'] == 'input_discovery_complete': completed = item
                 elif item['event'] == 'input_discovery_failed': failure = item['reason']
-    if code or failure or not completed or not completed['instances']:
+    if code or failure or not completed:
         raise RuntimeError(failure or '端口读取未完成，请查看前处理日志')
     result = dict(module=module, hierarchy=scope, instances=completed['instances'], ports=rows,
                   operation='input-discovery-only' if directions == ['input'] else 'port-discovery-only',
-                  directions=directions, traced_ports=0)
+                  directions=directions, traced_ports=0, warnings=warnings)
     (output/'input-ports.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
     return result

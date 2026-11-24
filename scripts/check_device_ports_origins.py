@@ -54,6 +54,7 @@ module check_region(input clk_in, raw_in, en_a, en_b, input [2:0] rate,
   check_occ_branch end_i(.i(c3), .o(clk_out));
   check_occ_root raw_i(.i(raw_in), .o(raw_out));
 endmodule
+module check_sink(input checked,raw,iso); endmodule
 module origin_top(input [3:0] pads, input cfg_clk, rst_n,
                   input [2:0] data, output out_clk, raw_clk, iso_clk);
   wire qa, qb, qc, selected;
@@ -64,6 +65,7 @@ module origin_top(input [3:0] pads, input cfg_clk, rst_n,
   check_region region(.clk_in(selected), .raw_in(pads[2]), .en_a(qa), .en_b(qb),
                       .rate({qc,qb,qa}), .clk_out(out_clk), .raw_out(raw_clk));
   check_occ_branch iso(.i(pads[3]), .o(iso_clk));
+  check_sink sink(.checked(out_clk), .raw(raw_clk), .iso(iso_clk));
   check_probe #(.W(2)) probe2(.lanes(pads[1:0]), .test(qa), .pass(), .extra());
   check_probe #(.W(3)) probe3(.lanes(pads[2:0]), .test(qb), .pass(), .extra());
 endmodule
@@ -94,6 +96,9 @@ def fixture(out):
                       rule('occ_root','occ_root'), rule('sync_gate','sync_gate',auxiliary={'gt':'en'}),
                       rule('gate_wrap','gate_wrap',auxiliary={'gt':'en'}), rule('div','div',auxiliary={'div':'ratio'}),
                       rule('occ_branch','occ_branch')]},
+                  {'index':4, 'hierarchy':'origin_top', 'modules':[
+                      {'module':'check_sink','kind':'subsystem','clock_inputs':['checked','raw','iso']}]},
+
               ]}
     return config, rtl
 
@@ -106,7 +111,7 @@ def native(out):
         nodes = {n['id']: n for n in graph['nodes']}
         assert graph['summary']['connectivity_complete'] and graph['summary']['topology_valid'], graph['summary']
         chain = ['origin_top.m'] + ['origin_top.region.'+name for name in ('root_i','sync_i','wrap_i','div_i','end_i')]
-        assert {(e['source'],e['target']) for e in graph['edges']} == set(zip(chain,chain[1:]))
+        assert {(e['source'],e['target']) for e in graph['edges']} == set(zip(chain,chain[1:])) | {(name,'origin_top.sink') for name in (chain[-1],'origin_top.region.raw_i','origin_top.iso')}
         roots = [n for n in nodes.values() if n['root']]
         assert len(roots) == 3 and all(n['layer'] > 1 for n in roots)
         assert not nodes['origin_top.region.root_i'].get('l1_inputs')
@@ -133,7 +138,7 @@ def native(out):
     plan = prepare(graph_for_templates(target,draft),registers,out/'plan')
     total, rows = plan.branches()
     assert total == 3
-    mux = next(row for row in rows if row['instance']=='origin_top.region.end_i')
+    mux = next(row for row in rows if row['pin']=='checked')
     assert mux['mode']=='with_mux'
     assert not plan.resolve(mux,TEMPLATES)['ready']
     choices = plan.candidates(mux,'var_div')

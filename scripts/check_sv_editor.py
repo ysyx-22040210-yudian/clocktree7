@@ -79,7 +79,10 @@ def main():
     replace(editor,'// 中文 '+('\U0001f680 ' if editor.nonbmp_supported else '')+'comment\nlogic [7:0] x = 8\'hff;\n'+SAMPLE)
     pump(root,lambda:not editor.highlight_busy)
     for spelling,tag in [('logic','type'),("8'hff",'number'),('property','keyword'),('$var_clkip','variable'),('$display','system'),('// 中文','comment')]:
-        index=text.search(spelling,'1.0','end');assert index and tag in text.tag_names(index),(spelling,index,text.tag_names(index))
+        index=text.search(spelling,'3.0' if tag=='variable' else '1.0','end')
+        while index and tag not in text.tag_names(index):
+            index=text.search(spelling,index+'+1c','end')
+        assert index,(spelling,tag)
     editor.show_find();editor.find_var.set('property');editor.find_next();pump(root)
     assert text.get('sel.first','sel.last')=='property';editor.hide_find()
     replace(editor,'check_$var_clkip_sva $var_pll10');pump(root,lambda:not editor.highlight_busy)

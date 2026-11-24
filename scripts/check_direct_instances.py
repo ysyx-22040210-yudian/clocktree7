@@ -174,8 +174,9 @@ def main():
         cfg=config(filelist)
         cfg['layers']=[{'index':1,'hierarchy':'direct_top.domain','modules':[rule(module,'gate',['i'],'o')]}]
         graph=run(cfg,out/('excluded-'+module))
-        assert not graph['summary']['connectivity_complete'] and not graph['nodes']
-        assert any(d['code']=='missing_module' and d.get('search_mode')=='direct_children' for d in graph['diagnostics'])
+        assert graph['summary']['connectivity_complete'] and not graph['nodes']
+        assert graph['summary']['uninstantiated_module_rules']==1
+        assert any(d['code']=='missing_module' and d['severity']=='warning' and d.get('search_mode')=='direct_children' for d in graph['diagnostics'])
         events=list(read_events(out/('excluded-'+module)/'raw.jsonl'))
         assert sum(e['event']=='module_checkpoint' for e in events)==1
         report['cases'].append({'case':'exclude-'+module,'pass':True,'missing_direct_module_reported':True})

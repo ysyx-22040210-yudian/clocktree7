@@ -230,7 +230,8 @@ def build_graph(events, config, evidence_store=None):
                 finish(trace)
             evidence_store.end_trace(item['trace_id'])
         elif kind == "diagnostic":
-            diagnostics.append(item)
+            # Older workers use the same zero-match code without a severity.
+            diagnostics.append(dict(item, severity='warning') if item.get('code') == 'missing_module' else item)
         elif kind == 'instance_trace_timeout':
             decision = item['detail']
             timeout_instances[decision['instance']] = decision
@@ -405,7 +406,7 @@ def build_graph(events, config, evidence_store=None):
         node["has_unresolved_output"] = node["id"] in unresolved_outputs
         if tree_type(config) == 'reset' and node["root"] and node["layer"] != 1 and not node['scope_input_boundary'] and not node.get('l1_inputs'):
             diagnostics.append({"code": "root_outside_L1", "instance": node["id"]})
-    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "missing_module", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint', 'instance_trace_timeout'}
+    fatal_codes = {"layer_conflict", "trace_mismatch", "missing_trace", "scope_not_found", "unknown_target", "pin_validation", 'target_outside_trace_scope', 'trace_protocol', 'fatal', 'module_checkpoint_sequence', 'missing_module_checkpoint', 'instance_trace_timeout'}
     coverage_ok = completed and not missing and not unresolved_count and not any(d["code"] in fatal_codes for d in diagnostics)
     if target_mode:
         # An unresolved input elsewhere could be a downstream branch of any
@@ -444,6 +445,7 @@ def build_graph(events, config, evidence_store=None):
                         "terminal_layers": dict(Counter(str(n["layer"]) for n in nodes.values() if n["terminal"])),
                         "expected_pin_traces": expected_count, "observed_pin_traces": len(trace_keys),
                         "unresolved": unresolved_count, "diagnostics": len(diagnostics), 'undriven_inputs': undriven_count,
+                        'uninstantiated_module_rules': sum(d['code'] == 'missing_module' for d in diagnostics),
                         'inputs_without_source': without_source,
                         'l1_input_connections': sum(len(n.get('l1_inputs', {})) for n in nodes.values()),
                         'input_boundary_connections': sum(len(n.get('input_boundaries', {})) for n in nodes.values()),

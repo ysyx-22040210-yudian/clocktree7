@@ -25,12 +25,14 @@ def main():
     fixture=out/'fixture';fixture.mkdir()
     rtl=['module ack_div #(parameter W=4)(input i,output o,output [W-1:0] done);',
          'assign o=i;assign done={W{i}};endmodule',
+         'module check_sink(input clk_i); endmodule',
          'module concat_top(input clk,rst_n,dft_mode,input [1:0] C,D,idx,input [7:0] payload);']
     expected=set();negative=set()
     def device(name,width=4):
         net='b_'+name
         rtl.extend(['wire [{}:0] {}; wire clk_{};'.format(width-1,net,name),
                     'ack_div #({}) {}(.i(clk),.o(clk_{}),.done({}));'.format(width,name,name,net)])
+        rtl.append('check_sink sink_{}(.clk_i(clk_{}));'.format(name,name))
         return net
     def mapping(instance,bit,source,target):
         expected.add(('concat_top.'+instance,'done[{}]'.format(bit),'concat_top.'+source,'concat_top.'+target))
@@ -85,7 +87,7 @@ def main():
         subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all','-top','concat_top',str(design),'-o','simv'],cwd=str(kdb),stdout=log,stderr=subprocess.STDOUT)
     rule=dict(module='ack_div',kind='div',clock_inputs=['i'],clock_output='o',aux_ports={'sw_done':'done'})
     config=dict(design=dict(top='concat_top',elab=str(kdb/'simv.daidir/kdb.elab++')),memory_limit_gib=4,
-                layers=[dict(index=1,hierarchy='concat_top',modules=[rule])])
+                layers=[dict(index=1,hierarchy='concat_top',modules=[rule,dict(module='check_sink',kind='subsystem',clock_inputs=['clk_i'])])])
     graph,_=extract(config,out/'tree')
     request=dict(config=graph['config'],seeds=list(seeds_from_graph(graph)),trace_root='concat_top',dft_zero=['dft_mode'])
     write_graph(out/'request.json',request);start=time.monotonic();result=trace(out/'request.json',out/'registers')
@@ -114,7 +116,7 @@ def main():
     assert trace(out/'request.json',out/'registers',resume=True)['summary']==result['summary']
     assert (out/'registers/verdi.log').stat().st_size==before
     plan=prepare(graph,out/'registers',out/'plan',False)
-    branches={row['instance']:row for row in plan.branches(limit=100)[1]}
+    branches={row['instance'].replace('.sink_','.'):row for row in plan.branches(limit=100)[1]}
     scalar=plan.resolve(branches['concat_top.scalar'],{'without_mux':'check($var_swdone);'})
     assert scalar['ready'] and scalar['code']=='check(concat_top.b_scalar[0]);',scalar
     choices=plan.candidates(branches['concat_top.plain'],'var_swdone')

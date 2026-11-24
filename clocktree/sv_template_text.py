@@ -9,8 +9,9 @@ CLOCK_VARS={'var_pll0','var_pll1','var_pll2','var_pll3','var_clkip','var_rst'}
 VARIABLE_BUTTONS=('var_clkip','var_rst','var_pll0','var_pll1','var_pll2','var_pll3',
                   'var_pllsel','var_div','var_swdone','var_gt0','var_gt1','var_gt2')
 NAMES=frozenset(ROLES)|frozenset(CLOCK_VARS)
-_LONGEST=sorted(NAMES,key=lambda value:(-len(value),value))
-_CANDIDATE=re.compile(r'(?<!\$)\$(?:\{(?P<braced>var_[A-Za-z0-9_]+)(?P<close>\})?|(?P<bare>var_[A-Za-z0-9_]+))')
+_ALIASES={'clkip':'var_clkip'}
+_LONGEST=sorted(NAMES.union(_ALIASES),key=lambda value:(-len(value),value))
+_CANDIDATE=re.compile(r'(?<!\$)\$(?:\{(?P<braced>var_[A-Za-z0-9_]+|clkip)(?P<close>\})?|(?P<bare>var_[A-Za-z0-9_]+|clkip(?![A-Za-z0-9])))')
 _WORD=re.compile(r'[A-Za-z0-9_]')
 TemplateToken=namedtuple('TemplateToken','start end name embedded error')
 
@@ -31,6 +32,7 @@ def template_tokens(template):
         else:
             known=next((v for v in _LONGEST if name==v or name.startswith(v+'_')),None)
             if known:name=known;end=match.start()+len(name)+1
+        name=_ALIASES.get(name,name)
         if not error and name not in NAMES:error='未知模板变量：$'+name
         raw.append(TemplateToken(match.start(),end,name,False,error))
     result=[]

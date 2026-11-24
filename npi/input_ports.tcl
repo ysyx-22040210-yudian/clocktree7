@@ -79,11 +79,12 @@ proc ct_discover_inputs {} {
         lassign $rule layer scope module inputs output kind
         if {$scope eq ""} {set scope [expr {$ct_trace_scope ne "" ? $ct_trace_scope : $ct_top}]}
         puts "CT7_INPUT_SCOPE $scope / $module"; flush stdout
-        set root [npi_handle_by_name -name $scope -scope ""]
+        set root [ct_instance_scope $scope]
         if {$root eq ""} {error "Input discovery scope not found: $scope"}
         set handles {}
         ct_find_direct_instances $root $module handles
         npi_release_handle -object $root
+        if {![llength $handles]} {ct_report_uninstantiated $scope $module $layer}
         foreach h $handles {
             incr instances
             set path [npi_get_str -property npiFullName -object $h]
@@ -103,5 +104,4 @@ proc ct_discover_inputs {} {
     ct_emit [ct_object event [ct_js input_discovery_complete] instances $instances]
     flush $::ct_stream
     ct_close_streams
-    if {!$instances} {error "No matching direct child module; nested modules are not searched"}
 }

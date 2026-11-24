@@ -22,7 +22,9 @@ module crosswire(input a,b, input [3:0] bus, output x,y,z, output [5:2] q);
  wire alias_a; assign alias_a=a; assign x=b; assign y=alias_a; buf(z,alias_a);
  assign q={bus[1:0],bus[3:2]};
 endmodule
+module wire_capture(input [6:0] clk_i);endmodule
 module wire_top(input a,b,en,input [3:0] bus,output [6:0] sinks);
+ wire_capture ip(.clk_i(sinks));
  wire sa,sb,x,y,z; wire [5:2] q;
  src s0(.i(a),.o(sa)); src s1(.i(b),.o(sb));
  crosswire w(.a(sa),.b(sb),.bus(bus),.x(x),.y(y),.z(z),.q(q));
@@ -154,18 +156,20 @@ def sv(out,result):
     registers=out/'registers';registers.mkdir()
     write_graph(registers/'manifest.json',{'request':{'config':graph['config']}})
     db=create_database(registers/'registers.sqlite');db.close()
-    plan=prepare(graph,registers,out/'plan')
+    assert prepare(graph,registers,out/'without-subsystem',False).branches()==(0,[])
+    config=fixture(out/'sv-fixture')
+    config['layers'].append(dict(index=4,hierarchy='wire_top',modules=[
+        dict(module='wire_capture',kind='subsystem',clock_inputs=['clk_i'])]))
+    real,_=run(config,out/'with-subsystem')
+    plan=prepare(real,None,out/'plan')
     rows=plan.branches()[1];assert len(rows)==7
-    # The bus lanes enter directly through L1. Those branches use the final
-    # gate output for $var_clkip; q is the gate's input after the bit remap.
-    expected={'g0':('x','b'),'g1':('y','a'),'g2':('z','a'),'g3':('sinks[3]','bus[2]'),
-              'g4':('sinks[4]','bus[3]'),'g5':('sinks[5]','bus[0]'),'g6':('sinks[6]','bus[1]')}
+    expected=['b','a','a','bus[2]','bus[3]','bus[0]','bus[1]']
     for row in rows:
-        clkip,pll=expected[row['instance'].split('.')[-1]];bindings=json.loads(row['bindings'])
-        assert bindings['var_clkip']['value']=='wire_top.'+clkip,(row,bindings)
+        pin=row['pin'];lane=int(pin[6:-1]);pll=expected[lane];bindings=json.loads(row['bindings'])
+        assert bindings['var_clkip']['value']=='wire_top.ip.'+pin,(row,bindings)
         assert bindings['var_pll0']['value']=='wire_top.'+pll,(row,bindings)
         assert not json.loads(row['issues']),row
-    result=plan.export({'with_mux':'// $var_clkip <- $var_pll0\n','without_mux':'// $var_clkip <- $var_pll0\n'},out/'branches.sv')
+    result=plan.export({'with_mux':'initial $display($var_clkip, $var_pll0);\n','without_mux':'initial $display($var_clkip, $var_pll0);\n'},out/'branches.sv')
     assert result['blocks']==len(expected) and result['skipped']==0,result
     write_graph(out/'acceptance.json',{'passed':True,'branches':7,'bit_mapping':expected,'export':result})
 

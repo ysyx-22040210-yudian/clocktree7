@@ -11,6 +11,7 @@ import uuid
 import tkinter as tk
 from tkinter import ttk
 from .input_ports import DIRECTION_LABELS, filter_ports, confirmed_ports
+from .issues import uninstantiated_reason
 from .ui_layout import dialog_heading, fit_window, wrapped_label
 
 
@@ -27,6 +28,7 @@ class InputPortDialog(tk.Toplevel):
         self.cache_callback = cache_callback
         self.single = single
         self.optional = optional
+        self.discovery_warning = ''
         self.process=None;self.stream=None;self.closed=False;self.cancelled=False;self.poll_id=None
         self.title('从 elab 筛选{}端口'.format(self.direction_label))
         self.transient(parent)
@@ -110,6 +112,7 @@ class InputPortDialog(tk.Toplevel):
     def start(self):
         if self.poll_id is not None or (self.process and self.process.poll() is None):return
         self.cancelled = False
+        self.discovery_warning = ''
         self.rows=[];self.shown=[];self.filtered_expression=None
         self.table.delete(*self.table.get_children());self.confirm_button.configure(state='disabled')
         self.update_selection_summary()
@@ -151,11 +154,14 @@ class InputPortDialog(tk.Toplevel):
             self.status.set('读取失败或已取消：'+tail_text(self.directory/'preprocess.log',1200))
             return
         try:
-            rows = json.loads(report.read_text(encoding='utf-8'))['ports']
+            result = json.loads(report.read_text(encoding='utf-8'))
+            rows = result['ports']
+            warning = next((row for row in result.get('warnings', ()) if row.get('code') == 'missing_module'), None)
         except (OSError, ValueError, KeyError) as error:
             self.status.set('无法读取端口结果：'+str(error))
             return
-        if self.cache_callback:self.cache_callback(rows)
+        if warning:self.discovery_warning='警告：'+uninstantiated_reason(warning)
+        if self.cache_callback:self.cache_callback(None if warning else rows)
         self.set_rows(rows)
 
     def set_rows(self, rows):
@@ -177,7 +183,7 @@ class InputPortDialog(tk.Toplevel):
         self.filtered_expression=self.expression.get()
         self.confirm_button.configure(state='normal' if self.shown else 'disabled')
         self.update_selection_summary()
-        self.status.set('匹配 {} 项实例端口 / {} 个端口名；请勾选后确认。'.format(len(self.shown),len(set(row['name'] for row in self.shown))))
+        self.status.set(self.discovery_warning or '匹配 {} 项实例端口 / {} 个端口名；请勾选后确认。'.format(len(self.shown),len(set(row['name'] for row in self.shown))))
 
     def click(self,event):
         key=self.table.identify_row(event.y)

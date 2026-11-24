@@ -65,7 +65,7 @@ def test_div_source_fields_reject_invalid_pairs(paths):
 def test_div_metadata_uses_saved_register_bits_in_table_csv_and_sv(tmp_path):
     device = node('d', 'div', 3)
     device['aux_ports'] = {'div': 'ratio'}
-    original = graph([device])
+    original = graph([device,node('sink','subsystem',4,('clk',),())],[('d','o','sink','clk')])
     config = copy.deepcopy(original['config'])
     config['div_source_scopes'] = ['chip.ctrl_a', 'chip.ctrl_b']
     updated = graph_for_templates(original, config)

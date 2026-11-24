@@ -79,9 +79,10 @@ endmodule
     from clocktree.sv_templates import prepare
     bounded = copy.deepcopy(config)
     bounded['trace_scope'] = scope
-    bounded['layers'][1].update(hierarchy=scope, modules=[])
+    bounded['layers'][1].update(hierarchy=scope, modules=[dict(module='l1_capture',kind='subsystem',clock_inputs=['clocks'])])
     clean_rtl = out/'bounded.sv'
-    clean_rtl.write_text(rtl.read_text().replace('en ? raw : clocks[2]', 'raw')
+    clean_rtl.write_text(rtl.read_text().replace('module region(', 'module l1_capture(input [7:0] clocks); endmodule\nmodule region(')
+                         .replace(' wire raw_alias;', ' l1_capture ip(.clocks(q));\n wire raw_alias;').replace('en ? raw : clocks[2]', 'raw')
                          .replace('.open_clk()', '.open_clk(clk[2])'))
     filelist = out/'bounded.f'
     filelist.write_text(str(clean_rtl)+'\n')
@@ -90,8 +91,8 @@ endmodule
     assert clean['summary']['connectivity_complete'], list(clean['boundaries'])
     plan = prepare(clean, None, out/'sv', False)
     templates = {'without_mux':'wire check_$var_clkip = $var_pll0;\n'}
-    for key, port in [('g_raw','raw'),('g_external','external_clk'),('g_one','single_bit[5]')]:
-        row = next(row for row in plan.branches()[1] if row['instance']==scope+'.'+key)
+    for bit, port in [(0,'raw'),(1,'external_clk'),(6,'single_bit[5]')]:
+        row = next(row for row in plan.branches()[1] if row['clkip']==scope+'.ip.clocks[{}]'.format(bit))
         result = plan.resolve(row, templates)
         assert result['ready'] and result['values']['var_pll0']==scope+'.'+port, result
     generated = plan.export(templates, out/'sv'/'branches.sv')
@@ -171,24 +172,25 @@ def matrix(out):
 
 def stress(out,count):
     out.mkdir(parents=True,exist_ok=True)
-    (out/'rtl.sv').write_text('module gate1(input i,output o);assign o=i;endmodule\n'+
+    (out/'rtl.sv').write_text('module gate1(input i,output o);assign o=i;endmodule\nmodule stress_sink(input clk_i);endmodule\n'+
         'module l1_scale(input [%d:0] clocks,output [%d:0] outs);\n'%(count-1,count-1)+
-        '\n'.join('gate1 g%d(.i(clocks[%d]),.o(outs[%d]));'%(i,i,i) for i in range(count))+'\nendmodule\n')
+        '\n'.join('gate1 g{0}(.i(clocks[{0}]),.o(outs[{0}])); stress_sink ip{0}(.clk_i(outs[{0}]));'.format(i) for i in range(count))+'\nendmodule\n')
     (out/'rtl.f').write_text(str(out/'rtl.sv')+'\n')
     config={'design':{'top':'l1_scale','filelist':str(out/'rtl.f')},'layers':[
         {'index':1,'hierarchy':'l1_scale','modules':[]},
-        {'index':2,'hierarchy':'l1_scale','modules':[{'module':'gate1','kind':'gate','clock_inputs':['i'],'clock_output':'o'}]}]}
+        {'index':2,'hierarchy':'l1_scale','modules':[{'module':'gate1','kind':'gate','clock_inputs':['i'],'clock_output':'o'},
+         {'module':'stress_sink','kind':'subsystem','clock_inputs':['clk_i']}]}]}
     graph,report=run(config,out/'run')
-    assert graph['summary']['l1_input_connections']==count and graph['summary']['instances']==count and graph['summary']['connectivity_complete']
+    assert graph['summary']['l1_input_connections']==count and graph['summary']['instances']==2*count and graph['summary']['connectivity_complete']
     from clocktree.sv_templates import prepare
     plan=prepare(graph,None,out/'sv')
     assert plan.branches(limit=0)[0]==count
     for offset in range(0,count,100):
         for row in plan.branches(offset=offset)[1]:
-            index=int(row['instance'].rsplit('.g',1)[1]);values=json.loads(row['bindings'])
+            index=int(row['instance'].rsplit('.ip',1)[1]);values=json.loads(row['bindings'])
             assert values['var_pll0']['value']=='l1_scale.clocks[{}]'.format(index)
-            assert values['var_clkip']['value']=='l1_scale.outs[{}]'.format(index)
-    export=plan.export({'without_mux':'// $var_pll0 -> $var_clkip : $var_div $var_gt0\n'},out/'all.sv')
+            assert values['var_clkip']['value']=='l1_scale.ip{}.clk_i'.format(index)
+    export=plan.export({'without_mux':'initial $display($var_pll0, $var_clkip, $var_div, $var_gt0);\n'},out/'all.sv')
     assert export['blocks']==count and export['skipped']==0
     write_graph(out/'acceptance.json',dict(report,passed=True,export=export))
 
@@ -196,18 +198,18 @@ def stress(out,count):
 def sv(out,graph):
     from clocktree.sv_templates import prepare
     plan=prepare(graph,None,out)
-    template='// $var_pllsel $var_div $var_swdone $var_gt0 $var_gt1 $var_gt2 $var_pll0 $var_pll1 $var_pll2 $var_pll3 $var_clkip\n'
-    templates={'without_mux':template,'with_mux':'// normal: $var_clkip\n'}
+    template='initial $display($var_pllsel, $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2, $var_pll0, $var_pll1, $var_pll2, $var_pll3, $var_clkip);\n'
+    templates={'without_mux':template,'with_mux':'initial $display("normal", $var_clkip);\n'}
     results=[plan.resolve(row,templates) for row in plan.branches()[1]]
-    assert len(results)==5 and all(r['ready'] for r in results),results
-    expected={('gd','o'):('raw[4]','direct_clk'),('s','c0'):('raw[2]','raw[2]'),('s','c1'):('raw[3]','final_clk')}
+    assert len(results)==3 and all(r['ready'] for r in results),results
+    expected={('s','c0'):('raw[2]','s.c0'),('s','c1'):('raw[3]','s.c1')}
     for (inst,pin),(pll,clk) in expected.items():
         row=next(r for r in results if r['instance']=='l1_top.crg.'+inst and r['pin']==pin)
         assert row['values']['var_pll0']=='l1_top.crg.'+pll,(row,expected)
         assert row['values']['var_clkip']=='l1_top.crg.'+clk,(row,expected)
         assert row['values']['var_div']=='0' and row['mode']=='without_mux'
         assert all(row['values'][v]=="1'b1" for v in ('var_pllsel','var_swdone','var_gt0','var_gt1','var_gt2','var_pll1','var_pll2','var_pll3'))
-    result=plan.export(templates,out/'all.sv');assert result['blocks']==5 and result['skipped']==0
+    result=plan.export(templates,out/'all.sv');assert result['blocks']==3 and result['skipped']==0
     return result
 
 
@@ -248,10 +250,10 @@ def gui(out,phase,result):
     window.close();pump(app)
     if phase=='gui-write':
         dialog=SVDialog(app);pump(app);dialog.registers.set('')
-        dialog.editors['without_mux'].insert('1.0','// $var_pll0 -> $var_clkip / $var_div\n')
-        dialog.editors['with_mux'].insert('1.0','// normal $var_clkip\n')
+        dialog.editors['without_mux'].insert('1.0','initial $display($var_pll0, $var_clkip, $var_div);\n')
+        dialog.editors['with_mux'].insert('1.0','initial $display("normal", $var_clkip);\n')
         dialog.analyze();pump(app,lambda:dialog.plan is not None and dialog.process.poll() is not None)
-        assert dialog.plan.branches()[0]==5
+        assert dialog.plan.branches()[0]==3
         dialog.export(out/'gui.sv');pump(app,lambda:dialog.process.poll() is not None)
         assert (out/'gui.sv').exists();dialog.close();pump(app)
         app.diagram.locate(node);pump(app);capture(app,out/'l1-input-workbench.png')

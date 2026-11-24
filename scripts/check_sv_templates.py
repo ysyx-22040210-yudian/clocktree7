@@ -62,11 +62,11 @@ endmodule
     plan=prepare(graph,out/'registers',out/'plan');total,branches=plan.branches();assert total==2
     mux=next(b for b in branches if b['mode']=='with_mux');other=next(b for b in branches if b['mode']=='without_mux')
     first=plan.resolve(mux,TEMPLATES);assert first['ready'],first['issues']
-    assert first['values']=={'var_rst':'sv_top.rst_n','var_clkip':'sv_top.cd','var_pllsel':'sv_top.D[5:2]','var_div':'sv_top.D[9:6]','var_swdone':'sv_top.done0',
+    assert first['values']=={'var_rst':'sv_top.rst_n','var_clkip':'sv_top.sink.clocks[2]','var_pllsel':'sv_top.D[5:2]','var_div':'sv_top.D[9:6]','var_swdone':'sv_top.done0',
                             'var_gt0':'sv_top.C[7]','var_gt1':"1'b1",'var_gt2':"1'b1",'var_pll0':'sv_top.a','var_pll1':'sv_top.b','var_pll2':"1'b1",'var_pll3':"1'b1"},first['values']
     second=plan.resolve(other,TEMPLATES);assert not second['ready'] and any('多组' in p for p in second['issues'])
     assert [second['values']['var_gt'+str(i)] for i in range(3)]==['sv_top.C[6]','sv_top.C[5]','sv_top.C[4]']
-    assert second['values']['var_pll0']=='sv_top.a' and second['values']['var_clkip']=='sv_top.ng3'
+    assert second['values']['var_pll0']=='sv_top.a' and second['values']['var_clkip']=='sv_top.sink.clocks[3]'
     assert first['reset']['layer']==1 and first['reset']['instance']=='sv_top.m'
     assert second['values']['var_rst']=='sv_top.rst_alt_n' and second['reset']['layer']==2 and second['reset']['instance']=='sv_top.z_first'
     output=out/'all-branches.sv';partial=plan.export(TEMPLATES,output);assert partial['blocks']==partial['skipped']==1
@@ -77,7 +77,7 @@ endmodule
     selected=next(c for c in choices if c['capture_expression']=='sv_top.E[11]')
     selections={other['id']:{'var_swdone':selected['id']}};complete=plan.export(TEMPLATES,output,selections)
     assert complete['blocks']==2 and complete['skipped']==0
-    content=output.read_text(encoding='utf-8');assert content.count('// CT7 branch ')==2 and content.count('$display')==2 and '$var_' not in content
+    content=output.read_text(encoding='utf-8');assert '//' not in content and content.count('$display')==2 and '$var_' not in content
     write_graph(out/'templates.json',dict(TEMPLATES,selections=selections))
     (fixture/'template_checks.sv').write_text('module template_checks;\n'+content+'\nendmodule\n')
     compiled=out/'compile';compiled.mkdir()

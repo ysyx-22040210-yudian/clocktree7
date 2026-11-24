@@ -10,7 +10,7 @@ class MacroEditor(ttk.Frame):
         super().__init__(parent, padding=12)
         self.on_change = on_change
         self.rows = []
-        ttk.Label(self, text='同一组宏适用于两套模板。生成时先展开变量，再替换代码和双引号中的原文。').pack(anchor='w')
+        ttk.Label(self, text='这里配置的宏在 SV 文件开头各定义一次。两套模板共用，代码和字符串中的匹配都会随文件头更新。').pack(anchor='w')
         fields = ttk.Frame(self)
         fields.pack(fill='x', pady=8)
         fields.columnconfigure(1, weight=1)

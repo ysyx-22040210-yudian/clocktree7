@@ -10,7 +10,7 @@ from clocktree.indexed_view import IndexedGraphView
 from clocktree.sv_templates import prepare
 
 
-def fixture():
+def fixture(gate_sink=False):
     config={'design':{'top':'top','filelist':'x.f'},'layers':[
         {'index':1,'hierarchy':'top.domain','reset_signal':'rst1_n','modules':[{'module':'M','kind':'mux','clock_inputs':['i'],'clock_output':'o'}]},
         {'index':2,'hierarchy':'top.domain','reset_signal':'rst2_n','modules':[{'module':'G','kind':'gate','clock_inputs':['i'],'clock_output':'o'},
@@ -28,6 +28,10 @@ def fixture():
         trace('m','i',boundary('clk[7]')),trace('g0','i',boundary('clk[3]')),
         trace('g1','i',{'status':'target','instance':'top.domain.g0','pin':'o'}),
         trace('s','a',boundary('clk[2]')),trace('s','b',{'status':'target','instance':'top.domain.m','pin':'o'})]
+    if gate_sink:
+        config['layers'][1]['modules'][1]['clock_inputs'].append('from_gate')
+        instances[-1]['inputs'].append('from_gate')
+        events.append(trace('s','from_gate',{'status':'target','instance':'top.domain.g1','pin':'o'}))
     events.extend(dict(event='output_check',instance=n['path'],pin='o',status='ok') for n in instances if n['output'])
     events.append({'event':'complete'})
     return events,config
@@ -61,21 +65,21 @@ def test_l1_sources_display_without_fake_instances(tmp_path,indexed):
 
 
 def test_l1_terminal_output_constants_and_subsystem_input(tmp_path):
-    events,cfg=fixture();graph=build_graph(events,cfg)
+    events,cfg=fixture(True);graph=build_graph(events,cfg)
     plan=prepare(graph,None,tmp_path/'plan',False);count,rows=plan.branches()
     assert count==3 and not any(r['instance']=='top.domain.g0' for r in rows)
     template=' '.join('$'+v for v in ['var_pllsel','var_div','var_swdone','var_gt0','var_gt1','var_gt2','var_pll0','var_pll1','var_pll2','var_pll3','var_clkip','var_rst'])
     templates={'with_mux':'$var_clkip','without_mux':template}
     resolved=[plan.resolve(row,templates) for row in rows]
     assert all(row['ready'] for row in resolved),resolved
-    gate=next(r for r in resolved if r['instance']=='top.domain.g1')
-    assert gate['pin']=='o' and gate['values']['var_clkip']=='top.domain.g1_o'
+    gate=next(r for r in resolved if r['pin']=='from_gate')
+    assert gate['pin']=='from_gate' and gate['values']['var_clkip']=='top.domain.s.from_gate'
     assert gate['values']['var_pll0']=='top.domain.clk[3]' and gate['values']['var_div']=='0'
     assert gate['values']['var_rst']=='top.domain.rst2_n'
     for var in ('var_pllsel','var_swdone','var_gt0','var_gt1','var_gt2','var_pll1','var_pll2','var_pll3'):
         assert gate['values'][var]=="1'b1"
     sink=next(r for r in resolved if r['instance']=='top.domain.s' and r['pin']=='a')
-    assert sink['values']['var_clkip']=='top.domain.s_a' and sink['values']['var_pll0']=='top.domain.clk[2]'
+    assert sink['values']['var_clkip']=='top.domain.s.a' and sink['values']['var_pll0']=='top.domain.clk[2]'
     assert next(r for r in resolved if r['pin']=='b')['mode']=='with_mux'
     report=plan.export(templates,tmp_path/'all.sv');assert report['blocks']==3 and report['skipped']==0
 
@@ -103,8 +107,8 @@ def test_old_unmarked_boundaries_do_not_gain_new_proofs():
     assert not any(n.get('l1_inputs') for n in graph['nodes'])
 
 
-def configured_fixture():
-    events, config = fixture()
+def configured_fixture(gate_sink=False):
+    events, config = fixture(gate_sink)
     config['layers'][1]['input_boundary'] = True
     for event in events:
         for result in event.get('results', []):
@@ -137,7 +141,7 @@ def test_selected_scopes_use_physical_paths_and_floor_to_the_trace_root(tmp_path
 @pytest.mark.parametrize('indexed', [False, True])
 @pytest.mark.parametrize('wire', [False, True])
 def test_configured_boundary_draws_actual_layer_and_uses_existing_branch_rules(tmp_path, indexed, wire):
-    events, config = configured_fixture()
+    events, config = configured_fixture(True)
     signal = 'top.domain.mid[5]' if wire else 'top.domain.clk[3]'
     if wire:
         event = next(e for e in events if e.get('instance') == 'top.domain.g0')
@@ -145,7 +149,7 @@ def test_configured_boundary_draws_actual_layer_and_uses_existing_branch_rules(t
         boundary.pop('boundary_port')
         boundary.update(status='layer_wire_boundary', endpoint=signal, boundary_wire='mid[5]')
     graph = build_graph(events, config)
-    assert graph['summary']['instances'] == 4 and graph['summary']['edges'] == 2
+    assert graph['summary']['instances'] == 4 and graph['summary']['edges'] == 3
     assert graph['summary']['input_boundary_connections'] == 3
     assert graph['summary']['l1_input_connections'] == 0
     gate = next(n for n in graph['nodes'] if n['id'] == 'top.domain.g0')
@@ -167,10 +171,10 @@ def test_configured_boundary_draws_actual_layer_and_uses_existing_branch_rules(t
             if wire:
                 assert 'L2 · wire 边界' in view.svg()
         plan = prepare(graph, None, tmp_path/'plan', False)
-        row = next(row for row in plan.branches()[1] if row['instance'] == 'top.domain.g1')
+        row = next(row for row in plan.branches()[1] if row['pin'] == 'from_gate')
         resolved = plan.resolve(row, {'without_mux':'$var_pll0 $var_clkip $var_rst'})
         assert resolved['ready'] and resolved['values'] == {
-            'var_pll0':signal, 'var_clkip':'top.domain.g1_o', 'var_rst':'top.domain.rst2_n'}
+            'var_pll0':signal, 'var_clkip':'top.domain.s.from_gate', 'var_rst':'top.domain.rst2_n'}
         assert resolved['input_boundary']['signals'] == [signal]
         mux = next(row for row in plan.branches()[1] if row['instance'] == 'top.domain.s' and row['pin'] == 'b')
         resolved = plan.resolve(mux, {'with_mux':'$var_pll0 $var_clkip'})
@@ -194,7 +198,7 @@ def test_configured_boundary_declines_competing_sources():
 @pytest.mark.parametrize('boundary_first', [True, False])
 def test_driver_prefers_module_to_boundary_per_pin(tmp_path, indexed, boundary_first):
     from clocktree.navigation import neighbour_edges
-    events, config = configured_fixture()
+    events, config = configured_fixture(True)
     mux, gate, sink = ('top.domain.' + name for name in ('m', 'g0', 's'))
     trace = next(e for e in events if e.get('instance') == gate)
     boundary = dict(status='layer_wire_boundary', scope='top.domain', boundary_layer=2,
@@ -222,8 +226,8 @@ def test_driver_prefers_module_to_boundary_per_pin(tmp_path, indexed, boundary_f
         assert not view.original[gate]['scope_input_boundary']
         assert view.original[gate]['component'] != view.original[sink]['input_components']['a']
         plan = prepare(graph, None, tmp_path/'plan', False)
-        row = next(r for r in plan.branches()[1] if r['instance'] == 'top.domain.g1')
-        templates = {'with_mux':'// via mux $var_pll0 $var_clkip', 'without_mux':'// direct $var_pll0 $var_clkip'}
+        row = next(r for r in plan.branches()[1] if r['pin'] == 'from_gate')
+        templates = {'with_mux':'initial $display("via mux", $var_pll0, $var_clkip);', 'without_mux':'initial $display("direct", $var_pll0, $var_clkip);'}
         resolved = plan.resolve(row, templates)
         assert resolved['ready'] and resolved['mode'] == 'with_mux'
         assert resolved['values']['var_pll0'] == 'top.domain.clk[7]'
@@ -274,7 +278,7 @@ def test_logic_beyond_only_boundary_keeps_nearest_input():
     ('target', False, False),
 ])
 def test_l1_interface_proof_survives_only_problems_beyond_the_port(tmp_path, upstream_status, bypass, expected):
-    events, config = fixture()
+    events, config = fixture(True)
     gate = next(n for n in events if n.get('path') == 'top.domain.g0')
     gate['layer'] = 1
     trace_at = next(i for i, e in enumerate(events) if e.get('instance') == gate['path'] and e['event'] == 'trace')
@@ -319,7 +323,7 @@ def test_l1_interface_proof_survives_only_problems_beyond_the_port(tmp_path, ups
             assert not any(b['instance'] == gate['path'] and b['direction'] == 'driver' for b in graph['boundaries'])
         if upstream_status == 'input_boundary':
             plan = prepare(graph, None, tmp_path/'plan', False)
-            row = next(r for r in plan.branches()[1] if r['instance'] == 'top.domain.g1')
+            row = next(r for r in plan.branches()[1] if r['pin'] == 'from_gate')
             resolved = plan.resolve(row, {'without_mux':'$var_pll0 $var_clkip'})
             assert resolved['ready'] and resolved['values']['var_pll0'] == port
     finally:
@@ -352,13 +356,13 @@ def test_legacy_later_roots_load_without_former_l1_issue(tmp_path, indexed):
 
 
 def test_partial_mux_l1_entry_is_reported_as_mixed_instead_of_ignored(tmp_path):
-    events,cfg=fixture()
+    events,cfg=fixture(True)
     target=next(e for e in events if e.get('path')=='top.domain.g1')
     target.update(kind='mux',inputs=['i','other'])
     events.insert(-1,dict(event='trace',instance='top.domain.g1',pin='other',direction='driver',results=[
         dict(status='target',instance='top.domain.m',pin='o')]))
     graph=build_graph(events,cfg);plan=prepare(graph,None,tmp_path/'plan',False)
-    rows=[r for r in plan.branches()[1] if r['instance']=='top.domain.g1']
+    rows=[r for r in plan.branches()[1] if r['pin']=='from_gate']
     assert rows and not plan.resolve(rows[0],{'without_mux':'$var_pll0 $var_clkip'})['ready']
 
 
@@ -373,19 +377,20 @@ def test_wire_terminal_channels_use_outputs_not_whole_input_bus(tmp_path):
         events.insert(-1,dict(event='output_check',instance=wire['path'],pin=p,status='ok'))
         events.insert(-1,dict(event='trace',instance=wire['path'],pin=p,direction='internal',results=[dict(status='target',instance=wire['path'],pin='i')]))
     graph=build_graph(events,cfg);plan=prepare(graph,None,tmp_path/'plan',False)
-    rows=[r for r in plan.branches()[1] if r['instance']==wire['path']]
-    assert {r['clkip'] for r in rows}=={'top.domain.w_x','top.domain.w_y'}
-    assert all(json.loads(r['bindings'])['var_pll0']['value']=='top.domain.clk[3]' for r in rows)
+    assert plan.branches()==(0,[])
+    actual=next(n for n in graph['nodes'] if n['id']==wire['path'])
+    assert actual['terminal_outputs']==['x','y']
+
 
 
 def test_real_control_mapping_wins_and_missing_job_never_becomes_default(tmp_path):
     from clocktree.register_trace import create_database
     from clocktree.storage import write_graph
-    events,cfg=fixture()
+    events,cfg=fixture(True)
     next(e for e in events if e.get('path')=='top.domain.g0')['aux_ports']={'gt':'enable'}
     graph=build_graph(events,cfg)
     missing=prepare(graph,None,tmp_path/'missing',False)
-    row=next(r for r in missing.branches()[1] if r['instance']=='top.domain.g1')
+    row=next(r for r in missing.branches()[1] if r['pin']=='from_gate')
     assert not missing.resolve(row,{'without_mux':'$var_gt0 $var_clkip'})['ready']
     reg=tmp_path/'registers';reg.mkdir();write_graph(reg/'manifest.json',{'request':{'config':cfg}})
     db=create_database(reg/'registers.sqlite')
@@ -393,8 +398,8 @@ def test_real_control_mapping_wins_and_missing_job_never_becomes_default(tmp_pat
     db.execute('INSERT INTO results VALUES(NULL,?,?,?,?,?,?,?,?,?)',(1,'enable','top.ctrl.Q[7]','Q','direct','register','',None,'{}'))
     db.commit();db.close()
     plan=prepare(graph,reg,tmp_path/'mapped',False)
-    row=next(r for r in plan.branches()[1] if r['instance']=='top.domain.g1')
+    row=next(r for r in plan.branches()[1] if r['pin']=='from_gate')
     result=plan.resolve(row,{'without_mux':'$var_gt0 $var_gt1 $var_div $var_pll0 $var_clkip'})
     assert result['ready'],result
     assert result['values']['var_gt0']=='top.ctrl.Q[7]' and result['values']['var_gt1']=="1'b1"
-    assert result['values']['var_div']=='0' and result['values']['var_clkip']=='top.domain.g1_o'
+    assert result['values']['var_div']=='0' and result['values']['var_clkip']=='top.domain.s.from_gate'

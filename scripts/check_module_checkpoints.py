@@ -125,8 +125,7 @@ def main():
     assert all('CT7_MODULE_SKIP index={}'.format(i) in (directory/'verdi.log').read_text() for i in (1,2,3))
     report['cases'].append({'case':'within_shared_query','pass':True,'module_checkpoints':len(modules),'restarts':3,
         'completed_rules_skipped':True,'full_graph_and_mode_evidence_equal':True,'port_connections_equal':True})
-    # An empty result and a nonexistent scope are both committed as handled
-    # rules with explicit failures; neither can certify complete connectivity.
+    # Both results commit a rule checkpoint. Only the nonexistent scope blocks coverage.
     config=copy.deepcopy(configs['clock'])
     config['layers'][1]['modules'].append({'module':'not_present_gate','kind':'gate','clock_inputs':['i'],'clock_output':'o'})
     config['layers'].append({'index':len(config['layers'])+1,'hierarchy':'scope_top.domain.not_here',
@@ -136,6 +135,7 @@ def main():
     graph=extraction.extract(source,directory)
     modules=inspect(directory,graph,config)
     assert {'missing_module','scope_not_found'}.issubset({m['status'] for m in modules})
+    assert graph['summary']['uninstantiated_module_rules']==1
     assert not graph['summary']['connectivity_complete']
     report['cases'].append({'case':'zero_match_and_missing_scope','pass':True,'module_checkpoints':len(modules),'not_certified':True})
     directory=out/'memory-disabled';directory.mkdir(exist_ok=True)

@@ -2,6 +2,7 @@
 import argparse
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import time
@@ -10,12 +11,15 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from clocktree.storage import write_graph
+from clocktree.sv_macros import template_macros
 
 
 def settings(top):
-    body = (r'initial #1 $display("CT7_VALUE mode=MODE clock=$var_clkip bit=%0d gt=%0d '
+    body = (r'initial #1 $display("CT7_VALUE mode=MODE clock=$clkip bit=%0d gt=%0d '
             + 'continued=sv_\\\ntop.test '
             + r'quote=\"ok\" url=http://$var_clkip/a, tick=`LIT, ) %0s", $var_clkip, $var_gt0, "READY");')
+    body = ('// ignored $var_unknown\n`define UNUSED $var_swdone \\\n $var_bad\n'
+            '`undef DUT\n/* remove this block */\n' + body + '\n`undefineall')
     return {'with_mux': body.replace('MODE', 'mux'), 'without_mux': body.replace('MODE', 'direct'),
             'macros': [{'name': 'DUT', 'text': top}, {'name': 'LABEL', 'text': '"READY"'}]}
 
@@ -23,7 +27,7 @@ def settings(top):
 def simulate(directory, rtl, include):
     wrapper = directory/'checks.sv'
     wrapper.write_text(
-        'module sv_mirror; wire cd=0, ng3=0; wire [15:0] C=0; endmodule\n'
+        'module sv_mirror; wire cd=0, ng3=0; wire [15:0] C=0; clock_sink sink(.clocks({ng3,cd})); endmodule\n'
         'module macro_checks;\n'
         'initial begin force sv_top.cd=1; force sv_top.ng3=1; force sv_top.C=16\'h00c0; end\n'
         '`include "' + include.name + '"\nendmodule\n', encoding='utf-8')
@@ -35,6 +39,12 @@ def simulate(directory, rtl, include):
     (directory/'simulate.log').write_bytes(output)
     rows = sorted(line for line in output.decode('utf-8').splitlines() if line.startswith('CT7_VALUE'))
     assert len(rows) == 2, rows
+    if shutil.which('iverilog') and shutil.which('vvp'):
+        with (directory/'iverilog.log').open('w') as log:
+            subprocess.check_call(['iverilog','-g2012','-s','sv_top','-s','sv_mirror','-s','macro_checks',
+                                   '-o','checks.vvp',str(rtl),str(wrapper)], cwd=str(directory),stdout=log,stderr=log)
+        iv = subprocess.check_output(['vvp','checks.vvp'],cwd=str(directory)).decode('utf-8')
+        assert sorted(line for line in iv.splitlines() if line.startswith('CT7_VALUE')) == rows
     return rows
 
 
@@ -50,8 +60,8 @@ def vcs(fixture, out):
         sv = directory/'clock_branches.sv'
         if name == 'redirected':
             source = (out/'macros'/sv.name).read_text(encoding='utf-8')
-            assert source.count('`define DUT sv_top\n') == 1
-            sv.write_text(source.replace('`define DUT sv_top\n', '`define DUT sv_mirror\n'), encoding='utf-8')
+            assert source.count('`define DUT(ct7_value=sv_top) ct7_value\n') == 1
+            sv.write_text(source.replace('ct7_value=sv_top)', 'ct7_value=sv_mirror)'), encoding='utf-8')
         else:
             write_graph(directory/'templates.json', config)
             result = subprocess.check_output([
@@ -59,12 +69,28 @@ def vcs(fixture, out):
                 '--templates', str(directory/'templates.json'), '--out', str(sv)], cwd=str(ROOT))
             counts = json.loads(result.decode('utf-8'))
             assert (counts['blocks'], counts['skipped']) == (2, 0), counts
+            code = sv.read_text(encoding='utf-8')
+            assert '`undef' not in code and 'UNUSED' not in code and 'ignored' not in code
+            assert code.count('`define ') == len(config.get('macros', []))
         observed[name] = simulate(directory, fixture/'fixture/design.sv', sv)
     assert observed['plain'] == observed['macros']
     for line in observed['plain']:
         assert 'bit=1 gt=1 continued=sv_top.test' in line and 'quote="ok"' in line and 'tick=`LIT, ) READY' in line, line
     assert observed['redirected'] == [s.replace('sv_top.', 'sv_mirror.').replace('bit=1 gt=1', 'bit=0 gt=0')
                                       for s in observed['plain']]
+    # A top-level comma cannot be a formal's default. Its sole configured name
+    # must still expand both as SV punctuation and as part of a format literal.
+    source = 'initial $display("CT7_PUNCT a,b=%0d", 3);'
+    macros = template_macros({'with_mux':source,'macros':[{'name':'SEP','text':','}]})
+    module = out/'punct.sv'
+    module.write_text(macros.header()+'module punct;\n'+macros.apply(source)+'\nendmodule\n',encoding='utf-8')
+    with (out/'punct-compile.log').open('w') as log:
+        subprocess.check_call(['vcs','-full64','-sverilog','-top','punct',str(module),'-o','punct-sim'],
+                              cwd=str(out),stdout=log,stderr=log)
+    assert b'CT7_PUNCT a,b=3' in subprocess.check_output([str(out/'punct-sim')],cwd=str(out))
+    if shutil.which('iverilog') and shutil.which('vvp'):
+        subprocess.check_call(['iverilog','-g2012','-o','punct.vvp',str(module)],cwd=str(out))
+        assert b'CT7_PUNCT a,b=3' in subprocess.check_output(['vvp','punct.vvp'],cwd=str(out))
     write_graph(out/'comparison.json', observed)
     print('PASS: two real KDB branches, three compiled and executed exports')
 
@@ -100,7 +126,7 @@ def gui(graph_path, out, reopen):
     if reopen:
         assert dialog.templates() == expected and dialog.plan
         assert dialog.export_result and dialog.export_result['sv_written']
-        assert '`define DUT ' + top in dialog.output_code.get('1.0', 'end')
+        assert '`define DUT(ct7_value=' + top + ')' in dialog.output_code.get('1.0', 'end')
     else:
         for pane in dialog.editors.values():
             pane.delete('1.0', 'end')
@@ -137,13 +163,13 @@ def gui(graph_path, out, reopen):
         row = next(r for r in dialog.rows.values() if dialog.plan.resolve(r, expected)['ready'])
         dialog.table.selection_set(row['id'])
         dialog.detail()
-        assert '`define DUT ' + top in dialog.preview.get('1.0', 'end')
+        assert '`define DUT(ct7_value=' + top + ')' in dialog.preview.get('1.0', 'end')
         with patch('clocktree.sv_view.filedialog.asksaveasfilename', return_value=str(out/'gui.sv')):
             dialog.export_button.invoke()
         pump(lambda: dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
         assert dialog.export_result['blocks'] > 0, dialog.status.get()
         code = (out/'gui.sv').read_text(encoding='utf-8')
-        assert '`define CT7_TEXT_' in code and '`DUT.' in code
+        assert code.count('`define ') == 1 and '`undef' not in code and '`DUT().' in code
         assert dialog.output_code.get('1.0', 'end-1c') == code
         editor.table.selection_set('0')
         pump()
@@ -177,15 +203,16 @@ def scale(plan_path, out):
     start = time.monotonic()
     result = plan.export(config, out/'clocks.sv')
     elapsed = time.monotonic() - start
-    counts = dict(header=0, block=0, helper=0, cleanup=0, display=0)
+    counts = dict(header=0, other_definitions=0, cleanup=0, comments=0, display=0)
     with (out/'clocks.sv').open(encoding='utf-8') as sv:
         for line in sv:
-            for key, tag in [('header', '`define DUT '), ('block', '// CT7 branch '), ('helper', '`define CT7_TEXT_'),
-                             ('cleanup', '`undef CT7_TEXT_'), ('display', 'initial $display(`CT7_TEXT_')]:
-                if line.startswith(tag):
-                    counts[key] += 1
+            if line.startswith('`define '):
+                counts['header' if line == '`define DUT(ct7_value={}) ct7_value\n'.format(prefix) else 'other_definitions'] += 1
+            counts['cleanup'] += int('`undef' in line)
+            counts['comments'] += int('//' in line or '/*' in line)
+            counts['display'] += int(line.startswith('initial $display(`DUT('))
     assert result['blocks'] == total and result['skipped'] == 0, result
-    assert counts == dict(header=1, block=total, helper=total, cleanup=total, display=total), counts
+    assert counts == dict(header=1, other_definitions=0, cleanup=0, comments=0, display=total), counts
     report = dict(terminals=total, seconds=round(elapsed, 3), peak_rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                   sv_bytes=(out/'clocks.sv').stat().st_size, counts=counts)
     write_graph(out/'scale.json', report)

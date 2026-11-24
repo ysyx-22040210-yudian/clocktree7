@@ -235,7 +235,9 @@ function showGraph(result) {
   setConfig(result.config);graph=result;deviceRules=indexDeviceRules(result.config);nodeIndex=new Map(result.nodes.map(n=>[n.id,n]));viewScope='';viewDepth=5;$('viewMode').value=result.nodes.length>400?'hierarchy':'instances';
   const s=result.summary,values=[s.instances,s.edges,s.roots,s.terminals,s.components,s.unresolved];
   [...$('stats').children].forEach((n,i)=>n.querySelector('b').textContent=values[i].toLocaleString());
-  $('state').textContent=!s.connectivity_complete?'含未解析项 / 诊断':s.topology_valid===false?'连接已解析 · 存在结构异常':result.config.trace_scope?`范围内连接已解析 · ${s.scope_boundaries||0} 处边界`:'全量连接已解析';$('state').className='state '+(s.connectivity_complete&&s.topology_valid!==false?'pass':'warn');
+  const unmatched=s.uninstantiated_module_rules||0;
+  $('state').textContent=!s.connectivity_complete?'含未解析项 / 诊断':s.topology_valid===false?'连接已解析 · 存在结构异常':unmatched?`提取完成 · ${unmatched} 条模块规则未找到例化`:result.config.trace_scope?`范围内连接已解析 · ${s.scope_boundaries||0} 处边界`:'全量连接已解析';
+  $('state').className='state '+(s.connectivity_complete&&s.topology_valid!==false&&!unmatched?'pass':'warn');
   $('component').innerHTML='<option value="all">全部'+profiles[activeTree].network+'</option>'+result.components.map(c=>`<option value="${c.id}">分量 ${c.id+1} · ${c.nodes.length} 实例</option>`).join('');
   $('logTitle').textContent=`提取日志与诊断 · ${s.diagnostics} 项诊断 · ${s.unresolved} 个未解析断点`;
   $('log').textContent=JSON.stringify({summary:s,metadata:result.metadata,diagnostics:result.diagnostics},null,2);

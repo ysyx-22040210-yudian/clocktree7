@@ -61,3 +61,11 @@ end
     assert ('system','$display') in spans and ('number',"8'hff") in spans
     assert ('comment','// endmodule') in spans and ('keyword','endmodule') not in spans
     assert sum(kind=='string' for kind,_ in spans)==1
+
+
+def test_short_clock_alias_has_the_same_token_boundaries_as_the_editor_button():
+    from clocktree.sv_template_text import render, variables
+    source='check_$clkip_sva $clkip ${clkip} $var_clkip $$clkip $clkipExtra'
+    assert variables(source)=={'var_clkip'}
+    assert render(source,{'var_clkip':'top.gpu.clk[2]'})==(
+        'check_top_gpu_clk_2_sva top.gpu.clk[2] top.gpu.clk[2] top.gpu.clk[2] $$clkip $clkipExtra')

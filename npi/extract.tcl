@@ -75,6 +75,21 @@ proc ct_scope_match {path scope} {
     set scope [string trimright $scope ./]
     return [expr {$scope eq "" || $path eq $scope || [string first "$scope." $path] == 0 || [string first "$scope\[" $path] == 0}]
 }
+proc ct_instance_scope {scope} {
+    set root [npi_handle_by_name -name $scope -scope ""]
+    if {$root ne "" && [npi_get_str -property npiType -object $root] eq "npiModule" &&
+            [npi_get_str -property npiDefName -object $root] eq ""} {
+        npi_release_handle -object $root
+        error "Instance search scope has no elaborated module definition: $scope; check compiler/KDB hierarchy limits or unresolved modules."
+    }
+    return $root
+}
+proc ct_report_uninstantiated {scope module layer} {
+    ct_emit [ct_object event [ct_js diagnostic] code [ct_js missing_module] severity [ct_js warning] \
+        hierarchy [ct_js $scope] module [ct_js $module] layer $layer search_mode [ct_js direct_children] \
+        message [ct_js "No matching direct child module; nested instances are not searched"]]
+    puts "CT7_WARNING missing_module scope=$scope module=$module layer=$layer"
+}
 proc ct_find_direct_instances {root module result} {
     # npiInternalScope returns immediate scopes, including module-array elements.
     # Do not descend into returned modules or generate blocks and do not use the
@@ -909,6 +924,9 @@ proc ct_register_instance {path module layer inputs output kind source emit {lan
         set connection_pins $pins
         set auxiliary {}
         set annotation_directions [dict create]
+        if {$kind eq "subsystem"} {
+            foreach pin $inputs {dict set annotation_directions $pin npiInput}
+        }
         if {[info exists ::ct_active_aux_ports]} {
             foreach entry $::ct_active_aux_ports {
                 lassign $entry role pin expected_direction
@@ -1131,13 +1149,8 @@ proc ct_main {} {
         }
         lassign $query scope module
         ct_worker_status enumerate "$scope / $module"
-        set root_handle [npi_handle_by_name -name $scope -scope ""]
+        set root_handle [ct_instance_scope $scope]
         set scope_found [expr {$root_handle ne ""}]
-        if {$scope_found && [npi_get_str -property npiType -object $root_handle] eq "npiModule" &&
-                [npi_get_str -property npiDefName -object $root_handle] eq ""} {
-            npi_release_handle -object $root_handle
-            error "Instance search scope has no elaborated module definition: $scope; check compiler/KDB hierarchy limits or unresolved modules."
-        }
         set handles {}
         if {$scope_found} {
             puts "CT7_ENUM_BEGIN scope=$scope module=$module rules=[llength $rules] mode=direct_children"
@@ -1189,8 +1202,7 @@ proc ct_main {} {
         }
         if {$scope_found && !$matched} {
             set status missing_module
-            ct_emit [ct_object event [ct_js diagnostic] code [ct_js missing_module] module [ct_js $module] hierarchy [ct_js $scope] \
-                search_mode [ct_js direct_children] message [ct_js "No matching direct child module; nested instances are not searched"] layer $layer]
+            ct_report_uninstantiated $scope $module $layer
         }
         puts "CT7_ENUM layer=$layer module=$module instances=$matched"
         flush stdout

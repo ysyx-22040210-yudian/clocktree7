@@ -9,7 +9,7 @@ import uuid
 
 from .storage import write_graph
 from .register_view import RegisterDialog,RELATIONS
-from .sv_templates import SVPlan,ROLES,architecture_signature,write_source,graph_for_templates,sv_output_path
+from .sv_templates import NO_ENDPOINTS,SVPlan,ROLES,architecture_signature,write_source,graph_for_templates,sv_output_path
 from .runtime import tail_text
 from .sv_editor import SVCodeEditor
 from .sv_macro_view import MacroEditor
@@ -76,7 +76,7 @@ class SVDialog(tk.Toplevel):
         self.analyze_button=ttk.Button(bar,text='分析全部分支',command=self.analyze);self.analyze_button.pack(side='right')
         self.register_notice=tk.StringVar()
         wrapped_label(frame,textvariable=self.register_notice).pack(fill='x')
-        self.status=tk.StringVar(value='填写两套模板后分析分支。每个就绪末端生成一段，所有代码写入同一个 SV 文件。')
+        self.status=tk.StringVar(value='填写两套模板后分析分支。每个已就绪的子系统输入端口或总线位生成一段，所有代码写入同一个 SV 文件。')
         wrapped_label(frame,textvariable=self.status).pack(fill='x',pady=5)
         # Reserve actions before allocating the expanding notebook on Tk 8.5.
         footer=ttk.Frame(frame);footer.pack(side='bottom',fill='x',pady=(9,0))
@@ -97,7 +97,7 @@ class SVDialog(tk.Toplevel):
         panes=ttk.Panedwindow(review,orient='vertical');panes.pack(fill='both',expand=True)
         top=ttk.Frame(panes);panes.add(top,weight=2)
         self.table=ttk.Treeview(top,columns=('instance','pin','clkip','mode','status'),show='headings',height=10)
-        for col,label,width in [('instance','真实末端实例',300),('pin','末端端口',120),('clkip','$var_clkip',350),('mode','模板类型',140),('status','生成状态',140)]:
+        for col,label,width in [('instance','子系统实例',300),('pin','输入端口 / 位',120),('clkip','$var_clkip',350),('mode','模板类型',140),('status','生成状态',140)]:
             self.table.heading(col,text=label);self.table.column(col,width=width)
         scroll=ttk.Scrollbar(top,command=self.table.yview);scroll.pack(side='right',fill='y');self.table.configure(yscrollcommand=scroll.set);self.table.pack(fill='both',expand=True)
         self.table.bind('<<TreeviewSelect>>',self.detail)
@@ -141,9 +141,9 @@ class SVDialog(tk.Toplevel):
                 signature=plan.source().get('architecture_signature')
                 matching_registers=self.plan_matches_registers(plan)
                 if signature==architecture_signature(self.graph) and matching_registers:
-                    self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh();self.export_button.configure(state='normal')
-                elif signature==architecture_signature(self.graph,'sv-plan-v9') and matching_registers:
-                    self.status.set('正在用已有寄存器结果更新 sw_done 分支映射…')
+                    self.plan=plan;self.directory=Path(previous).parent;self.tabs.select(review);self.refresh()
+                elif matching_registers and signature in (architecture_signature(self.graph,'sv-plan-v10'), architecture_signature(self.graph,'sv-plan-v9')):
+                    self.status.set('正在基于原时钟树重建子系统输入端口的分支映射…')
                     self.app.after_idle(self.analyze)
                 else:self.status.set('当前分支计划需要更新，请重新分析全部分支。')
             except Exception as error:self.status.set('历史分支计划无法读取，请重新分析：'+str(error))
@@ -233,7 +233,7 @@ class SVDialog(tk.Toplevel):
             self.plan=SVPlan(self.directory/'plan.sqlite');self.invalidate_register_plan()
             if self.plan:self.tabs.select(self.review);self.refresh(True)
             self.remember()
-        if self.plan:self.export_button.configure(state='normal')
+        if self.plan:self.export_button.configure(state='normal' if self.plan.source().get('branches') else 'disabled')
     def show_export_result(self,result,select=True):
         self.export_result=result;self.output_name.set('')
         if result.get('sv_written'):
@@ -272,7 +272,13 @@ class SVDialog(tk.Toplevel):
             result=self.plan.resolve(row,settings,self.selections.get(row['id']),_macros=macros);ready+=int(result['ready'])
             self.table.insert('','end',iid=row['id'],values=(row['instance'],row['pin'],row['clkip'],result['mode'],'已就绪' if result['ready'] else '需处理'))
         if selected and selected[0] in self.rows:self.table.selection_set(selected)
-        self.status.set('第 {}–{} / {} 个分支末端 · 本页 {} 个已就绪。导出前会重新检查全部分支。'.format(self.offset+1 if rows else 0,self.offset+len(rows),total,ready))
+        has_inputs = bool(self.plan.source().get('branches'))
+        idle = self.process is None or self.process.poll() is not None
+        self.export_button.configure(state='normal' if has_inputs and idle else 'disabled')
+        if not has_inputs:
+            self.status.set(NO_ENDPOINTS)
+            return
+        self.status.set('第 {}–{} / {} 个子系统输入 · 本页 {} 个已就绪。导出前会重新检查全部分支。'.format(self.offset+1 if rows else 0,self.offset+len(rows),total,ready))
     def page(self,step):
         if not self.plan:return
         total,_=self.plan.branches(self.search.get(),limit=0);offset=self.offset+100*step
@@ -289,7 +295,7 @@ class SVDialog(tk.Toplevel):
         if info.get('origins'):
             text+='\n\n分支最初器件：'+'；'.join('{} · L{} · {}'.format(r['instance'],r.get('layer','?'),r['kind']) for r in info['origins'])
         if info.get('single_device', info.get('single_l1_device')):
-            text+='\n单器件分支使用末端输出，只有输入时使用当前输入。已配置的控制口使用实际映射。'
+            text+='\n当前分支的起点和末端是同一子系统，$var_clkip 取选中的 input 端口路径。'
         done=result['selected'].get('var_swdone',{})
         if done.get('capture_expression'):
             text+='\n\nsw_done 接收寄存器位  '+done['capture_expression']
@@ -300,14 +306,14 @@ class SVDialog(tk.Toplevel):
         if sources:
             text += '\n\nDIV 来源\n' + '\n'.join('{} · {} {}'.format(
                 source['signal'], div_source_label(source), source.get('scope', source.get('hierarchy', ''))) for source in sources)
-        if result.get('l1_input'):text+='\n\nL1 直达来源：'+', '.join(result['l1_input']['signals'])+'\n采用无选择器模板；$var_clkip 取末端输出，无输出器件取对应输入。'
+        if result.get('l1_input'):text+='\n\nL1 直达来源：'+', '.join(result['l1_input']['signals'])+'\n采用无选择器模板，$var_clkip 取子系统 input 端口路径。'
         if result.get('input_boundary'):text+='\n\n层次边界：'+', '.join(result['input_boundary']['signals'])
         reset=result.get('reset',{})
         if 'var_rst' in result['values']:
             for origin in reset.get('origins',[reset]):
                 text+='\n复位来源：起始器件 {} · L{}（用户配置：{}）'.format(origin.get('instance','?'),origin.get('layer','?'),origin.get('configured',''))
         if result['issues']:text+='\n\n需要处理：\n'+'\n'.join(result['issues'])
-        else:text+='\n\n该分支生成预览：\n'+macros.header()+result['code']
+        else:text+='\n\n该分支生成预览：\n'+(macros.header()+'\n' if macros.pairs else '')+result['code']
         self.preview.delete('1.0','end');self.preview.insert('1.0',text)
     def pick(self,var):
         row=self.current()
@@ -328,6 +334,8 @@ class SVDialog(tk.Toplevel):
         if not self.plan or self.process and self.process.poll() is None:return
         self.refresh_registers()
         if not self.plan:return
+        if not self.plan.source().get('branches'):
+            self.status.set(NO_ENDPOINTS);return
         path=path or filedialog.asksaveasfilename(parent=self,title='生成 SystemVerilog 代码文件',filetypes=[('SystemVerilog 代码','*.sv')],defaultextension='.sv',initialfile='clock_branches.sv')
         if not path:return
         try:path=sv_output_path(path)

@@ -24,9 +24,11 @@ module i_source(input i,output o); assign o=i; endmodule
 module i_output(clocks_if.source link, input clk);
   assign link.clk=clk;
 endmodule
+module interface_clock_sink(input [7:0] clocks); endmodule
 module i_crg(clocks_if.sink ext, clocks_if.sink other, clocks_if unrestricted,
              input raw,en, output [7:0] q);
   wire via_alias;
+  interface_clock_sink ip(q);
   clocks_if local_if();
   assign via_alias=ext.clk;
   assign ext.feedback=raw;
@@ -144,8 +146,12 @@ def audit(out):
                 stats['ports'] = {name:e['port'] for name,e in l1.items()}
                 if not bounded:
                     template = {'without_mux':'wire check_$var_clkip = $var_pll0;\n'}
-                    plan = prepare(graph,None,case/'plan',False)
-                    bits = next(row for row in plan.branches()[1] if row['instance']==SCOPE+'.g_bit')
+                    assert prepare(graph,None,case/'without-subsystem',False).branches()==(0,[])
+                    sink_layer=dict(index=3,hierarchy=SCOPE,modules=[
+                        dict(module='interface_clock_sink',kind='subsystem',clock_inputs=['clocks'])])
+                    with_sink,_=run(dict(config,layers=layers+[sink_layer]),case/'with-subsystem')
+                    plan = prepare(with_sink,None,case/'plan',False)
+                    bits = next(row for row in plan.branches()[1] if row['clkip']==SCOPE+'.ip.clocks[1]')
                     resolved = plan.resolve(bits,template)
                     assert resolved['ready'] and resolved['values']['var_pll0']==SCOPE+'.ext.bus[2]', resolved
                     sv = case/'branches.sv'

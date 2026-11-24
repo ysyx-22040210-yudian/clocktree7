@@ -10,12 +10,12 @@
     @media(max-width:800px){main{margin:0;padding:25px 18px;border-radius:0}body{font-size:14px}h1{font-size:26px}h2{font-size:21px}table{font-size:12px}th,td{padding:7px}}
     @media print{@page{size:A4;margin:16mm}body{background:white;font-size:10pt}main{margin:0;padding:0;box-shadow:none;max-width:none}h1{font-size:22pt}h2{font-size:16pt;break-after:avoid}h3{font-size:12pt;break-after:avoid}pre{white-space:pre-wrap;font-size:8pt;background:#edf1f7;color:#17263c}pre code{color:inherit}table{font-size:8.5pt}tr,img{break-inside:avoid}img{box-shadow:none;max-height:210mm;object-fit:contain}a{color:inherit}a.figure{break-inside:avoid}footer{font-size:8pt}}
     </style></head><body><main><div class="edition">观钟王  /  GUI USER MANUAL  /  OFFLINE EDITION</div><h1 id="gui">观钟王 时钟树 / 复位树 GUI 操作手册</h1>
-<p><strong>文档版本 3.20 · 更新于 2026-11-20 · 适用界面为 Python Tkinter / ttk 原生桌面版</strong></p>
+<p><strong>文档版本 3.23 · 更新于 2026-11-25 · 适用界面为 Python Tkinter / ttk 原生桌面版</strong></p>
 <p>本手册依据当前程序、虚拟机中的真实操作和 NPI 提取验收编写。界面截图来自实际 Tk 窗口。用户只需提供层次范围、module 定义名、器件类型及关注的输入/输出端口；实例枚举和实例间连接由工具解析 RTL elab 完成。默认两级，可添加任意数量的层级；支持选择器、门控、OCC 和 DIV 分频器。Verdi 自动定位，任务不设运行超时，同一目录可反复执行。</p>
 <p>顶栏的分析类型下拉框可切换时钟树与复位树。时钟树有 MUX、SYNC_GATE、GATE_WRAP、OCC_ROOT、OCC_BRANCH、DIV、穿线和 SUBSYSTEM。复位树有 MUX、RSY_SYNC、穿线和 SUBSYSTEM。关注端口及辅助端口都可从 elab 正则筛选后写入文本框，也可直接编辑。两种分析均默认两级，可自定义层数并分别保存配置草稿、结果和搜索历史。端口操作见 <a href="#device-ports-and-div-sources">第 36 章</a>。</p>
 <p>MUX、DIV 和门控可另外填写辅助端口的<strong>实际接口名</strong>：<code>pll_sel</code>、<code>div</code>、<code>sw_done</code>、<code>gt</code>。工具读取每个实例的实际连接信号，在器件下方显示；这些辅助端口不参加时钟/复位树连线追踪。填写方法见 <a href="#auxiliary-ports">第 31 章</a>。完成架构提取后，可另行启动“辅助口 → 寄存器”任务，查找实际时序寄存器的精确 bit 路径，见 <a href="#register-trace">第 32 章</a>。</p>
 <p>每次启动会自动加载上次的模式、主界面配置、选中层级与结果，两类工作区均可恢复。首次升级尚无自动记录时，会读取当前运行目录中最近可读取的历史结果；无历史时才使用两级空白规则。详见 <a href="#auto-restore">第 21 章</a>。</p>
-<p>完成寄存器映射后，点击 <strong>“分支 SV 模板”</strong>，按起始有无选择器选择模板，每个真实分支末端生成一段，写入同一 SV 文件。分支可在任意层开始或结束，也可只有一个器件。两个门控子类型共同按连接顺序编号，缺位的门控和 PLL 输入槽位填 <code>1'b1</code>。完整流程见 <a href="#sv-templates">第 33 章</a>。</p>
+<p>完成寄存器映射后，点击 <strong>“分支 SV 模板”</strong>，按起始有无选择器选择模板，每个已就绪的子系统 input 端口或单个位生成一段，写入同一 SV 文件。子系统可以位于任意规则层，也可以直接连接起始时钟。两个门控子类型共同按连接顺序编号，缺位的门控和 PLL 输入槽位填 <code>1'b1</code>。完整流程见 <a href="#sv-templates">第 33 章</a>。</p>
 <p><strong>大规模设计默认选“目标结构提取（大设计推荐）”</strong>，从全部关注输入反查驱动，不展开输出全部 load。需要检查普通寄存器负载时，另选“全负载核验”并新建提取。两种模式的证据与末端含义不同，见 <a href="#target-extraction">第 28 章</a>。本手册旧截图和历史验收中关于 driver/load 双向证据、范围出口与普通负载统计的描述，适用于全负载核验模式。</p>
 <p><a class="figure" href="images/guanzhongwang-workspace.png" target="_blank"><img alt="观钟王主界面中显示的时钟树和端口连接" src="images/guanzhongwang-workspace.png" /></a></p>
 <p><a class="figure" href="images/guanzhongwang-empty.png" target="_blank"><img alt="首次启动的两级空白工作台" src="images/guanzhongwang-empty.png" /></a></p>
@@ -780,8 +780,8 @@ L7  fixture_top.l7
 <tbody>
 <tr>
 <td><code>missing_module</code></td>
-<td>范围内没有匹配定义的实例</td>
-<td>module 大小写、层次路径、参数/宏和当前数据库</td>
+<td><strong>警告 · 模块未例化</strong>。已查完指定父层，直接子层中有 0 个匹配实例</td>
+<td>若此设计本来就没有该器件，可继续使用结果。若预期有实例，请核对父层路径、module 定义名和当前 elab</td>
 </tr>
 <tr>
 <td><code>missing_pin</code></td>
@@ -1309,14 +1309,16 @@ python3 scripts/check_golden.py validation/runs/reset-check/resettree.json valid
 </tbody>
 </table>
 <p>同一节点可以既有范围内下游，也有范围出口。边界表示明确的分析范围，不是连通错误；绿色状态仅表示<strong>配置范围内</strong>的连接与结构检查通过，不表示范围外网络已经验证。未知逻辑、缺失端口、缺失反向证据等仍会报诊断，不能用范围边界掩盖。</p>
-<p>全负载核验已确认某个穿线输出是范围出口时，该输出不参与 SV 末端计数。同一输入转接到其他范围内输出时，按各输出实际负载独立判断末端。</p>
+<p>图中按各穿线输出的实际负载标记范围出口和末端。SV 计数沿已证明的穿线通道继续到范围内的子系统，按到达的子系统 input 端口分别计数。</p>
 <p>如果两个内部节点只能经过根外的缓冲/连线才能相连，严格模式不会把它们画成直接相连；应扩大追踪根层次以包含那条完整路径。</p>
 <h3 id="233">23.3 时钟、复位与历史配置</h3>
 <p>时钟树与复位树分别保存追踪根层次。切换、保存配置、导出结果和关闭重开均保留各自的字段；结果节点的范围入口/出口标记也随 JSON 和 SVG 保留。</p>
 <p><a class="figure" href="images/scoped-reset.png" target="_blank"><img alt="复位树的独立追踪根层次与范围边界" src="images/scoped-reset.png" /></a></p>
 <p>旧配置没有该字段，或输入框留空时，端口追踪保持原有行为。实例查询仍会使用每层已有的层次路径；某层路径也留空时，其实例查找根为设计顶层。不存在的非空层次会报错，不自动退回全芯片查询。</p>
 <p>端口追踪根仍包含其本身及内部子层次；<strong>实例查找仅取各层父路径下的直接子实例</strong>。支持显式填写 <code>soc_top.g[0].domain</code> 这类 generate 父路径；使用精确层次，不填写 <code>*</code> / <code>?</code>，module 填定义名。路径本身恰好是所填 module 的实例时，也不会将它当作自己的子实例。</p>
-<p>以前把 <code>soc_top</code> 填在各层、依赖递归搜索深层模块的配置，需要改成模块实际所在的父层路径后重新提取。找不到直接实例时会明确报告 <code>missing_module</code> 和 <code>search_mode=direct_children</code>，不会自动递归兜底。旧结果图仍可打开，其提取范围不会因软件升级而自动改变。</p>
+<p>以前把 <code>soc_top</code> 填在各层、依赖递归搜索深层模块的配置，需要改成模块实际所在的父层路径后重新提取。</p>
+<p><strong>模块未例化</strong>表示工具已查完该 RTL 父层，直接子层中没有与规则匹配的实例。主提取会提交该规则的断点，继续检查其余规则。如果只有这类警告，运行正常完成。即使所有规则均未命中，也会生成显示 0 个实例的结果。点击结果上方的黄色提示，可在问题表中查看每条规则的级数、module 和父层路径。已有分支照常参与 SV 生成。父层不存在或 elab 导入失败时，请按错误提示查看日志。</p>
+<p>器件编辑中点击“读取 elab 端口”时，零例化同样显示警告，候选端口表为空，已手填的端口名保留。打开旧结果时，问题表也会把 <code>missing_module</code> 显示为警告。若要更新旧任务保存的完整性状态和末端统计，请重新提取。</p>
 <p>底层使用 NPI <code>npiInternalScope</code> 迭代直接作用域，跳过其下的 generate/其他作用域而不进入它们；并非先获取全部后代再过滤。新结果 <code>metadata.instance_search</code> 与查询记录 <code>search_mode</code> 均记录 <code>direct_children</code>，每条查询还记录 <code>recursive=false</code>。端口追踪继续可穿过追踪根内的中间子层次。</p>
 <h3 id="234-json">23.4 JSON 配置示例</h3>
 <p><code>trace_scope</code> 位于配置顶层，独立于各层的 <code>hierarchy</code>：</p>
@@ -2173,8 +2175,8 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <li>寄存器结果目录默认勾选 <strong>“自动选择最新”</strong>：打开窗口、点击“分析全部分支”及导出前，自动选择<strong>当前设计、当前分析类型最新完成</strong>的寄存器结果。按 <code>register-trace.json</code> 的生成/更新时间排序，检查当前运行目录及已记住的结果位置；不会递归扫描 RTL 或整个磁盘。较新的运行中/中断任务、其他设计及缺少必要文件的目录不会覆盖可用结果。已完成但含未解析或多候选项的结果仍会被选中，具体问题继续在分支分析中处理。
    若需要指定历史结果，点击 <strong>“选择”</strong> 打开 <code>manifest.json</code> 或 <code>register-trace.json</code>，或直接编辑目录；界面会切换到手动选择。再次勾选“自动选择最新”即可恢复。目录需要保留 <code>registers.sqlite</code>，仅有导出的 CSV 不足以生成。没有匹配结果时目录留空并显示提示，仍可处理无需控制寄存器的 L1 直达分支。</li>
 <li>在 <strong>“起始有选择器”</strong> 和 <strong>“起始无选择器”</strong> 页签填写模板。需要给公共层次或文字起宏名时，在 <strong>“宏定义与替换”</strong> 页签添加规则。两套模板共用这些规则。编辑器操作见第 33.5.1 节，宏的使用见第 33.5.3 节。</li>
-<li>点击 <strong>“分析全部分支”</strong>。后台按真实连接寻找每个分支末端的上游器件，读取已保存的逐位寄存器映射。若旧结果只有整个总线的连接表达式，会启动独立 Verdi 进程读取精确 bit 连接；因此此步骤可能仍需要原 elab 与 EDA 环境。</li>
-<li>在 <strong>“分支映射与代码预览”</strong> 查看末端、<code>$var_clkip</code>、模板类型及状态。每页 100 个末端，可按实例、端口或信号查找。选中后可查看最初器件及其所属层。编辑模板后点“查找 / 重新核对模板”刷新状态。</li>
+<li>点击 <strong>“分析全部分支”</strong>。后台从选定的子系统输入逐位回溯上游器件，并读取已保存的寄存器映射。<code>$clkip</code> 直接取子系统实例和输入位。若上游 <code>$var_pll0～3</code> 的实际连线只有整条总线的历史记录，工具会用原 elab 回查这些输入的位对应关系。</li>
+<li>在 <strong>“分支映射与代码预览”</strong> 查看子系统实例、输入端口或位、<code>$var_clkip</code> 完整路径、模板类型及状态。每页 100 个末端，可按实例、端口或信号查找。选中后可查看最初器件及其所属层。编辑模板后点“查找 / 重新核对模板”刷新状态。</li>
 <li>选中一个分支，下方显示变量的实际替换值、待处理原因或生成代码。需要处理多寄存器时，打开 <strong>选择寄存器映射</strong> 菜单，选择对应变量（如 <code>$var_swdone</code>），搜索或翻页查看候选后确认一项。</li>
 <li>点击右下角 <strong>“生成 SV 代码…”</strong>，在保存对话框中选择 <code>.sv</code> 文件。就绪分支的模板替换结果写入同一个代码文件。完成后自动切换到 <strong>“生成的 SV 文件”</strong>，显示文件完整路径和直接从磁盘读取的代码。大文件预览最多显示前 256 Ki 字符，完整代码仍全部保存在文件中。</li>
 <li>处理被跳过的分支后再次选择同一个 <code>.sv</code> 文件。工具按当前两套模板与选择<strong>完整重新生成并替换</strong>，不会追加重复代码。全部分支未就绪时明确显示 <strong>“未生成 SV”</strong> 和具体问题，已有 SV 文件保持不变；不能把诊断 JSON 当成代码交付。</li>
@@ -2229,9 +2231,9 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <td>其余 <code>$var_pll1～3</code> 一律 <code>1'b1</code>；存在多个不等价起点时要求处理</td>
 </tr>
 <tr>
-<td><code>$var_clkip</code></td>
-<td>普通多器件分支取末端输入。单器件分支、L1 接口直达分支和有输出的末端多输入选择器取末端输出。穿线取对应通道末端输出</td>
-<td>子系统取当前输入。总线按实际 bit 处理</td>
+<td><code>$var_clkip</code>、<code>$clkip</code></td>
+<td>SUBSYSTEM 的实例路径加所选 input 端口名，例如 <code>top.u_gpu.clk_i</code></td>
+<td>总线逐位取 formal 端口的实际位号，例如 <code>top.u_gpu.clocks[3]</code></td>
 </tr>
 <tr>
 <td><code>$var_rst</code></td>
@@ -2249,45 +2251,13 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <p>“不存在的槽位”与“已有端口没有追到结果”不同：前者按约定填 <code>1'b1</code>，后者列出问题并跳过。无门控的分支三个 gt 全部填 <code>1'b1</code>；MUX 有两个输入时 pll2、pll3 填 <code>1'b1</code>。</p>
 <p>工具沿实际连接确定每个末端的最初器件。起始器件可以在任意规则层。最初器件是 MUX 时使用 <code>with_mux</code>，其他器件使用 <code>without_mux</code>。无选择器起始的 <code>$var_pll0</code> 取最初器件的输入。多个起点类型混合时由用户选择模板。每个分支最多一个 MUX、一个 DIV 和三个门控，两个门控子类型共同计数。并行门控无法唯一排序时，预览会列出问题。</p>
 <h3 id="333">33.3 “一个分支”的计数</h3>
-<p>分支数量由<strong>每条分支各自的真实末端</strong>决定，允许分别停在 L1、L3、L5 等不同层，不能只统计全图最大层号。一个普通末端器件生成一段，后面仍有关注器件的中间器件不另计；末端 MUX 的多个输入汇合到同一输出时也只生成一段。起始 MUX 的各个输入提供 pll0～3，不因 MUX 输入数或寄存器候选数使代码段翻倍。</p>
-<p>SUBSYSTEM 有多个独立输入时，各输入分别成为末端；画布在不同分支上显示同一子系统的引用不会重复计数。两个不同真实末端恰好连接同一个信号时，仍各生成一段。未配置的普通负载不自动成为模板末端；末端范围与当前提取规则一致。</p>
-<p>穿线器件按已证明的内部通道分别处理。一个输入连到两个未接后续器件的输出时，两个输出各有一个末端；已接下游的输出继续走到其真正末端。每个输出只沿它对应的输入回溯，不混入同一穿线器件的其他通道。</p>
-<h3 id="3331">33.3.1 只有一个器件的分支</h3>
-<p>任意一层的单个器件都可以构成分支。有输出时，<code>$var_clkip</code> 取输出的实际例化连接信号。子系统取当前输入。<code>$var_pll0</code> 取起始输入，<code>$var_rst</code> 取该器件所属层配置的复位。</p>
-<table>
-<thead>
-<tr>
-<th>变量</th>
-<th>无对应实际控制配置时的默认值</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td><code>$var_pllsel</code></td>
-<td><code>1'b1</code></td>
-</tr>
-<tr>
-<td><code>$var_div</code></td>
-<td><code>0</code></td>
-</tr>
-<tr>
-<td><code>$var_swdone</code></td>
-<td><code>1'b1</code></td>
-</tr>
-<tr>
-<td><code>$var_gt0</code>、<code>$var_gt1</code>、<code>$var_gt2</code>（含兼容 <code>$var_gt</code>）</td>
-<td><code>1'b1</code></td>
-</tr>
-<tr>
-<td>无 MUX 时 <code>$var_pll1</code>～<code>$var_pll3</code></td>
-<td><code>1'b1</code></td>
-</tr>
-</tbody>
-</table>
-<p><strong>真实映射优先。</strong> 已配置辅助口就使用其寄存器追踪结果。尚未完成、超时或有多候选时列出问题。单个 MUX 的已配置时钟输入按顺序赋给 pll0～3，缺位槽填 <code>1'b1</code>。</p>
-<p>例如 <code>L1.gate.i(clk_pad) → L1.gate.o(clk_ip)</code>，若没有配置 gt 辅助口，则 pll0=<code>clk_pad</code>、clkip=<code>clk_ip</code>、div=<code>0</code>，其余控制默认 <code>1'b1</code>；若 gt 已追到 <code>top.ctrl.Q[7]</code>，gt0 使用该真实值。未配置任何辅助口的单 L1 分支可将寄存器结果目录留空。</p>
-<p>升级后旧分支计划会提示重新“分析全部分支”，以更新末端计数及取值；已保存的模板和原提取结果继续保留。原生 Verdi、Tk 和规模验证见 <a href="SV_BRANCH_ENDPOINTS_VALIDATION_20261112.zh-CN.md">SV 分支末端验收报告</a>。</p>
-<p><a class="figure" href="images/sv-branch-endpoints.png" target="_blank"><img alt="单个 L1 器件的末端输出、起点与生成预览" src="images/sv-branch-endpoints.png" /></a></p>
+<p>在器件规则中将消费时钟的模块设为 <strong>SUBSYSTEM（子系统）</strong>，并填写或勾选需要检查的 input 端口。每个真实子系统实例的每个选定输入单独分析。向量端口按各实例在 elab 中的实际位号逐位处理。每个就绪输入生成一段模板代码。</p>
+<p>例如 <code>top.u_gpu</code> 与 <code>top.u_dma</code> 的例化都写作 <code>.clk_i(crg_clk)</code>。两个输入分别生成 <code>top.u_gpu.clk_i</code> 和 <code>top.u_dma.clk_i</code>。若端口为 <code>input [3:2] clocks</code>，连接为 <code>.clocks({ng3, cd})</code>，模板取子系统的 <code>clocks[3]</code>、<code>clocks[2]</code>。端口外侧连接的表达式仍可在画布的器件属性中查看。</p>
+<p>起点和子系统可以处于任意规则层。MUX、门控、DIV、OCC 和穿线参与上游分析。只到达这些器件的支路在画布上可见，SV 导出只计入到达子系统输入的支路。穿线按已证明的通道回溯。画布中同一子系统的多个显示引用只计一次真实端口。缺失端口、方向错误、例化留空或追踪超时均可在受影响分支查看原因。</p>
+<h3 id="3331">33.3.1 只有子系统一个器件的分支</h3>
+<p>以 <code>top.u_gpu.clk_i</code> 为例，如果该输入直连已确认的层次边界 <code>top.crg_clk</code>，则 <code>$var_pll0</code> 取 <code>top.crg_clk</code>，<code>$var_clkip</code> 取 <code>top.u_gpu.clk_i</code>，<code>$var_rst</code> 取该子系统所属规则层的复位。此时 <code>$var_div</code> 取 <code>0</code>，<code>$var_pllsel</code>、<code>$var_swdone</code>、三个门控及 <code>$var_pll1</code>～<code>$var_pll3</code> 均取 <code>1'b1</code>。</p>
+<p>升级后打开“分支 SV 模板”，工具会用匹配的原时钟树和寄存器结果更新旧分支计划。若窗口提示重新分析，点击“分析全部分支”。命令行用户用原架构结果重跑 <code>sv-plan</code>，然后执行 <code>sv-export</code>。若原结果尚未提取子系统，请先配置 SUBSYSTEM 及其输入，再提取一次架构。</p>
+<p><a class="figure" href="images/sv-subsystem-input-endpoints.png" target="_blank"><img alt="分支预览中子系统输入的实例、位号和生成代码" src="images/sv-subsystem-input-endpoints.png" /></a></p>
 <h3 id="334">33.4 多寄存器、位序与无法生成的分支</h3>
 <ul>
 <li>某辅助口有多组完整寄存器候选时，相关变量未选择前，该分支跳过；其他分支继续。选择窗口展示实例、实际辅助端口、完整寄存器信号与关系，支持搜索及 100 行分页。</li>
@@ -2302,7 +2272,7 @@ python3 -m clocktree trace-registers --request /path/task/request.json --out /pa
 <li>历史结果缺失精确连接信号时，生成器可向 elab 回查指定端口及 bit。回查沿用端口超时设置。失败的分支会显示原因，有完整映射的分支可以继续生成。</li>
 <li>打开旧结果时，点击 <strong>“分析全部分支”</strong> 更新生成计划。可定位的连接问题由相关分支单独报告。架构导入中断、枚举未完成或连接资料缺少可定位诊断时，预览会提示核对提取日志。</li>
 </ul>
-<p>DFT 假设来自<strong>寄存器任务的实际设置</strong>，不是导出阶段再次猜测；文件头及映射 JSON 一并记录。当前 SV 路径支持普通层次标识符、静态 bit/range 和已证明的拼接；无法安全表示的转义标识符或动态表达式会报告原因。</p>
+<p>映射 JSON 的 <code>source.dft_zero</code> 记录寄存器任务实际采用的 DFT 置零信号。每个分支的实例、末端、变量值及跳过原因也可在映射中查询。当前 SV 路径支持普通层次标识符、静态 bit/range 和已证明的拼接。</p>
 <h3 id="335">33.5 模板示例及导入格式</h3>
 <p>有选择器模板示例（可作为测试平台 module 内的代码片段）：</p>
 <pre><code class="language-systemverilog">initial begin
@@ -2319,7 +2289,8 @@ end
            $var_div, $var_swdone, $var_gt0, $var_gt1, $var_gt2);
 end
 </code></pre>
-<p>模板只替换已知变量；单独使用时保留信号路径，拼接名称时按第 33.5.2 节转换。模板不运行 Python/Tcl/SV，不自动插入 module 包装、时序断言或仿真任务。<code>$display</code>、<code>$time</code> 等系统名原样保留；字符串/注释内的 <code>$var_*</code> 同样会替换。用户负责模板自身的 SV 语法、重复声明名及所在验证环境；工具不会凭模板生成成功就声称验证逻辑正确。</p>
+<p>单独出现的模板变量保留信号路径，拼接进标识符时按第 33.5.2 节转换。字符串中的 <code>$var_*</code> 同样参与替换，<code>$display</code> 和 <code>$time</code> 等 SV 系统名按原文输出。</p>
+<p>生成时先删除模板里的 <code>//</code> 行注释、<code>/* … */</code> 块注释，以及手写的 <code>`define</code>、<code>`undef</code>、<code>`undefine</code> 和 <code>`undefineall</code> 指令。注释和这些指令里的变量不会触发寄存器选择。含续行的宏定义会整段删除。引号内的文字仍属于字符串，例如 <code>"http://host"</code>。编辑器和模板备份保留用户原稿。若分支正文仅剩空白，预览会提示模板为空。所有分支都为空时，已有 SV 文件会保留。</p>
 <p>两套模板 JSON 使用 <code>with_mux</code> 和 <code>without_mux</code> 两个字符串字段，换行用 JSON 的 <code>\n</code> 表示。GUI 的“备份模板配置（非代码）”会正确处理换行与引号，无需手工转义。这是可复用的模板设置，实际 SV 文件由“生成 SV 代码…”产生。CLI 可直接使用同一配置文件：</p>
 <pre><code class="language-bash">python3 -m clocktree sv-plan \
   --graph /path/tree/clocktree.json \
@@ -2429,10 +2400,12 @@ assert property (check_$var_clkip_sva);
 <p>例如，某分支的 <code>$var_clkip</code> 是 <code>tb.dut.u_crg.clk_out[2]</code>，模板为</p>
 <pre><code class="language-systemverilog">initial $display(&quot;clock=$var_clkip value=%0b&quot;, $var_clkip);
 </code></pre>
-<p>导出时，文件头会出现以下定义。</p>
-<pre><code class="language-systemverilog">`define CRG tb.dut.u_crg
+<p>以下为该模板导出的文件头和一段分支正文。</p>
+<pre><code class="language-systemverilog">`define CRG(ct7_value=tb.dut.u_crg) ct7_value
+
+initial $display(`CRG(`&quot;clock=`CRG().clk_out[2] value=%0b`&quot;), `CRG().clk_out[2]);
 </code></pre>
-<p>作为 <code>$display</code> 参数的信号会写成 <code>`CRG.clk_out[2]</code>。对于双引号内的匹配，生成器会创建带 <code>CT7_TEXT_</code> 前缀的局部宏，将整条格式字符串交给 SV 预处理器展开。若该位为 1，实际打印 <code>clock=tb.dut.u_crg.clk_out[2] value=1</code>。修改文件头的 <code>CRG</code> 并重新编译后，表达式与打印路径会一起指向新层次。分支映射报告仍保存提取到的原始路径，便于回查 RTL。</p>
+<p>文件开头只列出「宏定义与替换」中配置的宏，每个名称出现一次。字符串片段需要跟随宏展开时，工具会从配置中选一个宏，使用带默认参数的形式。例中将第一行 <code>ct7_value=</code> 后的层次改成 <code>tb.soc.u_crg</code>，重新编译后，断言访问的信号和日志打印的路径都会改到新层次。手工在其他 SV 代码中引用这种宏时写 <code>`CRG()</code>。普通对象宏仍用 <code>`宏名</code>。未配置宏时，文件从第一段分支代码开始。</p>
 <table>
 <thead>
 <tr>
@@ -2454,7 +2427,7 @@ assert property (check_$var_clkip_sva);
 </tr>
 </tbody>
 </table>
-<p>规则区分大小写，按字面匹配。原文在同一位置重叠时，较长的规则优先。普通代码中的 <code>u_crg2</code> 和 <code>u_crg</code> 是两个标识符。注释、已有编译指令和字符串里的转义序列会保留。重复的宏名或原文会在编辑时提示，模板中手写的同名宏定义或撤销指令会在受影响的分支中提示。</p>
+<p>规则区分大小写，按字面匹配。同一位置有多个匹配时，较长的规则优先。普通代码中的 <code>u_crg2</code> 和 <code>u_crg</code> 是两个标识符。重复的宏名或原文会在编辑时提示。若正文仍引用已从模板删除的手写宏，请在宏表或编译工程中提供该名称的定义。</p>
 <p><strong>备份模板配置</strong> 会一起保存两套模板和宏规则。命令行 <code>sv-export --templates</code> 也可以使用同一份 JSON。宏规则用可选的 <code>macros</code> 数组保存，例如 <code>[{"name":"CRG","text":"tb.dut.u_crg"}]</code>。当前设计的规则随 GUI 会话恢复。</p>
 <h3 id="336-var_rst">33.6 填写每层复位信号与 <code>$var_rst</code></h3>
 <p>在左侧选择 L1、L2 等层级，填写 <strong>“RTL 父层路径”</strong> 后，在紧邻的 <strong>“该层复位信号 · $var_rst”</strong> 输入框填写该层复位。每层独立保存；切换层、添加/删除层级、导入/保存配置，以及退出后恢复均保留对应关系。时钟/复位两种工作区独立保存此字段，SV 模板入口仍用于时钟树。</p>
@@ -2592,8 +2565,8 @@ end
 <td><code>1'b1</code></td>
 </tr>
 <tr>
-<td><code>$var_clkip</code></td>
-<td>分支末端有输出则取其输出的实际连接信号；无输出则取该末端相关输入的实际连接信号</td>
+<td><code>$var_clkip</code>、<code>$clkip</code></td>
+<td>该支路终点子系统的 input 端口完整路径，保留实际位号</td>
 </tr>
 <tr>
 <td><code>$var_rst</code></td>
@@ -2601,10 +2574,10 @@ end
 </tr>
 </tbody>
 </table>
-<p>例如 <code>L1.raw_clk[3] → L3.g0 → L4.g1 → L5.subsys.clk</code>，只为末端 <code>subsys.clk</code> 生成该分支代码；若链路结束于 <code>g1</code>，则取 <code>g1</code> 输出。穿线末端按已证明的内部通道逐输出生成；同一子系统的不同输入仍分别处理，不相互连通。</p>
+<p>例如 <code>L1.raw_clk[3] → L3.g0 → L4.g1 → L5.subsys.clk</code>，只为末端 <code>subsys.clk</code> 生成该分支代码。若链路止于门控 <code>g1</code>，它仍显示在架构图中，SV 导出计数为零。</p>
 <p>在“分支 SV 模板”窗口点击“分析全部分支”，预览会显示 <strong>L1 直达来源</strong>。没有配置辅助控制端口的直达分支可将寄存器结果目录留空。有实际控制口或混有普通分支时，仍须满足模板所引用变量的寄存器证据要求；缺少证据的分支明确跳过，其余继续写入同一个 SV 文件。<code>.mapping.json</code> 的 <code>l1_input</code> 字段记录来源和末端规则。</p>
 <h3 id="353">35.3 不确定连接的处理</h3>
-<p>到达 L1 之前遇到未知逻辑、动态选择、未连接、超时或竞争路径时，保留相应状态。一个输出汇合多个不同 L1 来源，或混合 L1 直达与普通器件起点时，SV 分析会列出来源并跳过该输出。L1 接口外的未解析逻辑仍可能影响本次结果的完整性和 SV 导出。若验证范围仅限 L1 内部，可在配置允许时把「端口追踪根层次」设为 L1 路径，以该接口为追踪边界。</p>
+<p>到达 L1 之前遇到未知逻辑、动态选择、未连接、超时或竞争路径时，保留相应状态。一个输出汇合多个不同 L1 来源，或混合 L1 直达与普通器件起点时，SV 分析会列出来源并跳过受影响的子系统输入。L1 接口外的未解析逻辑仍可能影响本次结果的完整性和 SV 导出。若验证范围仅限 L1 内部，可在配置允许时把「端口追踪根层次」设为 L1 路径，以该接口为追踪边界。</p>
 <p>本功能适用于时钟/复位画布；SV 模板仍用于时钟树。真实 VM、逐位及规模验收见 <a href="L1_INPUT_VALIDATION_20261111.zh-CN.md">L1 输入验收报告</a>。</p>
 <p><a id="device-ports-and-div-sources"></a></p>
 <h2 id="36-div">36. 正则添加端口、器件细分和 DIV 寄存器来源</h2>

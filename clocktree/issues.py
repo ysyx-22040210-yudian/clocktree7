@@ -22,7 +22,7 @@ LABELS={
     'missing_pin':('缺失端口','核对端口名及该实例参数化接口'),
     'undriven':('输入无驱动','检查例化输入绑定及其上游信号是否有驱动'),
     'missing_trace':('未执行追踪','查看 worker 日志及已提交断点'),
-    'missing_module':('未找到 module','核对直接父层和 module 定义名'),
+    'missing_module':('模块未例化','如果预期此处有实例，请核对 RTL 直接父层路径和 module 定义名。'),
     'scope_not_found':('层次不存在','核对 elab 中的完整实例路径'),
     'unknown_cell':('未解析逻辑','检查未纳入规则的逻辑或器件'),
     'unsupported_expression':('不支持的表达式','查看原始 NPI 表达式，不应推定为连通'),
@@ -49,6 +49,11 @@ LABELS={
 }
 COLUMNS=('category','severity','layer','module','instance','pin','signal','reason','hint')
 HEADINGS=('类别','严重程度','层级','Module','实例','端口','实际信号','原因','处理提示')
+
+
+def uninstantiated_reason(row):
+    scope = row.get('hierarchy') or '配置的 RTL 父层'
+    return '在 {} 的直接子层中未找到 {} 的例化。'.format(scope, row.get('module') or '该模块')
 
 
 class IssueIndex:
@@ -82,9 +87,10 @@ class IssueIndex:
                 refs=list(dict.fromkeys(refs))
                 instance,pin=refs[0] if refs else ('','')
                 node=known_node if known_node is not None else (nodes[instance] if instance in nodes else {})
-                severity='错误' if code in ('fatal','elaboration_error','verdi_exit','missing_module','scope_not_found','missing_pin','missing_trace') else '警告'
+                severity='错误' if code in ('fatal','elaboration_error','verdi_exit','scope_not_found','missing_pin','missing_trace') else '警告'
                 status=row.get('status','')
                 reason=row.get('message') or row.get('reason') or LABELS.get(status,(status or label,''))[0]
+                if code == 'missing_module':reason=uninstantiated_reason(row)
                 values=(label,severity,str(node.get('layer',row.get('layer',''))),node.get('module',row.get('module','')),
                         instance,pin,connection_label(node,pin) if pin else '',str(reason),hint)
                 # Keep references to bulky paths outside the issue rows.

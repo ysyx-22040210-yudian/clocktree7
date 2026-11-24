@@ -38,6 +38,7 @@ from .profiles import (GATE_KINDS, SINGLE_INPUT_KINDS, TREE_PROFILES, LABEL_TO_T
                        tree_type, profile, rule_ports, empty_config, result_filename, output_ports, selectable_kinds)
 from .session import SessionStore, SessionWriter, read_canvas_graph as read_graph, same_config, snapshot_graph
 from .input_coverage import LABEL as INPUT_GAP_LABEL, prepare_coverage, visible_gaps
+from .issues import LABELS as ISSUE_LABELS
 from .storage import IndexedGraph, CombinedSequence, RecordSequence, write_graph
 from .indexed_view import IndexedGraphView
 from .runtime import RunJournal, read_json as runtime_json, diagnose, diagnose_gui, tail_text, stage_node, bind_gui, alive, LABELS
@@ -1724,6 +1725,7 @@ class ClockTreeApp(tk.Tk):
         input_boundaries = configured_input_boundaries(graph['config'])
         undriven=summary.get('undriven_inputs',0)
         gaps=summary.get('inputs_without_source',0)
+        unmatched=summary.get('uninstantiated_module_rules',0)
         if gaps:
             progress='追踪完成' if summary['connectivity_complete'] else '追踪不完整'
             if summary.get('trace_timeout_instances'):
@@ -1732,7 +1734,10 @@ class ClockTreeApp(tk.Tk):
         elif summary['connectivity_complete'] and undriven:
             self._badge('追踪完成 · {:,} 个输入无驱动'.format(undriven),'warn')
         elif summary['connectivity_complete'] and summary.get('topology_valid',True):
-            if input_boundaries:
+            if unmatched:
+                self._badge('提取完成 · 警告：{:,} 条模块规则未找到例化 · 查看'.format(unmatched),
+                            'warn',ISSUE_LABELS['missing_module'][0])
+            elif input_boundaries:
                 self._badge('按已选层次边界解析 · {} 条入口'.format(summary.get('input_boundary_connections',0)),'pass')
             else:
                 self._badge('目标结构连接已解析 · 未核验普通负载' if summary.get('extraction_mode')=='target' else ('范围内连接已解析 · {} 处边界'.format(summary.get('scope_boundaries',0)) if summary.get('scope_limited',bool(graph['config'].get('trace_scope','').strip())) else '全量连接已解析'),'pass')
@@ -1772,7 +1777,10 @@ class ClockTreeApp(tk.Tk):
             ('提取方式',EXTRACTION_MODES[summary.get('extraction_mode','full')]),
             ('完整性','全部关注输入反查驱动；末端表示没有已配置的下游器件。普通负载未核验。' if summary.get('extraction_mode')=='target' else '全部关注输入追驱动，全部关注输出追负载。连接保留双向 NPI 证据。'),
             ('实际运行',graph.get('metadata',{}).get('output_directory','导入结果'))])
-        self._replace_text(self.diag_text,'{} 个输入缺少上游连接 · {} 个输入无驱动\n{} 个诊断 · {} 个未解析端点\n\n在问题表选择“输入缺少上游连接”，可按实例和端口查看、定位或导出。'.format(gaps,undriven,len(graph.get('diagnostics',[])),summary.get('unresolved',0)))
+        diagnostic_text='{} 个输入缺少上游连接 · {} 个输入无驱动\n{} 个诊断 · {} 个未解析端点'.format(gaps,undriven,len(graph.get('diagnostics',[])),summary.get('unresolved',0))
+        if unmatched:diagnostic_text+='\n{} 条模块规则未找到例化，在问题表选择“模块未例化”查看。'.format(unmatched)
+        if gaps:diagnostic_text+='\n在问题表选择“输入缺少上游连接”，可按实例和端口查看、定位或导出。'
+        self._replace_text(self.diag_text,diagnostic_text)
         self.refresh_nodes()
         self.refresh_runs()
         self.set_status('架构图就绪 · {:,} 实例 / {:,} 连接 · 滚轮缩放，拖动画布平移'.format(summary['instances'],summary['edges']))
@@ -2021,6 +2029,7 @@ class ClockTreeApp(tk.Tk):
                 if (directory/'summary.json').is_file():
                     s=read_json(directory/'summary.json')
                     status='完整' if s['connectivity_complete'] and s.get('topology_valid',True) and not (s.get('undriven_inputs') or s.get('inputs_without_source')) else '诊断'
+                    if status=='完整' and s.get('uninstantiated_module_rules'):status='完成 · 有警告'
                     count=s['instances']
                 elif (directory/'gui-job.json').is_file():
                     job=read_json(directory/'gui-job.json')

@@ -74,7 +74,7 @@ def main(out,source,baseline):
     target=exports/'actual.sv';save_dialog=native_save(app,dialog.export_button.invoke,target)
     pump(app,lambda:dialog.process.poll() is not None and dialog.export_button.instate(['!disabled']))
     result=json.loads((dialog.directory/'export.log').read_text());content=target.read_text(encoding='utf-8')
-    assert result['sv_written'] and result['blocks']==15 and content.count('// CT7 branch ')==15
+    assert result['sv_written'] and result['blocks']==4 and content.count('initial $display(')==4 and '//' not in content
     assert '$var_' not in content and 'initial $display(' in content and not content.lstrip().startswith('{')
     if not baseline:
         assert sorted(p.name for p in exports.iterdir())==['actual.sv']
@@ -105,7 +105,7 @@ def main(out,source,baseline):
             subprocess.check_call(['vcs','-full64','-sverilog','-kdb=only','-lca','-debug_access+all','-top','sv_ends','-top','template_checks',
                 str(source/'fixture/rtl.sv'),str(checks)],cwd=str(build),stdout=log,stderr=subprocess.STDOUT)
     assert not errors,errors
-    write_graph(out/'acceptance.json',dict(passed=True,baseline=baseline,actual_sv=True,blocks=15,template_dialog=template_dialog,
+    write_graph(out/'acceptance.json',dict(passed=True,baseline=baseline,actual_sv=True,blocks=4,template_dialog=template_dialog,
         save_dialog=save_dialog,blocked_dialog=blocked_dialog,blocked_exit_code=dialog.process.returncode,blocked_status=dialog.status.get(),
         sv_vcs_elaborated=not baseline,files=sorted(p.name for p in exports.iterdir()),errors=errors))
     dialog.close();app.close();print('SV_EXPORT_FILES_PASS',flush=True)

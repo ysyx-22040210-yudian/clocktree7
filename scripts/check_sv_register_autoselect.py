@@ -61,7 +61,7 @@ def run(source, out, phase):
         app.ui_state.update(app.graph['config'],register_trace_directory=str(old))
         dialog=SVDialog(app);pump(app)
         assert dialog.auto_registers.get() and dialog.registers.get()==str(new)
-        for mode,text in {'with_mux':'// $var_clkip $var_pllsel\n','without_mux':'// $var_clkip $var_gt0\n'}.items():
+        for mode,text in {'with_mux':'initial $display($var_clkip, $var_pllsel);\n','without_mux':'initial $display($var_clkip, $var_gt0);\n'}.items():
             dialog.editors[mode].delete('1.0','end');dialog.editors[mode].insert('1.0',text)
         analyze(dialog,new);export(dialog,'auto.sv',new)
         checks.append('opening selects latest completed same-design result; two SV blocks use it')
@@ -94,7 +94,7 @@ def run(source, out, phase):
         latest=out/'runs'/'.register-trace'/'fourth'
         assert dialog.auto_registers.get() and dialog.registers.get()==str(latest)
         assert dialog.plan is not None and dialog.plan.source()['registers']==str(latest)
-        assert dialog.templates()['without_mux']=='// $var_clkip $var_gt0\n'
+        assert dialog.templates()['without_mux']=='initial $display($var_clkip, $var_gt0);\n'
         dialog.close()
         job('after-restart',70)
         # Make this result later than the in-place update of "fourth".
@@ -104,7 +104,7 @@ def run(source, out, phase):
         dialog=SVDialog(app);pump(app)
         assert dialog.registers.get()==str(path.parent) and dialog.plan is None
         assert '重新分析' in dialog.status.get()
-        assert dialog.templates()['without_mux']=='// $var_clkip $var_gt0\n'
+        assert dialog.templates()['without_mux']=='initial $display($var_clkip, $var_gt0);\n'
         dialog.close();checks.append('independent GUI restart restores current plan; newer result invalidates it while preserving templates')
     assert not errors,errors
     write_graph(out/(phase+'.json'),{'passed':True,'checks':checks,'callback_errors':errors,'tk':app.tk.call('info','patchlevel')})

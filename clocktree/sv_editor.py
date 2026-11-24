@@ -8,6 +8,7 @@ import tkinter as tk
 from tkinter import ttk,font as tkfont
 
 from .sv_template_text import VARIABLE_BUTTONS,template_tokens
+from .sv_macros import clean_template
 
 
 KEYWORDS=frozenset('''always always_comb always_ff always_latch and assert assign assume automatic
@@ -140,7 +141,7 @@ class SVCodeEditor(tk.Frame):
         self._job=None;source=self.text.get('1.0','end-1c');self._highlight_started=time.perf_counter()
         self._lines=[0]+[m.end() for m in re.finditer('\n',source)]
         self._wide=[i for i,c in enumerate(source) if ord(c)>0xffff] if self._utf16 else []
-        tokens=template_tokens(source);errors=sorted({t.error for t in tokens if t.error})
+        tokens=template_tokens(clean_template(source, mask=True));errors=sorted({t.error for t in tokens if t.error})
         self.diagnostic.set(errors[0] if errors else 'SystemVerilog  |  UTF-8  |  Spaces: 4')
         for name in COLORS:self.text.tag_remove(name,'1.0','end')
         self._work=itertools.chain(syntax_spans(source),(('invalid' if t.error else 'variable',t.start,t.end) for t in tokens))

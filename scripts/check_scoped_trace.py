@@ -152,8 +152,9 @@ def main():
     leaf['trace_scope'] = leaf_scope
     leaf['layers'] = [dict(index=1, hierarchy=leaf_scope, modules=leaf['layers'][0]['modules'])]
     leaf_graph = run(leaf, out / 'leaf-root')
-    assert not leaf_graph['summary']['connectivity_complete'] and not leaf_graph['nodes']
-    assert any(d['code']=='missing_module' for d in leaf_graph['diagnostics'])
+    assert leaf_graph['summary']['connectivity_complete'] and not leaf_graph['nodes']
+    assert leaf_graph['summary']['uninstantiated_module_rules']==len(leaf['layers'][0]['modules'])
+    assert any(d['code']=='missing_module' and d['severity']=='warning' for d in leaf_graph['diagnostics'])
     gen = config('scope_top.g[0].domain', out / 'generate/fixture/rtl.f', 'clock')
     gen['trace_scope'] = 'scope_top.g[0]'
     gen_graph = run(gen, out / 'generate-root')

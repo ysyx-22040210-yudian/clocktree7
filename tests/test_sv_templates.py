@@ -154,7 +154,7 @@ def test_subsystem_inputs_have_separate_upstreams_and_exactly_one_block_each(tmp
         if row['pin']=='clk_mux':assert r['mode']=='with_mux' and r['values']['var_pllsel']=='chip.D[5:2]' and 'var_gt' not in r['values']
         else:assert r['mode']=='without_mux' and r['values']['var_gt']=='chip.C[7]' and not plan.candidates(row,'pll_sel')
     result=plan.export(templates,tmp_path/'all.sv');text=(tmp_path/'all.sv').read_text(encoding='utf-8')
-    assert result['blocks']==2 and text.count('// CT7 branch ')==2 and text.count('A(')==1 and text.count('B(')==1
+    assert result['blocks']==2 and '//' not in text and text.count('A(')==1 and text.count('B(')==1
     report=json.loads((tmp_path/'all.sv.mapping.json').read_text());assert report['block_count']==2 and report['source']['dft_zero']==['dft_mode']
 
 
@@ -353,7 +353,8 @@ def test_partial_output_lists_all_candidates_then_regenerates_without_duplicates
     assert {r['expression'] for r in skipped['available_choices']['var_swdone']}=={'chip.E[10]','chip.E[11]'}
     chosen=skipped['available_choices']['var_swdone'][0]['id']
     result=plan.export(templates,output,{skipped['id']:{'var_swdone':chosen}})
-    assert result['blocks']==2 and result['skipped']==0 and output.read_text(encoding='utf-8').count('// CT7 branch ')==2
+    assert result['blocks']==2 and result['skipped']==0
+    assert sorted(output.read_text(encoding='utf-8').split()) == sorted(['A('+skipped['available_choices']['var_swdone'][0]['expression']+');', 'B(chip.C[7]);'])
 
 
 @pytest.mark.parametrize('problem_owner,problem_pin', [('chip.gate', 'i'), ('chip.sink', 'clk_other')])
@@ -435,14 +436,14 @@ def test_distinct_result_revision_cannot_reuse_an_identical_header_plan(tmp_path
 
 
 @pytest.mark.parametrize('failure', ['worker_exit', 'port_deadline', 'wrong_bit'])
-def test_elab_fallback_only_blocks_the_failed_terminal(tmp_path, monkeypatch, failure):
+def test_elab_fallback_for_origin_never_changes_subsystem_formal(tmp_path, monkeypatch, failure):
     from clocktree import sv_templates
     from clocktree.register_worker import PortDeadline, WorkerFault
 
     graph, registers = setup(tmp_path)
     terminal = graph['nodes'][-1]
     terminal.update(inputs=['clk[8]', 'clk[7]'], port_connections={})
-    graph['edges'][1]['target_pin'], graph['edges'][2]['target_pin'] = terminal['inputs']
+    graph.update(nodes=[terminal], edges=[])
     if failure=='port_deadline':graph['config']['port_trace_timeout_s']=10
     stops = []
     queries = []
@@ -466,10 +467,10 @@ def test_elab_fallback_only_blocks_the_failed_terminal(tmp_path, monkeypatch, fa
 
     monkeypatch.setattr(sv_templates, 'RegisterWorker', Worker)
     plan = prepare(graph, registers, tmp_path/'plan')
-    templates = {'with_mux':'$var_clkip', 'without_mux':'$var_clkip'}
+    templates = {'without_mux':'$var_pll0 $clkip'}
     rows = {b['pin']:plan.resolve(b, templates) for b in plan.branches()[1]}
-    assert rows['clk[7]']['ready'] and rows['clk[7]']['values']['var_clkip']=='chip.clk7'
-    assert not rows['clk[8]']['ready'] and any('$var_clkip' in issue for issue in rows['clk[8]']['issues'])
+    assert rows['clk[7]']['ready'] and rows['clk[7]']['values']=={'var_clkip':'chip.sink.clk[7]','var_pll0':'chip.clk7'}
+    assert not rows['clk[8]']['ready'] and any('$var_pll0' in issue for issue in rows['clk[8]']['issues'])
     if failure!='wrong_bit':
         assert len(stops)==1 and len(queries)==2
         reason = 'Verdi exited reading clk' if failure=='worker_exit' else '读取 clk 超时'
@@ -479,12 +480,12 @@ def test_elab_fallback_only_blocks_the_failed_terminal(tmp_path, monkeypatch, fa
 
 def test_template_render_error_on_one_terminal_keeps_other_sv_blocks(tmp_path):
     graph, registers = setup(tmp_path)
-    graph['nodes'][-1]['port_connections']['clk_mux']['full_name'] = '$'
+    graph['nodes'][0]['port_connections']['a']['full_name'] = '$'
     plan = prepare(graph, registers, tmp_path/'plan', False)
-    template = 'wire check_$var_clkip_sva;'
+    template = 'wire check_$var_pll0_sva = $clkip;'
     result = plan.export(dict(with_mux=template, without_mux=template), tmp_path/'generated.sv')
     assert (result['blocks'], result['skipped']) == (1, 1)
-    assert 'wire check_chip_clk_other_sva;' in (tmp_path/'generated.sv').read_text(encoding='utf-8')
+    assert 'wire check_chip_i_sva = chip.sink.clk_other;' in (tmp_path/'generated.sv').read_text(encoding='utf-8')
     assert '变量值无法组成 SV 名称' in result['issues'][0]
 
 

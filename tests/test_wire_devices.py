@@ -137,9 +137,7 @@ def test_wire_range_exit_is_not_an_sv_endpoint_on_a_fanned_out_channel(tmp_path,
         wire.pop('terminal_outputs')
     plan=prepare(graph,None,tmp_path/'plan',False)
     total, rows=plan.branches()
-    assert total == 1 and rows[0]['pin'] == 'local_pin'
-    result=plan.resolve(rows[0],{'without_mux':'$var_pll0 $var_clkip'})
-    assert result['ready'] and result['values']['var_clkip']=='chip.d.local_pin'
+    assert (total,rows)==(0,[])
 
 
 def test_layout_worker_preserves_multi_output_anchors():
@@ -185,7 +183,12 @@ def test_network_filter_on_edges_between_shared_wire_instances(tmp_path,indexed)
 def test_sv_wire_channels_choose_only_related_gate_registers(tmp_path):
     from clocktree.register_trace import create_database
     from clocktree.storage import write_graph
-    events,cfg=fixture();graph=build_graph(events,cfg)
+    events,cfg=fixture()
+    events.insert(-1,dict(event='instance',path='top.sink',kind='subsystem',module='sink',layer=3,inputs=['g0','g1'],output=None))
+    for pin in ('g0','g1'):
+        events.insert(-1,dict(event='trace',instance='top.sink',pin=pin,direction='driver',
+                              results=[dict(status='target',instance='top.'+pin,pin='o')]))
+    graph=build_graph(events,cfg)
     cfg['layers'][0]['reset_signal']='rst_n'
     for node in graph['nodes']:
         node['port_connections']={p:{'status':'connected','full_name':node['id']+'.'+p,'coverage':'port'} for p in node['inputs']}
@@ -203,8 +206,8 @@ def test_sv_wire_channels_choose_only_related_gate_registers(tmp_path):
     assert len(rows)==2
     for row in rows:
         data=dict(row);bindings=json.loads(data['bindings'])
-        expected='top.s1' if data['instance']=='top.g0' else 'top.s0'
+        expected='top.s1' if data['pin']=='g0' else 'top.s0'
         assert bindings['var_gt0']['instance']==expected
-        assert bindings['var_gt1']['instance']==data['instance']
+        assert bindings['var_gt1']['instance']=='top.'+data['pin']
         assert bindings['var_gt2']['value']=="1'b1"
         assert bindings['var_pll0']['value']==expected+'.i'
